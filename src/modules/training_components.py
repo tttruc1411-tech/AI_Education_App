@@ -1,0 +1,107 @@
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLineEdit, QLabel
+from PyQt6.QtCore import pyqtSignal, Qt, QRegularExpression
+from PyQt6.QtGui import QRegularExpressionValidator
+import re
+
+class MultiClassTagPanel(QWidget):
+    """
+    A modular component for Detection Mode that allows defining up to 4 classes
+    via colored tags. Validates that at least 2 classes are defined and follow
+    single-word naming conventions.
+    """
+    validation_changed = pyqtSignal(bool) # Emits True if at least 2 classes are valid
+    classes_updated = pyqtSignal(list)   # Emits list of valid class names
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("MultiClassTagPanel")
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 4)
+        layout.setSpacing(4)
+
+        # Title / Hint
+        self.lbl_hint = QLabel("🏷️ Define Project Classes (Min 2, Single-word, No Spaces)")
+        self.lbl_hint.setStyleSheet("color: #64748b; font-size: 11px; font-weight: bold;")
+        layout.addWidget(self.lbl_hint)
+
+        tag_layout = QHBoxLayout()
+        tag_layout.setSpacing(8)
+
+        self.tags = []
+        colors = [
+            ("#f3e8ff", "#a855f7"), # Purple
+            ("#ffe4e6", "#fb7185"), # Rose
+            ("#e0f2fe", "#3b82f6"), # Blue
+            ("#d1fae5", "#10b981")  # Emerald
+        ]
+
+        for i in range(4):
+            bg, border = colors[i]
+            edit = QLineEdit()
+            edit.setPlaceholderText(f"Class {i+1}")
+            edit.setFixedWidth(85)
+            edit.setStyleSheet(f"""
+                QLineEdit {{
+                    background: {bg}; border: 1px solid {border}; 
+                    border-radius: 6px; padding: 6px; 
+                    font-size: 12px; font-weight: 600; color: #1e293b;
+                }}
+                QLineEdit:focus {{ border: 2px solid {border}; }}
+                # Maintain colors even when disabled (e.g. once collection starts)
+                QLineEdit:disabled {{ 
+                    background: {bg}; border-color: {border}; color: #334155; 
+                }}
+            """)
+            # 🔡 Hard restriction: Letters only (A-Z, a-z)
+            valid_regex = QRegularExpression("[a-zA-Z]+")
+            edit.setValidator(QRegularExpressionValidator(valid_regex))
+            
+            edit.textChanged.connect(self._validate)
+            tag_layout.addWidget(edit)
+            self.tags.append(edit)
+
+        layout.addLayout(tag_layout)
+
+    def _validate(self):
+        valid_names = []
+        for edit in self.tags:
+            name = edit.text().strip()
+            # Restriction: Letters only, no symbols/numbers/spaces
+            if name and re.match(r"^[a-zA-Z]+$", name):
+                valid_names.append(name)
+                edit.setProperty("invalid", "false")
+            elif name:
+                edit.setProperty("invalid", "true")
+            
+            # Simple visual feedback for invalid (red border if text entered but invalid)
+            if edit.property("invalid") == "true":
+                edit.setStyleSheet(edit.styleSheet() + "QLineEdit { border: 1px solid #ef4444; }")
+            else:
+                # Reset to default handled by the property if we were using QSS properly, 
+                # but for simplicity we keep the original style above.
+                pass
+
+        is_valid = len(valid_names) >= 2
+        self.validation_changed.emit(is_valid)
+        self.classes_updated.emit(valid_names)
+
+        # Update hint text if invalid
+        if len(valid_names) < 2:
+            self.lbl_hint.setText("⚠️ Please insert at least 2 class names (Single-word)")
+            self.lbl_hint.setStyleSheet("color: #ef4444; font-size: 11px; font-weight: bold;")
+        else:
+            self.lbl_hint.setText("✅ Multi-class configuration valid!")
+            self.lbl_hint.setStyleSheet("color: #10b981; font-size: 11px; font-weight: bold;")
+
+    def get_class_names(self):
+        return [t.text().strip() for t in self.tags if t.text().strip()]
+
+    def lock_classes(self):
+        """Permanent lock for tag inputs once collection/labeling begins."""
+        for edit in self.tags:
+            edit.setEnabled(False)
+        self.lbl_hint.setText("🔒 Configuration locked (Data exists)")
+        self.lbl_hint.setStyleSheet("color: #64748b; font-size: 11px; font-weight: bold;")

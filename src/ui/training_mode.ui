@@ -1,0 +1,524 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>TrainingMode</class>
+ <widget class="QWidget" name="TrainingMode">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1200</width>
+    <height>700</height>
+   </rect>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">
+    /* FIX: Removed global white background and made labels transparent */
+    QWidget { font-family: 'Segoe UI', Arial, sans-serif; }
+    TrainingMode { background-color: #f1f5f9; }
+    QLabel { background: transparent; }
+    
+    #leftPanel, #configPanel, #progressPanel, #rightPanel { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; }
+    
+    /* ================= Vibrant Ombre Headers ================= */
+    QFrame#leftHeader, QFrame#configHeader, QFrame#progressHeader, QFrame#rightHeader {
+        border-top-left-radius: 11px; border-top-right-radius: 11px;
+    }
+    
+    /* The continuous Navy -&gt; Purple -&gt; Pink -&gt; Blue ombre flow */
+    QFrame#leftHeader { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1e3a8a, stop:1 #7e22ce); }
+    QFrame#configHeader { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #7e22ce, stop:1 #ec4899); }
+    QFrame#progressHeader { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #ec4899, stop:1 #3b82f6); }
+    QFrame#rightHeader { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #1e3a8a); }
+
+    QLabel#panelTitle { 
+        font-size: 15px; font-weight: bold; color: white; padding: 6px 16px; 
+        background: transparent;
+    }
+    
+    QFrame#leftHeader QLabel#panelTitle { padding-bottom: 4px; }
+
+    /* ================= Buttons ================= */
+    QPushButton#btnAddClass { 
+        border: 2px dashed #cbd5e1; background: #f8fafc; color: #64748b; 
+        border-radius: 8px; padding: 12px; font-weight: bold; margin: 8px; 
+    }
+    QPushButton#btnAddClass:hover { background: #f1f5f9; border-color: #3b82f6; color: #3b82f6; }
+
+    QPushButton#btnRecognition, QPushButton#btnDetection { 
+        background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.3); 
+        border-radius: 8px; padding: 6px 16px; font-weight: 800; color: #e0e7ff; 
+    }
+    QPushButton#btnRecognition:hover:!checked, QPushButton#btnDetection:hover:!checked { background: rgba(255, 255, 255, 0.3); }
+    QPushButton#btnRecognition:checked, QPushButton#btnDetection:checked { background: white; color: #4338ca; border-color: white; }
+
+    /* Compact 'Segmented' Size Buttons */
+    QPushButton#btnCapSize320, QPushButton#btnCapSize640 { 
+        background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.2); 
+        padding: 4px 10px; font-weight: bold; font-size: 11px; color: #cbd5e1; 
+    }
+    QPushButton#btnCapSize320 { border-top-left-radius: 8px; border-bottom-left-radius: 8px; border-right: none; }
+    QPushButton#btnCapSize640 { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
+
+    QPushButton#btnCapSize320:hover:!checked, QPushButton#btnCapSize640:hover:!checked { background: rgba(255, 255, 255, 0.25); }
+    QPushButton#btnCapSize320:checked, QPushButton#btnCapSize640:checked { background: white; color: #3b82f6; border-color: white; }
+
+    QPushButton#btnStartTraining { 
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #16a34a, stop:1 #059669); 
+        color: white; border-radius: 8px; font-weight: bold; border: none; 
+        min-height: 48px; font-size: 15px; margin: 12px;
+    }
+    QPushButton#btnStartTraining:hover { background-color: #15803d; }
+    QPushButton#btnStartTraining:disabled { background: #94a3b8; }
+
+    /* ================= Forms and Misc ================= */
+    QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { 
+        border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; 
+        background-color: #f8fafc; font-size: 13px; color: #0f172a; 
+    }
+    QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid #3b82f6; background-color: white; }
+    
+    QLabel#lblBackbone, QLabel#lblEpochs, QLabel#lblBatch, QLabel#lblLR, QLabel#lblOpt, QLabel#lblImgSize { font-weight: bold; font-size: 13px; color: #1e293b; background: transparent; }
+
+    QFrame#metricCard { border-radius: 8px; padding: 10px; border: 1px solid rgba(0,0,0,0.05); }
+    QLabel#metricTitle { color: rgba(0,0,0,0.6); font-size: 11px; font-weight: bold; background: transparent; }
+    QLabel#metricValue { color: #0f172a; font-size: 20px; font-weight: bold; background: transparent; }
+    
+    QScrollArea { border: none; background: transparent; }
+    QScrollArea QWidget { background: transparent; }
+    
+    QSplitter::handle:horizontal {
+        background-color: #3b82f6;
+        width: 2px;
+    }
+    QSplitter::handle:vertical {
+        background-color: #8b5cf6;
+        height: 2px;
+        margin: 0px 3px;
+        border-radius: 10px;
+    }
+   </string>
+  </property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <property name="spacing"><number>0</number></property>
+   <property name="leftMargin"><number>16</number></property>
+   <property name="topMargin"><number>16</number></property>
+   <property name="rightMargin"><number>16</number></property>
+   <property name="bottomMargin"><number>16</number></property>
+   
+   <item>
+    <widget class="QSplitter" name="horizontalSplitter">
+     <property name="orientation"><enum>Qt::Horizontal</enum></property>
+     <property name="childrenCollapsible"><bool>false</bool></property>
+     <property name="handleWidth"><number>2</number></property>
+
+     <widget class="QFrame" name="leftPanel">
+      <property name="minimumSize"><size><width>200</width><height>0</height></size></property>
+      <property name="maximumSize"><size><width>1200</width><height>16777215</height></size></property>
+      <layout class="QVBoxLayout" name="leftLayout">
+       <property name="spacing"><number>0</number></property>
+       <property name="leftMargin"><number>0</number></property>
+       <property name="topMargin"><number>0</number></property>
+       <property name="rightMargin"><number>0</number></property>
+       <property name="bottomMargin"><number>0</number></property>
+       
+       <item>
+        <widget class="QFrame" name="leftHeader">
+         <layout class="QVBoxLayout" name="lhLayout">
+          <property name="spacing"><number>8</number></property>
+          <property name="leftMargin"><number>8</number></property>
+          <property name="topMargin"><number>8</number></property>
+          <property name="rightMargin"><number>8</number></property>
+          <property name="bottomMargin"><number>12</number></property>
+          <item>
+           <widget class="QLabel" name="panelTitle">
+            <property name="font"><font><pointsize>12</pointsize><bold>true</bold></font></property>
+            <property name="text"><string>🧬 Data Collection</string></property>
+            <property name="alignment"><set>Qt::AlignCenter</set></property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="tLayout">
+            <property name="spacing"><number>8</number></property>
+            <item>
+             <widget class="QPushButton" name="btnRecognition">
+              <property name="text"><string>Recognition</string></property>
+              <property name="checkable"><bool>true</bool></property>
+              <property name="checked"><bool>true</bool></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnDetection">
+              <property name="text"><string>Detection</string></property>
+              <property name="checkable"><bool>true</bool></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="sizeLayout">
+            <property name="spacing"><number>0</number></property>
+            <item>
+             <widget class="QPushButton" name="btnCapSize320">
+              <property name="text"><string>320x320</string></property>
+              <property name="checkable"><bool>true</bool></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+              <property name="toolTip"><string>Faster training, lower detail</string></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnCapSize640">
+              <property name="text"><string>640x640</string></property>
+              <property name="checkable"><bool>true</bool></property>
+              <property name="checked"><bool>true</bool></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+              <property name="toolTip"><string>Higher detail, slower training</string></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       
+       <item>
+        <widget class="QScrollArea" name="classScrollArea">
+         <property name="widgetResizable"><bool>true</bool></property>
+         <widget class="QWidget" name="classContainer">
+          <layout class="QVBoxLayout" name="classListLayout">
+           <property name="spacing"><number>12</number></property>
+           <property name="leftMargin"><number>12</number></property>
+           <property name="topMargin"><number>12</number></property>
+           <property name="rightMargin"><number>12</number></property>
+           <property name="bottomMargin"><number>12</number></property>
+           <item>
+            <spacer name="verticalSpacer">
+             <property name="orientation"><enum>Qt::Vertical</enum></property>
+             <property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property>
+            </spacer>
+           </item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+       
+       <item>
+        <widget class="QPushButton" name="btnAddClass">
+         <property name="text"><string>+ Add a Class</string></property>
+         <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+
+     <widget class="QSplitter" name="midSplitter">
+      <property name="orientation"><enum>Qt::Vertical</enum></property>
+      <property name="childrenCollapsible"><bool>false</bool></property>
+      <property name="handleWidth"><number>6</number></property>
+
+      <widget class="QFrame" name="configPanel">
+       <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>2</verstretch></sizepolicy></property>
+       <layout class="QVBoxLayout" name="midLayout">
+        <property name="spacing"><number>0</number></property>
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        
+        <item>
+         <widget class="QFrame" name="configHeader">
+          <layout class="QVBoxLayout">
+           <property name="spacing"><number>0</number></property>
+           <property name="leftMargin"><number>8</number></property>
+           <property name="topMargin"><number>8</number></property>
+           <property name="rightMargin"><number>8</number></property>
+           <property name="bottomMargin"><number>8</number></property>
+           <item>
+            <widget class="QLabel" name="panelTitle">
+             <property name="font"><font><pointsize>12</pointsize><bold>true</bold></font></property>
+             <property name="text"><string>🧠 Training Configuration</string></property>
+             <property name="alignment"><set>Qt::AlignCenter</set></property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        
+        <item>
+         <widget class="QScrollArea" name="configScroll">
+          <property name="widgetResizable"><bool>true</bool></property>
+          <widget class="QWidget" name="configContent">
+           <layout class="QVBoxLayout" name="configVLayout">
+            <property name="spacing"><number>10</number></property>
+            <property name="leftMargin"><number>20</number></property>
+            <property name="topMargin"><number>20</number></property>
+            <property name="rightMargin"><number>20</number></property>
+            
+            <item>
+             <widget class="QFrame" name="datasetCard">
+              <property name="styleSheet"><string notr="true">QFrame#datasetCard { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; }</string></property>
+              <layout class="QHBoxLayout" name="dsLayout">
+               <property name="spacing"><number>4</number></property>
+               <property name="leftMargin"><number>8</number></property>
+               <property name="topMargin"><number>6</number></property>
+               <property name="rightMargin"><number>8</number></property>
+               <property name="bottomMargin"><number>6</number></property>
+               <item>
+                <layout class="QVBoxLayout" name="dsTextLayout">
+                 <item>
+                  <layout class="QHBoxLayout" name="dsHeader">
+                   <item><widget class="QLabel" name="dsIcon"><property name="text"><string>⚡</string></property><property name="font"><font><pointsize>12</pointsize><bold>true</bold></font></property><property name="styleSheet"><string notr="true">color: #1e40af;</string></property></widget></item>
+                   <item><widget class="QLabel" name="dsTitle"><property name="text"><string>Dataset</string></property><property name="styleSheet"><string notr="true">font-weight: bold; color: #1e3a8a; font-size: 13px;</string></property></widget></item>
+                   <item>
+                    <spacer name="dsSpacerTitle">
+                     <property name="orientation"><enum>Qt::Horizontal</enum></property>
+                     <property name="sizeHint" stdset="0"><size><width>10</width><height>20</height></size></property>
+                    </spacer>
+                   </item>
+                  </layout>
+                 </item>
+                 <item><widget class="QLabel" name="lblDsHint"><property name="text"><string>training images collected</string></property><property name="styleSheet"><string notr="true">color: #3b82f6; font-size: 11px; font-weight: 600;</string></property></widget></item>
+                </layout>
+               </item>
+               <item>
+                <spacer name="dsSpacerMain">
+                 <property name="orientation"><enum>Qt::Horizontal</enum></property>
+                 <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property>
+                </spacer>
+               </item>
+               <item><widget class="QLabel" name="lblImageCountLarge"><property name="text"><string>0</string></property><property name="styleSheet"><string notr="true">font-size: 28px; font-weight: bold; color: #2563eb;</string></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+              </layout>
+             </widget>
+            </item>
+            
+            <item>
+             <layout class="QVBoxLayout" name="formModel">
+              <property name="spacing"><number>2</number></property>
+              <item><widget class="QLabel" name="lblBackbone"><property name="text"><string>Pre-trained Model</string></property></widget></item>
+              <item>
+               <widget class="QComboBox" name="comboBackbone">
+                <property name="styleSheet"><string notr="true">QComboBox { padding-left: 10px; font-weight: 500; }</string></property>
+                <item><property name="text"><string>YOLOv8 Nano (Fastest)</string></property></item>
+                <item><property name="text"><string>YOLOv8 Small (Balanced)</string></property></item>
+                <item><property name="text"><string>MobileNet V2 (Lightweight)</string></property></item>
+                <item><property name="text"><string>ResNet50 (Deep)</string></property></item>
+                <item><property name="text"><string>EfficientNet B0 (Efficient)</string></property></item>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            
+            <item>
+             <layout class="QGridLayout" name="paramsGrid">
+              <property name="horizontalSpacing"><number>12</number></property>
+              <property name="verticalSpacing"><number>4</number></property>
+              
+              <item row="0" column="0"><widget class="QLabel" name="lblEpochs"><property name="text"><string>Training Epochs</string></property></widget></item>
+              <item row="0" column="1"><widget class="QLabel" name="lblImgSize"><property name="text"><string>Image Resolution</string></property></widget></item>
+              
+              <item row="1" column="0">
+               <widget class="QSpinBox" name="spinEpochs">
+                <property name="minimum"><number>1</number></property>
+                <property name="maximum"><number>1000</number></property>
+                <property name="value"><number>50</number></property>
+                <property name="toolTip"><string>Number of times the model scans the full dataset</string></property>
+               </widget>
+              </item>
+              
+              <item row="1" column="1">
+               <widget class="QComboBox" name="comboImgSize">
+                <item><property name="text"><string>640 (High Detail)</string></property></item>
+                <item><property name="text"><string>416 (Balanced)</string></property></item>
+                <item><property name="text"><string>224 (Performance)</string></property></item>
+               </widget>
+              </item>
+
+              <!-- Advanced Configuration (Hidden for Student Simplicity)
+              <item row="2" column="0" colspan="2"><widget class="QLabel" name="lblLR"><property name="text"><string>Learning Rate</string></property></widget></item>
+              <item row="3" column="0" colspan="2"><widget class="QDoubleSpinBox" name="spinLR"><property name="decimals"><number>4</number></property><property name="singleStep"><double>0.001</double></property><property name="value"><double>0.001</double></property></widget></item>
+              <item row="4" column="0"><widget class="QLabel" name="lblOpt"><property name="text"><string>Optimizer</string></property></widget></item>
+              <item row="5" column="0">
+               <widget class="QComboBox" name="comboOpt">
+                <item><property name="text"><string>Adam</string></property></item>
+                <item><property name="text"><string>SGD</string></property></item>
+                <item><property name="text"><string>RMSprop</string></property></item>
+                <item><property name="text"><string>AdamW</string></property></item>
+               </widget>
+              </item>
+              -->
+             </layout>
+            </item>
+            
+            <item>
+             <spacer name="vSpacerMid">
+              <property name="orientation"><enum>Qt::Vertical</enum></property>
+              <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property>
+             </spacer>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+        
+        <item><widget class="QPushButton" name="btnStartTraining"><property name="text"><string>🚀 Start Training</string></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item>
+       </layout>
+      </widget>
+ 
+      <widget class="QFrame" name="progressPanel">
+       <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>1</verstretch></sizepolicy></property>
+       <layout class="QVBoxLayout" name="progressLayout">
+        <property name="spacing"><number>0</number></property>
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        
+        <item>
+         <widget class="QFrame" name="progressHeader">
+          <layout class="QVBoxLayout">
+           <property name="spacing"><number>0</number></property>
+           <property name="leftMargin"><number>8</number></property>
+           <property name="topMargin"><number>8</number></property>
+           <property name="rightMargin"><number>8</number></property>
+           <property name="bottomMargin"><number>8</number></property>
+           <item>
+            <widget class="QLabel" name="panelTitle">
+             <property name="font"><font><pointsize>12</pointsize><bold>true</bold></font></property>
+             <property name="text"><string>📈 Training Progress</string></property>
+             <property name="alignment"><set>Qt::AlignCenter</set></property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        
+        <item>
+         <widget class="QScrollArea" name="progressScroll">
+          <property name="widgetResizable"><bool>true</bool></property>
+          <widget class="QWidget" name="progressContent">
+           <layout class="QVBoxLayout" name="pcLayout">
+            <property name="spacing"><number>12</number></property>
+            <property name="leftMargin"><number>12</number></property>
+            <property name="topMargin"><number>12</number></property>
+            <property name="rightMargin"><number>12</number></property>
+            <property name="bottomMargin"><number>12</number></property>
+            
+            <item>
+             <widget class="QFrame" name="metricsPanel">
+              <property name="visible"><bool>false</bool></property>
+              <layout class="QGridLayout" name="metricsGrid">
+               <property name="horizontalSpacing"><number>10</number></property>
+               <property name="verticalSpacing"><number>10</number></property>
+               <item row="0" column="0"><widget class="QFrame" name="metricCard"><layout class="QVBoxLayout"><item><widget class="QLabel" name="metricTitle"><property name="text"><string>ACCURACY</string></property></widget></item><item><widget class="QLabel" name="lblValueAccuracy"><property name="text"><string>0%</string></property><property name="objectName"><string>metricValue</string></property></widget></item></layout></widget></item>
+               <item row="0" column="1"><widget class="QFrame" name="metricCard"><layout class="QVBoxLayout"><item><widget class="QLabel" name="metricTitle"><property name="text"><string>LOSS</string></property></widget></item><item><widget class="QLabel" name="lblValueLoss"><property name="text"><string>0.00</string></property><property name="objectName"><string>metricValue</string></property></widget></item></layout></widget></item>
+              </layout>
+             </widget>
+            </item>
+            
+            <item>
+             <widget class="QFrame" name="epochBarFrame">
+              <property name="visible"><bool>false</bool></property>
+              <layout class="QVBoxLayout" name="ebfLayout">
+               <item>
+                <layout class="QHBoxLayout" name="ebHeader">
+                 <item><widget class="QLabel" name="lblEpochProgTitle"><property name="text"><string>Epoch Progress</string></property><property name="styleSheet"><string notr="true">font-weight: 600; color: #475569; font-size: 11px;</string></property></widget></item>
+                 <item>
+                  <spacer name="ebSpacer">
+                   <property name="orientation"><enum>Qt::Horizontal</enum></property>
+                   <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+                  </spacer>
+                 </item>
+                 <item><widget class="QLabel" name="lblEpochCounter"><property name="text"><string>0 / 0</string></property><property name="styleSheet"><string notr="true">font-family: 'Consolas'; color: #475569; font-size: 11px;</string></property></widget></item>
+                </layout>
+               </item>
+               <item>
+                <widget class="QProgressBar" name="progEpoch">
+                 <property name="value"><number>0</number></property>
+                 <property name="textVisible"><bool>false</bool></property>
+                 <property name="minimumHeight"><number>8</number></property>
+                 <property name="styleSheet"><string notr="true">QProgressBar { background: #e2e8f0; border: none; border-radius: 4px; } QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #10b981, stop:1 #4ade80); border-radius: 4px; }</string></property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            
+            <item><widget class="QFrame" name="chartLoss"><property name="minimumSize"><size><width>0</width><height>140</height></size></property><property name="styleSheet"><string notr="true">background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;</string></property></widget></item>
+            
+            <item><widget class="QPlainTextEdit" name="txtTrainLog"><property name="readOnly"><bool>true</bool></property><property name="styleSheet"><string notr="true">background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; font-family: 'Consolas'; font-size: 10px; padding: 5px;</string></property></widget></item>
+            
+           </layout>
+          </widget>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+
+     <widget class="QFrame" name="rightPanel">
+      <property name="minimumSize"><size><width>200</width><height>0</height></size></property>
+      <property name="maximumSize"><size><width>1200</width><height>16777215</height></size></property>
+      <layout class="QVBoxLayout" name="rightLayout">
+       <property name="spacing"><number>0</number></property>
+       <property name="leftMargin"><number>0</number></property>
+       <property name="topMargin"><number>0</number></property>
+       <property name="rightMargin"><number>0</number></property>
+       <property name="bottomMargin"><number>0</number></property>
+       
+       <item>
+        <widget class="QFrame" name="rightHeader">
+         <layout class="QVBoxLayout">
+          <property name="spacing"><number>0</number></property>
+          <property name="leftMargin"><number>8</number></property>
+          <property name="topMargin"><number>8</number></property>
+          <property name="rightMargin"><number>8</number></property>
+          <property name="bottomMargin"><number>8</number></property>
+          <item>
+           <widget class="QLabel" name="panelTitle">
+            <property name="font"><font><pointsize>12</pointsize><bold>true</bold></font></property>
+            <property name="text"><string>⚡ Fast Check/Validation</string></property>
+            <property name="alignment"><set>Qt::AlignCenter</set></property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       
+       <item>
+        <layout class="QVBoxLayout" name="fvContentLayout">
+         <property name="spacing"><number>12</number></property>
+         <property name="leftMargin"><number>12</number></property>
+         <property name="topMargin"><number>12</number></property>
+         <property name="rightMargin"><number>12</number></property>
+         <property name="bottomMargin"><number>12</number></property>
+         
+         <item>
+          <widget class="QFrame" name="statusPlaceholder">
+           <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+           <property name="minimumSize"><size><width>0</width><height>240</height></size></property>
+           <property name="styleSheet"><string notr="true">background: #f8fafc; border: 2px dashed #e2e8f0; border-radius: 12px;</string></property>
+           <layout class="QVBoxLayout" name="spLayout">
+            <item>
+             <widget class="QLabel" name="statusIcon"><property name="text"><string>📷</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="styleSheet"><string notr="true">font-size: 40px; color: #cbd5e1;</string></property></widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="statusMsg"><property name="text"><string>Model Not Ready</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="styleSheet"><string notr="true">font-weight: bold; font-size: 15px; color: #94a3b8;</string></property></widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="statusHint"><property name="text"><string>Train your model to enable live fast validation here.</string></property><property name="wordWrap"><bool>true</bool></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="styleSheet"><string notr="true">color: #94a3b8; font-size: 11px; padding: 0 10px;</string></property></widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

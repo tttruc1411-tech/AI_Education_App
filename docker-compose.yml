@@ -1,0 +1,50 @@
+# ============================================================
+#  AI Education App — docker-compose for Jetson Orin Nano
+#  Usage:  docker compose up --build
+# ============================================================
+
+version: "3.9"
+
+services:
+  ai-education-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-education-app:jetson
+
+    # ── GPU Access ────────────────────────────────────────────
+    # Passes all GPU resources (iGPU + any accelerators) to the
+    # container via the NVIDIA Container Runtime.
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+
+    # ── Display (X11 forwarding) ──────────────────────────────
+    # Allows PyQt6 to open a window on the Jetson's desktop.
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_X11_NO_MITSHM=1
+      - QT_QPA_PLATFORM=xcb
+
+    volumes:
+      # X11 socket so the GUI can render on the host display
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # Mount live project data/model folders (survives container restarts)
+      - ./projects:/app/projects
+      # Optional: mount curriculum so teachers can add lessons without rebuild
+      - ./curriculum:/app/curriculum
+
+    # Camera device access (CSI or USB cam)
+    devices:
+      - /dev/video0:/dev/video0
+      # Add /dev/video1, /dev/video2 etc. if more cameras are attached
+
+    # ── Networking ────────────────────────────────────────────
+    network_mode: host
+
+    # ── Restart Policy ────────────────────────────────────────
+    restart: unless-stopped
+
+    stdin_open: true
+    tty: true

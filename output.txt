@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "E:\KDI\AI_Education_App\main.py", line 12, in <module>
+    from PyQt6.QtGui import QColor, QFont, QImage, QPixmap, QPainter, QPen, QShortcut, QKeySequence, QIcon, QStyle
+ImportError: cannot import name 'QStyle' from 'PyQt6.QtGui' (C:\Users\Truc\AppData\Local\Programs\Python\Python39\lib\site-packages\PyQt6\QtGui.pyd)
