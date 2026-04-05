@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import QFrame
-from PyQt6.QtCore import Qt, QMimeData
-from PyQt6.QtGui import QDrag
+from PyQt5.QtWidgets import QFrame
+from PyQt5.QtCore import Qt, QMimeData
+from PyQt5.QtGui import QDrag
 
 class DraggableFunctionWidget(QFrame):
     def __init__(self, function_name, parent=None):
@@ -8,12 +8,12 @@ class DraggableFunctionWidget(QFrame):
         self.function_name = function_name
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
+        if event.button() == Qt.LeftButton:
             self.drag_start_position = event.pos()
 
     def mouseMoveEvent(self, event):
         # Only start drag if they move at least 5 pixels
-        if not (event.buttons() & Qt.MouseButton.LeftButton):
+        if not (event.buttons() & Qt.LeftButton):
             return
         if (event.pos() - self.drag_start_position).manhattanLength() < 5:
             return
@@ -27,4 +27,4 @@ class DraggableFunctionWidget(QFrame):
         drag.setMimeData(mime_data)
 
         # Start the drag operation
-        drag.exec(Qt.DropAction.CopyAction)
+        drag.exec_(Qt.CopyAction)

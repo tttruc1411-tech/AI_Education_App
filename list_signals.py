@@ -1,6 +1,6 @@
-from PyQt6.Qsci import QsciScintilla
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QApplication
+from PyQt5.Qsci import QsciScintilla
+from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtWidgets import QApplication
 import sys
 
 app = QApplication(sys.argv)

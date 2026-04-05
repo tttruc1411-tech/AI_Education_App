@@ -31,7 +31,7 @@
     QFrame#rightHeader { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #1e3a8a); }
 
     QLabel#panelTitle { 
-        font-size: 15px; font-weight: bold; color: white; padding: 6px 16px; 
+        font-size: 20px; font-weight: bold; color: white; padding: 6px 16px; 
         background: transparent;
     }
     
@@ -40,13 +40,13 @@
     /* ================= Buttons ================= */
     QPushButton#btnAddClass { 
         border: 2px dashed #cbd5e1; background: #f8fafc; color: #64748b; 
-        border-radius: 8px; padding: 12px; font-weight: bold; margin: 8px; 
+        border-radius: 8px; padding: 12px; font-weight: bold; margin: 8px; font-size: 16px;
     }
     QPushButton#btnAddClass:hover { background: #f1f5f9; border-color: #3b82f6; color: #3b82f6; }
 
     QPushButton#btnRecognition, QPushButton#btnDetection { 
         background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.3); 
-        border-radius: 8px; padding: 6px 16px; font-weight: 800; color: #e0e7ff; 
+        border-radius: 8px; padding: 6px 16px; font-weight: 800; color: #e0e7ff; font-size: 15px;
     }
     QPushButton#btnRecognition:hover:!checked, QPushButton#btnDetection:hover:!checked { background: rgba(255, 255, 255, 0.3); }
     QPushButton#btnRecognition:checked, QPushButton#btnDetection:checked { background: white; color: #4338ca; border-color: white; }
@@ -54,7 +54,7 @@
     /* Compact 'Segmented' Size Buttons */
     QPushButton#btnCapSize320, QPushButton#btnCapSize640 { 
         background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.2); 
-        padding: 4px 10px; font-weight: bold; font-size: 11px; color: #cbd5e1; 
+        padding: 4px 10px; font-weight: bold; font-size: 14px; color: #cbd5e1; 
     }
     QPushButton#btnCapSize320 { border-top-left-radius: 8px; border-bottom-left-radius: 8px; border-right: none; }
     QPushButton#btnCapSize640 { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
@@ -65,7 +65,7 @@
     QPushButton#btnStartTraining { 
         background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #16a34a, stop:1 #059669); 
         color: white; border-radius: 8px; font-weight: bold; border: none; 
-        min-height: 48px; font-size: 15px; margin: 12px;
+        min-height: 48px; font-size: 18px; margin: 12px;
     }
     QPushButton#btnStartTraining:hover { background-color: #15803d; }
     QPushButton#btnStartTraining:disabled { background: #94a3b8; }
@@ -73,14 +73,14 @@
     /* ================= Forms and Misc ================= */
     QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { 
         border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; 
-        background-color: #f8fafc; font-size: 13px; color: #0f172a; 
+        background-color: #f8fafc; font-size: 17px; color: #0f172a; 
     }
     QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid #3b82f6; background-color: white; }
     
-    QLabel#lblBackbone, QLabel#lblEpochs, QLabel#lblBatch, QLabel#lblLR, QLabel#lblOpt, QLabel#lblImgSize { font-weight: bold; font-size: 13px; color: #1e293b; background: transparent; }
+    QLabel#lblBackbone, QLabel#lblEpochs, QLabel#lblBatch, QLabel#lblLR, QLabel#lblOpt, QLabel#lblImgSize { font-weight: bold; font-size: 17px; color: #1e293b; background: transparent; }
 
     QFrame#metricCard { border-radius: 8px; padding: 10px; border: 1px solid rgba(0,0,0,0.05); }
-    QLabel#metricTitle { color: rgba(0,0,0,0.6); font-size: 11px; font-weight: bold; background: transparent; }
+    QLabel#metricTitle { color: rgba(0,0,0,0.6); font-size: 14px; font-weight: bold; background: transparent; }
     QLabel#metricValue { color: #0f172a; font-size: 20px; font-weight: bold; background: transparent; }
     
     QScrollArea { border: none; background: transparent; }
@@ -269,7 +269,7 @@
                  <item>
                   <layout class="QHBoxLayout" name="dsHeader">
                    <item><widget class="QLabel" name="dsIcon"><property name="text"><string>⚡</string></property><property name="font"><font><pointsize>12</pointsize><bold>true</bold></font></property><property name="styleSheet"><string notr="true">color: #1e40af;</string></property></widget></item>
-                   <item><widget class="QLabel" name="dsTitle"><property name="text"><string>Dataset</string></property><property name="styleSheet"><string notr="true">font-weight: bold; color: #1e3a8a; font-size: 13px;</string></property></widget></item>
+                   <item><widget class="QLabel" name="dsTitle"><property name="text"><string>Dataset</string></property><property name="styleSheet"><string notr="true">font-weight: bold; color: #1e3a8a; font-size: 17px;</string></property></widget></item>
                    <item>
                     <spacer name="dsSpacerTitle">
                      <property name="orientation"><enum>Qt::Horizontal</enum></property>
@@ -278,7 +278,7 @@
                    </item>
                   </layout>
                  </item>
-                 <item><widget class="QLabel" name="lblDsHint"><property name="text"><string>training images collected</string></property><property name="styleSheet"><string notr="true">color: #3b82f6; font-size: 11px; font-weight: 600;</string></property></widget></item>
+                 <item><widget class="QLabel" name="lblDsHint"><property name="text"><string>training images collected</string></property><property name="styleSheet"><string notr="true">color: #3b82f6; font-size: 14px; font-weight: 600;</string></property></widget></item>
                 </layout>
                </item>
                <item>
@@ -287,7 +287,7 @@
                  <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property>
                 </spacer>
                </item>
-               <item><widget class="QLabel" name="lblImageCountLarge"><property name="text"><string>0</string></property><property name="styleSheet"><string notr="true">font-size: 28px; font-weight: bold; color: #2563eb;</string></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+               <item><widget class="QLabel" name="lblImageCountLarge"><property name="text"><string>0</string></property><property name="styleSheet"><string notr="true">font-size: 34px; font-weight: bold; color: #2563eb;</string></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
               </layout>
              </widget>
             </item>
@@ -297,13 +297,10 @@
               <property name="spacing"><number>2</number></property>
               <item><widget class="QLabel" name="lblBackbone"><property name="text"><string>Pre-trained Model</string></property></widget></item>
               <item>
-               <widget class="QComboBox" name="comboBackbone">
-                <property name="styleSheet"><string notr="true">QComboBox { padding-left: 10px; font-weight: 500; }</string></property>
-                <item><property name="text"><string>YOLOv8 Nano (Fastest)</string></property></item>
-                <item><property name="text"><string>YOLOv8 Small (Balanced)</string></property></item>
-                <item><property name="text"><string>MobileNet V2 (Lightweight)</string></property></item>
-                <item><property name="text"><string>ResNet50 (Deep)</string></property></item>
-                <item><property name="text"><string>EfficientNet B0 (Efficient)</string></property></item>
+               <!-- Changed from QComboBox to QLabel to statically show YOLOv8n -->
+               <widget class="QLabel" name="lblStaticBackbone">
+                <property name="styleSheet"><string notr="true">QLabel { font-weight: bold; color: #16a34a; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 6px; font-size: 15px;}</string></property>
+                <property name="text"><string>YOLOv8 Nano (Fastest)</string></property>
                </widget>
               </item>
              </layout>
@@ -327,10 +324,9 @@
               </item>
               
               <item row="1" column="1">
-               <widget class="QComboBox" name="comboImgSize">
-                <item><property name="text"><string>640 (High Detail)</string></property></item>
-                <item><property name="text"><string>416 (Balanced)</string></property></item>
-                <item><property name="text"><string>224 (Performance)</string></property></item>
+               <widget class="QLabel" name="lblStaticImgSize">
+                <property name="text"><string>640x640 (High Detail)</string></property>
+                <property name="styleSheet"><string notr="true">QLabel { font-weight: bold; color: #16a34a; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 6px; font-size: 15px;}</string></property>
                </widget>
               </item>
 
@@ -422,14 +418,14 @@
               <layout class="QVBoxLayout" name="ebfLayout">
                <item>
                 <layout class="QHBoxLayout" name="ebHeader">
-                 <item><widget class="QLabel" name="lblEpochProgTitle"><property name="text"><string>Epoch Progress</string></property><property name="styleSheet"><string notr="true">font-weight: 600; color: #475569; font-size: 11px;</string></property></widget></item>
+                 <item><widget class="QLabel" name="lblEpochProgTitle"><property name="text"><string>Epoch Progress</string></property><property name="styleSheet"><string notr="true">font-weight: 600; color: #475569; font-size: 14px;</string></property></widget></item>
                  <item>
                   <spacer name="ebSpacer">
                    <property name="orientation"><enum>Qt::Horizontal</enum></property>
                    <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
                   </spacer>
                  </item>
-                 <item><widget class="QLabel" name="lblEpochCounter"><property name="text"><string>0 / 0</string></property><property name="styleSheet"><string notr="true">font-family: 'Consolas'; color: #475569; font-size: 11px;</string></property></widget></item>
+                 <item><widget class="QLabel" name="lblEpochCounter"><property name="text"><string>0 / 0</string></property><property name="styleSheet"><string notr="true">font-family: 'Consolas'; color: #475569; font-size: 14px;</string></property></widget></item>
                 </layout>
                </item>
                <item>
@@ -500,13 +496,13 @@
            <property name="styleSheet"><string notr="true">background: #f8fafc; border: 2px dashed #e2e8f0; border-radius: 12px;</string></property>
            <layout class="QVBoxLayout" name="spLayout">
             <item>
-             <widget class="QLabel" name="statusIcon"><property name="text"><string>📷</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="styleSheet"><string notr="true">font-size: 40px; color: #cbd5e1;</string></property></widget>
+             <widget class="QLabel" name="statusIcon"><property name="text"><string>📷</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="styleSheet"><string notr="true">font-size: 50px; color: #cbd5e1;</string></property></widget>
             </item>
             <item>
-             <widget class="QLabel" name="statusMsg"><property name="text"><string>Model Not Ready</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="styleSheet"><string notr="true">font-weight: bold; font-size: 15px; color: #94a3b8;</string></property></widget>
+             <widget class="QLabel" name="statusMsg"><property name="text"><string>Model Not Ready</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="styleSheet"><string notr="true">font-weight: bold; font-size: 18px; color: #94a3b8;</string></property></widget>
             </item>
             <item>
-             <widget class="QLabel" name="statusHint"><property name="text"><string>Train your model to enable live fast validation here.</string></property><property name="wordWrap"><bool>true</bool></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="styleSheet"><string notr="true">color: #94a3b8; font-size: 11px; padding: 0 10px;</string></property></widget>
+             <widget class="QLabel" name="statusHint"><property name="text"><string>Train your model to enable live fast validation here.</string></property><property name="wordWrap"><bool>true</bool></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="styleSheet"><string notr="true">color: #94a3b8; font-size: 14px; padding: 0 10px;</string></property></widget>
             </item>
            </layout>
           </widget>

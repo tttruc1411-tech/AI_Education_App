@@ -5,20 +5,23 @@ import subprocess
 import base64
 import re
 from datetime import datetime
-from PyQt6.QtCore import Qt, QDir, QProcess, QTimer
-from PyQt6.QtGui import QColor, QFont, QFileSystemModel, QImage, QPixmap
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QStackedWidget, QPushButton, QFrame,
+from PyQt5.QtCore import Qt, QDir, QProcess, QTimer, QEvent, QPoint
+from PyQt5.QtGui import QColor, QFont, QImage, QPixmap
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QStackedWidget, QPushButton, QFrame,
                              QTextEdit, QPlainTextEdit, QInputDialog, QMessageBox, QWidget,
                              QHBoxLayout, QTreeView, QLabel, QVBoxLayout, QSplitter, QSizePolicy,
                              QLineEdit, QFileDialog, QScrollArea, QGridLayout, QRubberBand,
-                             QProgressBar, QSpinBox, QDoubleSpinBox, QComboBox)
-from PyQt6.QtGui import QShortcut, QKeySequence
-from PyQt6.uic import loadUi
+                             QProgressBar, QSpinBox, QDoubleSpinBox, QComboBox, QFileSystemModel,
+                             QShortcut)
+from PyQt5.QtGui import QKeySequence
+from PyQt5.uic import loadUi
 from src.modules.translations import STRINGS
 import matplotlib
 matplotlib.use('QtAgg')
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+
+from src.modules.training_components import MultiClassTagPanel
 import numpy as np
 
 # ────────────────────────────────────────────────────────────
@@ -66,42 +69,70 @@ class TrainingCanvas(FigureCanvas):
 #  Annotation Label for Detection Mode
 # ────────────────────────────────────────────────────────────
 
-from PyQt6.QtCore import pyqtSignal, QRect, QPoint, QSize
-from PyQt6.QtGui import QPainter, QPen
+from PyQt5.QtCore import pyqtSignal, QRect, QPoint, QSize
+from PyQt5.QtGui import QPainter, QPen
 
 class AnnotationLabel(QLabel):
-    box_drawn = pyqtSignal(object) # Using object for QRect compatibility
+    box_drawn = pyqtSignal(object) 
+    save_requested = pyqtSignal()
+    close_requested = pyqtSignal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.StrongFocus)
         self.is_drawing = False
         self.image_pixmap = None
         self.start_point = QPoint()
         self.end_point = QPoint()
         self.current_mouse_pos = QPoint()
-        self.norm_box = None # (cx, cy, w, h)
-        # 🧪 Isolated Features for Detection Mode
+        
+        # 📦 Multi-Box State
+        self.all_boxes = [] # List of {"norm_box": (cx, cy, w, h), "class_id": int, "class_name": str}
+        self.selected_box_idx = -1
+        
+        # 🔧 Interactive Resizing State
+        self.handle_size = 10
+        self.active_handle = None # 'tl', 'tr', 'bl', 'br', 'move'
+        self.is_resizing = False
+        self.drag_start_norm = None
+        
+        # 🧪 Detection Context
+        self.active_class_id = 0
+        self.active_class_name = ""
         self.is_capture_mode = False 
-        self.class_name = ""
+        self.class_name = "" # Fallback
         
-    def set_image(self, pixmap):
+    def setPixmap(self, pixmap):
+        """Override to keep image_pixmap in sync with QLabel's pixmap."""
+        super().setPixmap(pixmap)
         self.image_pixmap = pixmap
-        # Reset box on new image unless we are specifically in detection capture loop
-        if not self.is_capture_mode:
-            self.norm_box = None
-        self.update()
-        
-    def set_norm_box(self, cx, cy, w, h):
-        self.norm_box = (cx, cy, w, h)
-        self.update()
-        
-    def clear_box(self):
-        self.norm_box = None
         self.update()
 
+    def set_image(self, pixmap):
+        self.setPixmap(pixmap)
+        
+    def add_box(self, cx, cy, w, h, class_id, class_name):
+        self.all_boxes.append({
+            "norm_box": (cx, cy, w, h),
+            "class_id": class_id,
+            "class_name": class_name
+        })
+        self.selected_box_idx = len(self.all_boxes) - 1
+        self.update()
+        
+    def clear_all(self):
+        self.all_boxes = []
+        self.selected_box_idx = -1
+        self.update()
+
+    def delete_selected(self):
+        if 0 <= self.selected_box_idx < len(self.all_boxes):
+            self.all_boxes.pop(self.selected_box_idx)
+            self.selected_box_idx = -1
+            self.update()
+
     def _pixel_to_norm(self, pos):
-        """Convert a QPoint (pixel) to normalized image coordinates."""
         rect = self._get_image_rect()
         if not rect.isValid(): return None
         nx = (pos.x() - rect.x()) / rect.width()
@@ -109,117 +140,213 @@ class AnnotationLabel(QLabel):
         return nx, ny
 
     def _norm_to_pixel(self, cx, cy, w, h):
-        """Convert normalized coordinates to a QRect (pixels)."""
         rect = self._get_image_rect()
         if not rect.isValid(): return QRect()
-        
         lx = (cx - w/2) * rect.width() + rect.x()
         ly = (cy - h/2) * rect.height() + rect.y()
         lw = w * rect.width()
         lh = h * rect.height()
         return QRect(int(lx), int(ly), int(lw), int(lh))
 
+    def _get_handles(self, pixel_box):
+        if pixel_box.isNull(): return {}
+        return {
+            'tl': pixel_box.topLeft(),
+            'tr': pixel_box.topRight(),
+            'bl': pixel_box.bottomLeft(),
+            'br': pixel_box.bottomRight()
+        }
+
+    def _hit_test(self, pos):
+        # Priority 1: Check handles of SELECTED box
+        if 0 <= self.selected_box_idx < len(self.all_boxes):
+            box = self.all_boxes[self.selected_box_idx]
+            pb = self._norm_to_pixel(*box["norm_box"])
+            handles = self._get_handles(pb)
+            for h_type, h_pos in handles.items():
+                if (pos - h_pos).manhattanLength() < self.handle_size * 2:
+                    return self.selected_box_idx, h_type
+        
+        # Priority 2: Check all boxes (from top to bottom / reverse list)
+        for i in reversed(range(len(self.all_boxes))):
+            box = self.all_boxes[i]
+            pb = self._norm_to_pixel(*box["norm_box"])
+            if pb.contains(pos):
+                return i, 'move'
+        return None, None
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
-        # 1. Background Fill
         painter.fillRect(self.rect(), QColor("#000"))
         
-        # 2. Draw image
         rect = self._get_image_rect()
         if self.image_pixmap and not self.image_pixmap.isNull():
             painter.drawPixmap(rect, self.image_pixmap)
         else:
             painter.setPen(QColor("#64748b"))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Camera Ready")
+            painter.drawText(self.rect(), Qt.AlignCenter, "Select an image to annotate")
             
-        # 3. Enhanced UI for Detection Only
-        if self.is_capture_mode or self.class_name:
-            # Crosshair
-            if self.underMouse() and rect.contains(self.current_mouse_pos):
-                painter.setPen(QPen(QColor(255, 255, 255, 80), 1, Qt.PenStyle.DashLine))
+        # Draw Crosshair
+        if self.underMouse() and rect.isValid() and rect.contains(self.current_mouse_pos):
+            if not self.is_resizing and not self.is_drawing:
+                painter.setPen(QPen(QColor(255, 255, 255, 60), 1, Qt.DashLine))
                 painter.drawLine(rect.left(), self.current_mouse_pos.y(), rect.right(), self.current_mouse_pos.y())
                 painter.drawLine(self.current_mouse_pos.x(), rect.top(), self.current_mouse_pos.x(), rect.bottom())
 
-        # 4. Draw Box
-        pixel_box = QRect()
-        if self.is_drawing:
-            pixel_box = QRect(self.start_point, self.end_point).normalized()
-            if rect.isValid(): pixel_box = pixel_box.intersected(rect)
-        elif self.norm_box:
-            pixel_box = self._norm_to_pixel(*self.norm_box)
+        # Palette match (Sync with main.py colors)
+        palette = ["#a855f7", "#fb7185", "#3b82f6", "#10b981"]
 
-        if not pixel_box.isNull():
-            if self.is_capture_mode or self.class_name:
-                # Pro Detection Look (Purple Glow)
-                pen = QPen(QColor("#a855f7"), 3, Qt.PenStyle.SolidLine)
-                painter.setPen(pen)
-                painter.setBrush(QColor(168, 85, 247, 30))
-                painter.drawRect(pixel_box)
-                
-                # Corner handles
-                painter.setBrush(QColor("#a855f7"))
-                r = 4
-                painter.drawEllipse(pixel_box.topLeft(), r, r)
-                painter.drawEllipse(pixel_box.topRight(), r, r)
-                painter.drawEllipse(pixel_box.bottomLeft(), r, r)
-                painter.drawEllipse(pixel_box.bottomRight(), r, r)
-            else:
-                # Classic look for Recognition/Gallery
-                pen = QPen(QColor("#7c3aed"), 2, Qt.PenStyle.SolidLine)
-                painter.setPen(pen)
-                painter.setBrush(QColor(124, 58, 237, 40))
-                painter.drawRect(pixel_box)
+        # 4. Draw ALL Existing Boxes
+        for i, box_data in enumerate(self.all_boxes):
+            cx, cy, w, h = box_data["norm_box"]
+            pixel_box = self._norm_to_pixel(cx, cy, w, h)
+            is_selected = (i == self.selected_box_idx)
             
+            color_hex = palette[box_data["class_id"] % len(palette)]
+            color = QColor(color_hex)
+            
+            # Box Body
+            pen_width = 3 if is_selected else 1
+            painter.setPen(QPen(color, pen_width))
+            painter.setBrush(QColor(color.red(), color.green(), color.blue(), 40 if is_selected else 20))
+            painter.drawRect(pixel_box)
+            
+            # Label
+            name = box_data["class_name"] or f"Tag {box_data['class_id']}"
+            painter.setBrush(color)
+            painter.setPen(Qt.PenStyle.NoPen)
+            lbl_w = painter.fontMetrics().horizontalAdvance(name) + 12
+            label_rect = QRect(pixel_box.left(), pixel_box.top() - 18, lbl_w, 18)
+            if label_rect.top() < rect.top(): label_rect.moveTop(pixel_box.top())
+            painter.drawRoundedRect(label_rect, 3, 3)
+            
+            painter.setPen(Qt.white)
+            font = painter.font()
+            font.setPixelSize(10)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.drawText(label_rect, Qt.AlignCenter, name)
+
+            # handles for selection
+            if is_selected:
+                painter.setBrush(color)
+                painter.setPen(QPen(Qt.white, 1))
+                for h_pos in self._get_handles(pixel_box).values():
+                    painter.drawEllipse(h_pos, self.handle_size//2, self.handle_size//2)
+
+        # 5. Draw currently drawing box
+        if self.is_drawing:
+            color = QColor(palette[self.active_class_id % len(palette)])
+            draw_box = QRect(self.start_point, self.end_point).normalized()
+            if rect.isValid(): draw_box = draw_box.intersected(rect)
+            painter.setPen(QPen(color, 2, Qt.DashLine))
+            painter.drawRect(draw_box)
+
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and self.image_pixmap:
-            img_rect = self._get_image_rect()
-            if img_rect.contains(event.pos()):
-                self.is_drawing = True
-                self.start_point = event.pos()
-                self.end_point = event.pos()
+        if event.button() == Qt.LeftButton and self.image_pixmap:
+            idx, hit = self._hit_test(event.pos())
+            if idx is not None:
+                self.selected_box_idx = idx
+                self.active_handle = hit
+                self.is_resizing = True
+                self.drag_start_norm = self._pixel_to_norm(event.pos())
                 self.update()
-        elif event.button() == Qt.MouseButton.RightButton:
-            self.clear_box()
-            
+            else:
+                img_rect = self._get_image_rect()
+                if img_rect.contains(event.pos()):
+                    self.selected_box_idx = -1
+                    self.is_drawing = True
+                    self.start_point = event.pos()
+                    self.end_point = event.pos()
+                    self.update()
+        elif event.button() == Qt.RightButton:
+            self.delete_selected()
+
     def mouseMoveEvent(self, event):
         self.current_mouse_pos = event.pos()
+        rect = self._get_image_rect()
+        
         if self.is_drawing:
             self.end_point = event.pos()
+            self.update()
+        elif self.is_resizing and 0 <= self.selected_box_idx < len(self.all_boxes):
+            curr_norm = self._pixel_to_norm(event.pos())
+            if not curr_norm or not self.drag_start_norm: return
+            
+            box = self.all_boxes[self.selected_box_idx]
+            cx, cy, w, h = box["norm_box"]
+            dx = curr_norm[0] - self.drag_start_norm[0]
+            dy = curr_norm[1] - self.drag_start_norm[1]
+            
+            if self.active_handle == 'move':
+                cx = max(w/2, min(1-w/2, cx + dx))
+                cy = max(h/2, min(1-h/2, cy + dy))
+            elif self.active_handle == 'tl':
+                nx1, ny1 = max(0, min(cx+w/2-0.01, cx-w/2+dx)), max(0, min(cy+h/2-0.01, cy-h/2+dy))
+                nx2, ny2 = cx + w/2, cy + h/2
+                cx, cy, w, h = (nx1+nx2)/2, (ny1+ny2)/2, nx2-nx1, ny2-ny1
+            elif self.active_handle == 'br':
+                nx1, ny1 = cx - w/2, cy - h/2
+                nx2, ny2 = max(cx-w/2+0.01, min(1, cx+w/2+dx)), max(cy-h/2+0.01, min(1, cy+h/2+dy))
+                cx, cy, w, h = (nx1+nx2)/2, (ny1+ny2)/2, nx2-nx1, ny2-ny1
+            elif self.active_handle == 'tr':
+                nx1, ny1 = cx - w/2, max(0, min(cy+h/2-0.01, cy-h/2+dy))
+                nx2, ny2 = max(cx-w/2+0.01, min(1, cx+w/2+dx)), cy + h/2
+                cx, cy, w, h = (nx1+nx2)/2, (ny1+ny2)/2, nx2-nx1, ny2-ny1
+            elif self.active_handle == 'bl':
+                nx1, ny1 = max(0, min(cx+w/2-0.01, cx-w/2+dx)), cy - h/2
+                nx2, ny2 = cx + w/2, max(cy-h/2+0.01, min(1, cy+h/2+dy))
+                cx, cy, w, h = (nx1+nx2)/2, (ny1+ny2)/2, nx2-nx1, ny2-ny1
+
+            self.all_boxes[self.selected_box_idx]["norm_box"] = (cx, cy, w, h)
+            self.drag_start_norm = curr_norm
+            self.update()
+        else:
+            idx, hit = self._hit_test(event.pos())
+            if hit == 'move': self.setCursor(Qt.SizeAllCursor)
+            elif hit in ('tl', 'br'): self.setCursor(Qt.SizeFDiagCursor)
+            elif hit in ('tr', 'bl'): self.setCursor(Qt.SizeBDiagCursor)
+            elif rect.contains(event.pos()): self.setCursor(Qt.CrossCursor)
+            else: self.setCursor(Qt.ArrowCursor)
+            
         self.update()
             
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and self.is_drawing:
+        if self.is_drawing:
             self.is_drawing = False
             pixel_box = QRect(self.start_point, event.pos()).normalized()
             img_rect = self._get_image_rect()
-            if img_rect.isValid():
+            if img_rect.isValid() and pixel_box.width() > 5 and pixel_box.height() > 5:
                 pixel_box = pixel_box.intersected(img_rect)
                 cx_norm = (pixel_box.center().x() - img_rect.x()) / img_rect.width()
                 cy_norm = (pixel_box.center().y() - img_rect.y()) / img_rect.height()
                 w_norm = pixel_box.width() / img_rect.width()
                 h_norm = pixel_box.height() / img_rect.height()
-                self.norm_box = (cx_norm, cy_norm, w_norm, h_norm)
-                self.box_drawn.emit(pixel_box)
-            self.update()
+                self.add_box(cx_norm, cy_norm, w_norm, h_norm, self.active_class_id, self.active_class_name)
+        elif self.is_resizing:
+            self.is_resizing = False
+            self.active_handle = None
+        self.update()
             
     def _get_image_rect(self):
-        if not self.image_pixmap or self.image_pixmap.isNull():
-            return QRect()
-        lbl_w, lbl_h = self.width(), self.height()
-        img_w, img_h = self.image_pixmap.width(), self.image_pixmap.height()
+        if not self.image_pixmap or self.image_pixmap.isNull(): return QRect()
+        lbl_w, lbl_h, img_w, img_h = self.width(), self.height(), self.image_pixmap.width(), self.image_pixmap.height()
         scale = min(lbl_w / img_w, lbl_h / img_h)
         final_w, final_h = int(img_w * scale), int(img_h * scale)
         return QRect((lbl_w - final_w) // 2, (lbl_h - final_h) // 2, final_w, final_h)
 
-    def get_normalized_box(self):
-        if not self.norm_box: return None
-        return tuple(round(x, 6) for x in self.norm_box)
+    def get_all_normalized_boxes(self):
+        return [tuple(round(x, 6) for x in b["norm_box"]) + (b["class_id"],) for b in self.all_boxes]
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace:
-            self.clear_box()
+        if event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
+            self.delete_selected()
+        elif event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+            self.save_requested.emit()
+        elif event.key() == Qt.Key_Escape:
+            if self.selected_box_idx != -1: self.selected_box_idx = -1
+            else: self.close_requested.emit()
         super().keyPressEvent(event)
 
 
@@ -259,7 +386,7 @@ class CurriculumCard(QFrame):
         # 1. Icon
         icon_str = icon.strip('"\' ')
         icon_lbl = QLabel()
-        from PyQt6.QtGui import QPixmap, QFont
+        from PyQt5.QtGui import QPixmap, QFont
         import os
         
         if icon_str.lower().endswith(('.png', '.jpg', '.jpeg', '.svg')):
@@ -267,7 +394,7 @@ class CurriculumCard(QFrame):
             pixmap = QPixmap(icon_str)
             if not pixmap.isNull():
                 # Scale smoothly to fit the icon slot
-                pixmap = pixmap.scaled(40, 40, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                pixmap = pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 icon_lbl.setPixmap(pixmap)
             else:
                 icon_lbl.setText("❓")
@@ -278,7 +405,7 @@ class CurriculumCard(QFrame):
             icon_lbl.setFont(QFont("Segoe UI", 24))
             
         icon_lbl.setMinimumWidth(40)
-        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_lbl.setAlignment(Qt.AlignCenter)
         layout.addWidget(icon_lbl)
         
         # 2. Body Container (V-Box to hold the two horizontal rows)
@@ -288,15 +415,15 @@ class CurriculumCard(QFrame):
         # --- ROW 1: Title + Badge ---
         row1 = QHBoxLayout()
         title_lbl = QLabel(title)
-        title_lbl.setStyleSheet("font-weight: bold; font-size: 14px; color: #1e293b; background: transparent;")
+        title_lbl.setStyleSheet("font-weight: bold; font-size: 18px; color: #1e293b; background: transparent;")
         
         # Level Badge
         badge_colors = {"Beginner": "#08a54f", "Intermediate": "#f6710b", "Advanced": "#b51414"}
         badge_bg = badge_colors.get(level, "#64748b")
         badge = QLabel(level)
-        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setAlignment(Qt.AlignCenter)
         badge.setFixedSize(80, 20)
-        badge.setStyleSheet(f"background: {badge_bg}; color: white; border-radius: 6px; font-size: 10px; font-weight: bold;")
+        badge.setStyleSheet(f"background: {badge_bg}; color: white; border-radius: 6px; font-size: 14px; font-weight: bold;")
         
         row1.addWidget(title_lbl, 1)
         row1.addWidget(badge)
@@ -306,11 +433,11 @@ class CurriculumCard(QFrame):
         row2 = QHBoxLayout()
         desc_lbl = QLabel(desc)
         desc_lbl.setWordWrap(True)
-        desc_lbl.setStyleSheet("color: #475569; font-size: 11px; background: transparent;")
+        desc_lbl.setStyleSheet("color: #475569; font-size: 15px; background: transparent;")
         
         # Load Button
         btn_load = QPushButton("Load")
-        btn_load.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_load.setCursor(Qt.PointingHandCursor)
         btn_load.setFixedSize(80, 28)
         btn_load.setStyleSheet("""
             QPushButton { 
@@ -319,7 +446,7 @@ class CurriculumCard(QFrame):
                 color: white; 
                 border-radius: 12px; 
                 font-weight: bold; 
-                font-size: 11px; 
+                font-size: 15px; 
                 border: none;
                 padding: 4px;
             }
@@ -345,6 +472,52 @@ from src.modules.library.manager import prepare_code_injection
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
+
+class DarkTooltipFilter(QWidget):
+    """Application-level event filter that replaces the native OS tooltip
+    with a custom dark QLabel, bypassing Windows' native white renderer."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._tip = QLabel(self)
+        self._tip.setWindowFlags(
+            Qt.ToolTip |
+            Qt.BypassGraphicsProxyWidget
+        )
+        self._tip.setAttribute(Qt.WA_ShowWithoutActivating)
+        self._tip.setContentsMargins(0, 0, 0, 0)
+        self._tip.setWordWrap(False)
+        self._tip.setStyleSheet("""
+            QLabel {
+                background-color: #1e293b;
+                color: #f1f5f9;
+                border: 1px solid #334155;
+                border-radius: 5px;
+                font-size: 13px;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                padding: 3px 8px;
+            }
+        """)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.ToolTip:
+            w = obj
+            text = w.toolTip() if hasattr(w, 'toolTip') else ""
+            if text:
+                self._tip.setText(text)
+                self._tip.adjustSize()
+                # Show near cursor
+                pos = event.globalPos()
+                self._tip.move(pos.x() + 12, pos.y() + 18)
+                self._tip.show()
+            else:
+                self._tip.hide()
+            return True  # consume the event so native tooltip never shows
+        if event.type() in (QEvent.Leave, QEvent.MouseButtonPress,
+                            QEvent.KeyPress, QEvent.Wheel):
+            self._tip.hide()
+        return False
+
+
 class AICodingLab(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -352,7 +525,6 @@ class AICodingLab(QMainWindow):
         # 1. Setup Paths
         self.ui_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "ui")
         
-        # 1.5 Initialize File Manager
         self.file_manager = FileManager(os.path.dirname(os.path.abspath(__file__)))
         self.current_lang = "en" # Default to English
         self.current_open_file = None
@@ -377,7 +549,7 @@ class AICodingLab(QMainWindow):
             self.mainStack.addWidget(self.training_mode_widget)
 
             # Set 1:1.8:1 initial proportions for training mode splitters
-            from PyQt6.QtWidgets import QSplitter
+            from PyQt5.QtWidgets import QSplitter
             h_splitter = self.training_mode_widget.findChild(QSplitter, "horizontalSplitter")
             if h_splitter:
                 h_splitter.setSizes([100, 260, 100])
@@ -436,30 +608,39 @@ class AICodingLab(QMainWindow):
         save_shortcut.activated.connect(self.save_current_file)
 
         from src.modules.advanced_editor import AdvancedPythonEditor
-        old_editor = self.running_mode_widget.findChild(QTextEdit, "monacoPlaceholder")
+        from PyQt5.QtWidgets import QSplitter
         
-        # Dynamically hot-swap the basic text area with the advanced Scintilla Syntax Editor
-        parent_widget = old_editor.parentWidget()
-        from PyQt6.QtWidgets import QSplitter
-        
-        self.monacoPlaceholder = AdvancedPythonEditor()
-        self.monacoPlaceholder.setObjectName("monacoPlaceholder")
-        
-        if isinstance(parent_widget, QSplitter):
-            # QSplitters do not use generic .layout() arrays!
-            idx = parent_widget.indexOf(old_editor)
-            parent_widget.replaceWidget(idx, self.monacoPlaceholder)
-        elif parent_widget.layout() is not None:
-            parent_widget.layout().replaceWidget(old_editor, self.monacoPlaceholder)
-        else:
-            old_editor.setParent(None)
-            self.monacoPlaceholder.setParent(parent_widget)
+        # --- SWAP EDITORS ---
+        # 1) Running Mode
+        old_running_editor = self.running_mode_widget.findChild(QWidget, "monacoPlaceholder")
+        if old_running_editor:
+            parent_widget = old_running_editor.parentWidget()
+            idx = -1
+            if isinstance(parent_widget, QSplitter):
+                idx = parent_widget.indexOf(old_running_editor)
             
-        old_editor.deleteLater()
-        
-        # Allow the awesome new editor to receive code drops natively
-        self.monacoPlaceholder.setAcceptDrops(True)
-        self.monacoPlaceholder.functionDropped.connect(self.on_function_dropped)
+            self.monacoPlaceholder = AdvancedPythonEditor()
+            self.monacoPlaceholder.setObjectName("monacoPlaceholder")
+            
+            if idx != -1 and isinstance(parent_widget, QSplitter):
+                parent_widget.insertWidget(idx, self.monacoPlaceholder)
+                old_running_editor.setParent(None)
+                old_running_editor.deleteLater()
+            elif parent_widget.layout():
+                parent_widget.layout().replaceWidget(old_running_editor, self.monacoPlaceholder)
+                old_running_editor.deleteLater()
+            else:
+                self.monacoPlaceholder.setParent(parent_widget)
+                old_running_editor.deleteLater()
+            
+            self.monacoPlaceholder.setAcceptDrops(True)
+            self.monacoPlaceholder.functionDropped.connect(self.on_function_dropped)
+            self.monacoPlaceholder.show()
+
+        # 2a) Find Splitters for Styling
+        self.mainSplitter = self.running_mode_widget.findChild(QSplitter, "mainSplitter")
+        self.runningEditorSplitter = self.running_mode_widget.findChild(QSplitter, "editorSplitter")
+        self.rightSplitter = self.running_mode_widget.findChild(QSplitter, "rightSplitter")
 
         # B) HUB TABS & STACKED WIDGET
         # FIX: We must find these child widgets inside running_mode_widget first!
@@ -530,23 +711,22 @@ class AICodingLab(QMainWindow):
         if self.cardData: self.cardData.mousePressEvent = lambda e: self.show_folder_contents("Data")
         if self.cardModel: self.cardModel.mousePressEvent = lambda e: self.show_folder_contents("Model")
         if self.btnBackToDashboard: 
-            self.btnBackToDashboard.clicked.connect(lambda: self.workspaceStack.setCurrentIndex(0))
-
+            def handle_back_to_dashboard():
+                self.update_workspace_counts()
+                self.workspaceStack.setCurrentIndex(0)
+            self.btnBackToDashboard.clicked.connect(handle_back_to_dashboard)
 
         self.update_workspace_counts()
 
         # 7. Set Column Ratios (1:2:1)
-        self.mainSplitter = self.running_mode_widget.findChild(QSplitter, "mainSplitter")
         if self.mainSplitter:
             self.mainSplitter.setSizes([300, 600, 300])
 
         # Middle Column: Editor (top) vs Console (bottom) -> Ratio 3:1
-        self.editorSplitter = self.running_mode_widget.findChild(QSplitter, "editorSplitter")
-        if self.editorSplitter:
-            self.editorSplitter.setSizes([600, 200])
+        if self.runningEditorSplitter:
+            self.runningEditorSplitter.setSizes([600, 200])
 
         # Right Column: Camera (top) vs Results (bottom) -> Ratio 1:1
-        self.rightSplitter = self.running_mode_widget.findChild(QSplitter, "rightSplitter")
         if self.rightSplitter:
             self.rightSplitter.setSizes([300, 300])
 
@@ -595,7 +775,7 @@ class AICodingLab(QMainWindow):
                 background: #c4b5fd;
             }
         """
-        for splitter in [self.mainSplitter, self.editorSplitter, self.rightSplitter]:
+        for splitter in [self.mainSplitter, self.runningEditorSplitter, self.rightSplitter]:
             if splitter:
                 splitter.setHandleWidth(3)
                 splitter.setStyleSheet(SPLITTER_STYLE)
@@ -609,12 +789,12 @@ class AICodingLab(QMainWindow):
                 self.camBody.layout().setContentsMargins(0,0,0,0)
             
             self.camDisplay = QLabel()
-            self.camDisplay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.camDisplay.setAlignment(Qt.AlignCenter)
             self.camDisplay.setStyleSheet("background-color: black;")
             self.camDisplay.setScaledContents(True)
             # Essential: Ensure the camera label doesn't have a minimum size that locks the splitter
-            from PyQt6.QtWidgets import QSizePolicy
-            self.camDisplay.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+            from PyQt5.QtWidgets import QSizePolicy
+            self.camDisplay.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
             self.camBody.layout().addWidget(self.camDisplay)
             self.camDisplay.setText("Camera Ready")
             self.camDisplay.setStyleSheet("color: #4b5563; background: black; font-weight: bold;")
@@ -754,6 +934,7 @@ class AICodingLab(QMainWindow):
 
     # --- UI Navigation ---
     def show_running_mode(self):
+        self.update_workspace_counts()
         self.mainStack.setCurrentIndex(0)
 
     def show_training_mode(self):
@@ -802,17 +983,20 @@ class AICodingLab(QMainWindow):
         
         # Add 'Back' button if inside a subfolder
         if subpath:
-            btn_back = QPushButton("🔙 Back to Data folders")
+            import pathlib
+            sub_p = pathlib.Path(subpath)
+            parent_subpath = str(sub_p.parent).replace("\\", "/") if str(sub_p.parent) != "." else None
+            btn_back = QPushButton("🔙 Back" if parent_subpath else "🔙 Back to root Data folder")
             btn_back.setStyleSheet(f"background: {theme['btn']}; color: white; border-radius: 6px; padding: 8px; font-weight: bold; font-size: 13px;")
             btn_back.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn_back.clicked.connect(lambda: self.show_folder_contents(folder_type))
+            btn_back.clicked.connect(lambda _, ps=parent_subpath: self.show_folder_contents(folder_type, subpath=ps))
             self.workspaceFileListLayout.insertWidget(self.workspaceFileListLayout.count() - 1, btn_back)
         
         # ─── DATA FOLDER (Image Gallery / Icon Mode) ───
         if folder_type == "Data":
-            from PyQt6.QtWidgets import QListWidget, QListWidgetItem, QSizePolicy
-            from PyQt6.QtCore import QSize
-            from PyQt6.QtGui import QIcon
+            from PyQt5.QtWidgets import QListWidget, QListWidgetItem, QSizePolicy
+            from PyQt5.QtCore import QSize
+            from PyQt5.QtGui import QIcon
             
             list_widget = QListWidget()
             list_widget.setViewMode(QListWidget.ViewMode.IconMode)
@@ -850,8 +1034,8 @@ class AICodingLab(QMainWindow):
                         item.setText("📄") # Fallback for non-images
                 elif file_path.is_dir():
                     # Render a standard beautiful directory icon at 1/4 area scale
-                    from PyQt6.QtWidgets import QApplication, QStyle
-                    from PyQt6.QtGui import QPainter
+                    from PyQt5.QtWidgets import QApplication, QStyle
+                    from PyQt5.QtGui import QPainter
                     std_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
                     
                     folder_bg = QPixmap(90, 90)
@@ -875,7 +1059,11 @@ class AICodingLab(QMainWindow):
                 import pathlib
                 p = pathlib.Path(clicked_path)
                 if p.is_dir():
-                    self.show_folder_contents("Data", subpath=p.name)
+                    try:
+                        rel_path = p.relative_to(base_path)
+                        self.show_folder_contents("Data", subpath=str(rel_path).replace("\\", "/"))
+                    except ValueError:
+                        self.show_folder_contents("Data", subpath=p.name)
             
             list_widget.itemClicked.connect(on_item_clicked)
 
@@ -1086,7 +1274,7 @@ class AICodingLab(QMainWindow):
             self.monacoPlaceholder.setPlainText(code_content)
             self.current_open_file = filename
             
-            # Clean display name for the console
+                # Clean display name for the console
             display_name = filename.replace(".py", "").replace("_", " ").title()
             self.log_to_console(f"Successfully loaded {display_name} example.")
             
@@ -1124,7 +1312,7 @@ class AICodingLab(QMainWindow):
             if self.btnSaveFile:
                 original = self.btnSaveFile.text()
                 self.btnSaveFile.setText("✅ Saved!")
-                from PyQt6.QtCore import QTimer
+                from PyQt5.QtCore import QTimer
                 QTimer.singleShot(1200, lambda: self.btnSaveFile.setText(original))
         else:
             self.log_to_console(f"Save failed: {result['message']}", is_error=True)
@@ -1147,7 +1335,7 @@ class AICodingLab(QMainWindow):
         # Title Button
         btn_title = QPushButton(filename)
         btn_title.setObjectName("TabTitle")
-        btn_title.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        btn_title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         btn_title.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_title.clicked.connect(lambda _, n=filename: self.load_file_by_tab(n))
         
@@ -1229,7 +1417,8 @@ class AICodingLab(QMainWindow):
         result = self.file_manager.read_file(filename, folder='Code')
         if not result['success']: result = self.file_manager.read_file(filename, folder='Projects')
         if result['success']:
-            self.monacoPlaceholder.setPlainText(result['content'])
+            if self.monacoPlaceholder:
+                self.monacoPlaceholder.setPlainText(result['content'])
             self.set_active_tab(filename)
 
     # ──────────────────────────────────────────────────────────
@@ -1249,6 +1438,7 @@ class AICodingLab(QMainWindow):
             return
 
         code_text = self.monacoPlaceholder.toPlainText()
+            
         filename  = self.current_open_file
 
         # 1. Save a run-copy to disk
@@ -1291,7 +1481,7 @@ class AICodingLab(QMainWindow):
         
         # FIX: Ensure project root is in PYTHONPATH for the child process
         # This allows internal modules like 'src.modules...' to be imported correctly
-        from PyQt6.QtCore import QProcessEnvironment
+        from PyQt5.QtCore import QProcessEnvironment
         env = QProcessEnvironment.systemEnvironment()
         python_path = env.value("PYTHONPATH", "")
         if python_path:
@@ -1411,8 +1601,11 @@ class AICodingLab(QMainWindow):
             self.camDisplay.setStyleSheet("color: #4b5563; background: black; font-weight: bold;")
 
     def on_function_dropped(self, function_id, drop_pos=None):
+        # Determine which editor received the drop
+        editor = self.monacoPlaceholder
+            
         # 1. Get code & find what function usage we need
-        current_code = self.monacoPlaceholder.toPlainText()
+        current_code = editor.toPlainText()
         result = prepare_code_injection(function_id, current_code)
         
         if not result:
@@ -1423,13 +1616,13 @@ class AICodingLab(QMainWindow):
         if result["add_import"]:
             # Check if import already exists (prevent duplicates from being added by multiple drops)
             if result["import_line"] not in current_code:
-                self.monacoPlaceholder.insertAt(f"{result['import_line']}\n", 0, 0)
+                editor.insertAt(f"{result['import_line']}\n", 0, 0)
                 self.log_to_console(STRINGS[self.current_lang]["HINT_ADDED_IMPORT"].format(result['import_line']))
                 import_added = True
 
         # 3. Extract Target Coordinates
         if not drop_pos:
-            line, col = self.monacoPlaceholder.getCursorPosition()
+            line, col = editor.getCursorPosition()
         else:
             line, col = drop_pos
             # Offset if we added an import line
@@ -1457,16 +1650,16 @@ class AICodingLab(QMainWindow):
 
         # 6. Smart Injection: Occupied Line Protection
         # We always want the snippet to have its own line.
-        target_line_text = self.monacoPlaceholder.text(line).strip()
+        target_line_text = editor.text(line).strip()
         
         if target_line_text:
-            # If the targeted line has code, we insert ABOVE it (pushing it down)
-            self.monacoPlaceholder.insertAt(snippet_formatted + "\n", line, 0)
+            # If the targeted line has code, we insert BELOW it as a new line
+            self.monacoPlaceholder.insertAt("\n" + snippet_formatted, line, len(self.monacoPlaceholder.text(line).rstrip()))
         else:
-            # If the line is empty, we just overwrite it with the indented snippet
-            self.monacoPlaceholder.setCursorPosition(line, 0)
-            # Use insertAt to stay consistent and avoid cursor position edge cases
-            self.monacoPlaceholder.insertAt(snippet_formatted, line, 0)
+            # If the line is empty, we replace it with the correctly indented snippet
+            # We clear the existing whitespace if any, then insert
+            self.monacoPlaceholder.setSelection(line, 0, line, len(self.monacoPlaceholder.text(line)))
+            self.monacoPlaceholder.replaceSelectedText(snippet_formatted)
             
         self.log_to_console(STRINGS[self.current_lang]["HINT_INJECTED"].format(function_id))
             
@@ -1500,7 +1693,7 @@ class AICodingLab(QMainWindow):
 
         
         # Wire Recognition / Detection toggle (Group 1 - Task)
-        from PyQt6.QtWidgets import QButtonGroup
+        from PyQt5.QtWidgets import QButtonGroup
         self.task_group = QButtonGroup(self)
         btnRec = self.training_mode_widget.findChild(QPushButton, "btnRecognition")
         btnDet = self.training_mode_widget.findChild(QPushButton, "btnDetection")
@@ -1527,7 +1720,7 @@ class AICodingLab(QMainWindow):
             self.projLayout.setSpacing(6)
             
             lblProj = QLabel("Project name:")
-            lblProj.setStyleSheet("color: white; font-weight: bold; font-size: 11px;")
+            lblProj.setStyleSheet("color: white; font-weight: bold; font-size: 13px;")
             
             self.editProjName = QLineEdit()
             self.editProjName.setPlaceholderText("Enter name...")
@@ -1535,7 +1728,7 @@ class AICodingLab(QMainWindow):
             self.editProjName.setStyleSheet("""
                 QLineEdit { 
                     background: rgba(255, 255, 255, 0.9); border: 2px solid #ef4444; 
-                    border-radius: 6px; padding: 2px 8px; font-size: 12px;
+                    border-radius: 6px; padding: 2px 8px; font-size: 14px;
                 }
             """)
             
@@ -1568,7 +1761,7 @@ class AICodingLab(QMainWindow):
         self.btnCapSize320 = self.training_mode_widget.findChild(QPushButton, "btnCapSize320")
         self.btnCapSize640 = self.training_mode_widget.findChild(QPushButton, "btnCapSize640")
 
-        self.comboImgSize = self.training_mode_widget.findChild(QComboBox, "comboImgSize")
+        self.lblStaticImgSize = self.training_mode_widget.findChild(QLabel, "lblStaticImgSize")
         
         if self.btnCapSize320 and self.btnCapSize640:
             self.size_group.addButton(self.btnCapSize320)
@@ -1577,21 +1770,14 @@ class AICodingLab(QMainWindow):
             
             self.btnCapSize640.setChecked(True)
             
-            def set_size_unified(size, from_button=True):
+            def set_size_unified(size):
                 self._set_capture_size(size)
-                if self.comboImgSize:
-                    idx = 0 if size == 320 else 1
-                    if from_button:
-                        self.comboImgSize.setCurrentIndex(idx)
-                    else:
-                        # Sync button back
-                        (self.btnCapSize320 if size == 320 else self.btnCapSize640).setChecked(True)
+                if self.lblStaticImgSize:
+                    text = "320x320 (Fast)" if size == 320 else "640x640 (High Detail)"
+                    self.lblStaticImgSize.setText(text)
             
             self.btnCapSize320.clicked.connect(lambda: set_size_unified(320))
             self.btnCapSize640.clicked.connect(lambda: set_size_unified(640))
-            
-            if self.comboImgSize:
-                self.comboImgSize.currentIndexChanged.connect(lambda i: set_size_unified(320 if i == 0 else 640, from_button=False))
 
         
         # Wire Add Class
@@ -1640,12 +1826,12 @@ class AICodingLab(QMainWindow):
 
         self._training_total_epochs = 50
         
-        # Training Camera Display (Right Panel) - Upgraded to AnnotationLabel!
-        self.trCamDisplay = AnnotationLabel()
+        # Training Camera Display (Right Panel) - Standard QLabel
+        self.trCamDisplay = QLabel()
         self.trCamDisplay.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.trCamDisplay.setStyleSheet("background: black; border-radius: 12px;")
         self.trCamDisplay.setVisible(False)
-        self.trCamDisplay.setScaledContents(True)
+        self.trCamDisplay.setScaledContents(False)  # Prevents unnatural stretching
         self.trCamDisplay.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         # Handle Enter to capture
         self.trCamDisplay.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -1713,30 +1899,41 @@ class AICodingLab(QMainWindow):
             self.log_to_console(f"Error creating project folder: {str(e)}")
 
     def _update_project_ui_lock(self):
-        """Disable all collection buttons if project not initialized."""
+        """Disable and add helper tooltips to collection elements if project not initialized."""
         locked = not self._project_initialized
+        tip = "⚠️ Please enter project name and click ✔ first." if locked else ""
         
         # 1. Add Class button
         if hasattr(self, 'btnAddClass') and self.btnAddClass:
             self.btnAddClass.setEnabled(not locked)
+            self.btnAddClass.setToolTip(tip)
             
         # 2. Individual class cards
         for info in self._class_data:
-            if not info: continue
-            if "btn_cam" in info: info["btn_cam"].setEnabled(not locked)
-            if "btn_label" in info: info["btn_label"].setEnabled(not locked)
-            for widget in info["card"].findChildren(QPushButton):
-                widget.setEnabled(not locked)
-            for widget in info["card"].findChildren(QLineEdit):
-                widget.setEnabled(not locked)
-                
-        # 3. Image Size buttons
+            if not info or "card" not in info: continue
+            
+            # Set tooltip for the entire card and its children when locked
+            info["card"].setToolTip(tip)
+            
+            for btn in info["card"].findChildren(QPushButton):
+                btn.setEnabled(not locked)
+                btn.setToolTip(tip)
+            
+            for edit in info["card"].findChildren(QLineEdit):
+                # Don't disable name_edit in Recognition mode? 
+                # Actually, in recognition mode each card has its name.
+                # If project is not initialized, we lock the WHOLE CARD.
+                edit.setEnabled(not locked)
+                edit.setToolTip(tip)
+
+        # 3. Image Size buttons (Locked when project active to prevent midway changes)
+        lock_msg = "Cannot change size once project is started."
         if hasattr(self, 'btnCapSize320') and self.btnCapSize320:
-            self.btnCapSize320.setEnabled(locked) # Disable when project initialized (not locked)
+            self.btnCapSize320.setEnabled(locked)
+            if not locked: self.btnCapSize320.setToolTip(lock_msg)
         if hasattr(self, 'btnCapSize640') and self.btnCapSize640:
             self.btnCapSize640.setEnabled(locked)
-        if hasattr(self, 'comboImgSize') and self.comboImgSize:
-            self.comboImgSize.setEnabled(locked)
+            if not locked: self.btnCapSize640.setToolTip(lock_msg)
 
 
     def _set_task_type(self, task):
@@ -1804,12 +2001,11 @@ class AICodingLab(QMainWindow):
         left_panel = self.training_mode_widget.findChild(QFrame, "leftPanel")
         if not left_panel: return
         
-        # The panel itself
+        # The panel itself (collapsible annotation area)
         self._bbox_panel = QFrame(left_panel)
         self._bbox_panel.setObjectName("bboxPanel")
         self._bbox_panel.setVisible(False)
-        self._bbox_panel.setMinimumHeight(120) # Lowered again to stop geometry warnings
-        self._bbox_panel.setMaximumHeight(600)
+        self._bbox_panel.setFixedHeight(350) # Stable default
         self._bbox_panel.setStyleSheet("""
             QFrame#bboxPanel { 
                 background: #0f172a; 
@@ -1840,14 +2036,14 @@ class AICodingLab(QMainWindow):
         header = QFrame()
         header.setStyleSheet("background: #1e293b; border-bottom: 1px solid #334155;")
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 8, 12, 8)
+        header_layout.setContentsMargins(12, 4, 12, 4)
         
         title_layout = QVBoxLayout()
         lbl_title = QLabel()
         lbl_title.setObjectName("bboxTitle")
-        lbl_title.setStyleSheet("color: white; font-weight: bold; font-size: 13px;")
+        lbl_title.setStyleSheet("color: white; font-weight: bold; font-size: 15px;")
         self._bbox_hint = QLabel("Click an image above to annotate it.")
-        self._bbox_hint.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        self._bbox_hint.setStyleSheet("color: #94a3b8; font-size: 13px;")
         title_layout.addWidget(lbl_title)
         title_layout.addWidget(self._bbox_hint)
         
@@ -1867,7 +2063,8 @@ class AICodingLab(QMainWindow):
         self._bbox_canvas.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._bbox_canvas.setStyleSheet("background: #000; color: #64748b;")
         self._bbox_canvas.setText("Select an image to annotate")
-        # Removed hardcoded setMinimumHeight to allow flexible layout
+        self._bbox_canvas.save_requested.connect(self._save_bbox_annotation)
+        self._bbox_canvas.close_requested.connect(self._close_bbox_panel)
         panel_layout.addWidget(self._bbox_canvas, 1)
         
         # Floating Shutter Button for the right-panel webcam (visible when cam active)
@@ -1885,42 +2082,93 @@ class AICodingLab(QMainWindow):
         """)
         self._tr_shutter_btn.clicked.connect(self._capture_image)
         
-        # Bottom action area — two buttons toggled by mode
+        # Bottom action area — enhanced with navigation and info
         bottom_bar = QFrame()
         bottom_bar.setStyleSheet("background: #0f172a; border-top: 1px solid #1e293b;")
-        bottom_bar_layout = QHBoxLayout(bottom_bar)
-        bottom_bar_layout.setContentsMargins(16, 12, 16, 12)
-        bottom_bar_layout.setSpacing(12)
+        bottom_bar_layout = QVBoxLayout(bottom_bar)
+        bottom_bar_layout.setContentsMargins(16, 4, 16, 6)
+        bottom_bar_layout.setSpacing(4)
         
-        # BBox Save button (visible in annotation mode)
-        self._bbox_save_btn = QPushButton("Save Box & Continue ▶")
+        # Row 1: Status and Navigation Info
+        info_row = QHBoxLayout()
+        self._lbl_batch_progress = QLabel("Image 0 of 0")
+        self._lbl_batch_progress.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: bold;")
+        
+        shortcut_hint = QLabel("[Enter] Save  [Del] Clear  [Esc] Close")
+        shortcut_hint.setStyleSheet("color: #475569; font-size: 10px;")
+        
+        info_row.addWidget(self._lbl_batch_progress)
+        info_row.addStretch()
+        info_row.addWidget(shortcut_hint)
+        bottom_bar_layout.addLayout(info_row)
+
+        # Row 2: Navigation and Action Buttons
+        action_row = QHBoxLayout()
+        
+        btn_prev = QPushButton("◀")
+        btn_prev.setFixedSize(36, 36)
+        btn_prev.setToolTip("Previous Image")
+        btn_prev.setStyleSheet("""
+            QPushButton { background: #1e293b; color: white; border: 1px solid #334155; border-radius: 18px; font-weight: bold; }
+            QPushButton:hover { background: #334155; }
+            QPushButton:disabled { color: #334155; }
+        """)
+        btn_prev.clicked.connect(lambda: self._navigate_annotation(-1))
+        self._btn_prev_annotation = btn_prev
+
+        btn_next = QPushButton("▶")
+        btn_next.setFixedSize(36, 36)
+        btn_next.setToolTip("Next Image / Skip")
+        btn_next.setStyleSheet("""
+            QPushButton { background: #1e293b; color: white; border: 1px solid #334155; border-radius: 18px; font-weight: bold; }
+            QPushButton:hover { background: #334155; }
+            QPushButton:disabled { color: #334155; }
+        """)
+        btn_next.clicked.connect(lambda: self._navigate_annotation(1))
+        self._btn_next_annotation = btn_next
+
+        # BBox Save button
+        self._bbox_save_btn = QPushButton("Save & Continue ▶")
         self._bbox_save_btn.setStyleSheet("""
             QPushButton { background: #7c3aed; color: white; border: none; border-radius: 6px;
-                         font-weight: bold; font-size: 13px; padding: 12px 24px; }
+                         font-weight: bold; font-size: 15px; padding: 10px 24px; min-width: 140px; }
             QPushButton:hover { background: #6d28d9; }
         """)
         self._bbox_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._bbox_save_btn.clicked.connect(self._save_bbox_annotation)
         
-        # Camera shutter button (circle, visible in webcam mode)
+        # Camera shutter button
         self._cam_shutter_btn = QPushButton("⬤  Capture")
         self._cam_shutter_btn.setStyleSheet("""
             QPushButton { 
                 background: white; color: #1e293b; border: 4px solid #94a3b8;
-                border-radius: 24px; font-weight: bold; font-size: 14px; 
-                padding: 14px 32px; min-width: 140px;
+                border-radius: 20px; font-weight: bold; font-size: 14px; 
+                padding: 10px 32px; min-width: 120px;
             }
             QPushButton:hover { background: #f0f9ff; border-color: #3b82f6; color: #1d4ed8; }
-            QPushButton:pressed { background: #dbeafe; }
         """)
         self._cam_shutter_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._cam_shutter_btn.setVisible(False)
         self._cam_shutter_btn.clicked.connect(self._capture_image)
         
-        bottom_bar_layout.addStretch()
-        bottom_bar_layout.addWidget(self._bbox_save_btn)
-        bottom_bar_layout.addWidget(self._cam_shutter_btn)
-        bottom_bar_layout.addStretch()
+        action_row.addWidget(btn_prev)
+        action_row.addSpacing(4)
+        action_row.addWidget(btn_next)
+        action_row.addStretch()
+        action_row.addWidget(self._bbox_save_btn)
+        action_row.addWidget(self._cam_shutter_btn)
+        bottom_bar_layout.addLayout(action_row)
+        
+        # Class Selection Bar (Detection Mode)
+        self._bbox_class_selector = QFrame()
+        self._bbox_class_selector.setStyleSheet("background: #0f172a; border-top: 1px solid #1e293b;")
+        self._class_selector_layout = QHBoxLayout(self._bbox_class_selector)
+        self._class_selector_layout.setContentsMargins(12, 4, 12, 4)
+        self._class_selector_layout.setSpacing(6)
+        self._class_btn_group = [] # List of buttons
+        self._active_label_class_idx = 0
+        panel_layout.addWidget(self._bbox_class_selector)
+        
         panel_layout.addWidget(bottom_bar)
         
         # Store handle and add to left panel layout
@@ -1938,14 +2186,14 @@ class AICodingLab(QMainWindow):
             self._bbox_panel_visible = False
 
     def _bbox_handle_press(self, event):
-        self._bbox_drag_start_y = event.globalPosition().y()
+        self._bbox_drag_start_y = event.globalPos().y()
         self._bbox_drag_start_h = self._bbox_panel.height()
 
     def _bbox_handle_move(self, event):
-        delta = int(self._bbox_drag_start_y - event.globalPosition().y())
-        new_h = max(200, min(600, self._bbox_drag_start_h + delta))
-        self._bbox_panel.setMinimumHeight(new_h)
-        self._bbox_panel.setMaximumHeight(new_h)
+        delta = int(self._bbox_drag_start_y - event.globalPos().y())
+        # Tight cap (500px) to ensure we don't push the window beyond display limits (991px high)
+        new_h = max(120, min(500, self._bbox_drag_start_h + delta))
+        self._bbox_panel.setFixedHeight(new_h)
 
     def add_training_class(self, default_name=None):
         """Add a new class card with editable name, image grid, and webcam/upload actions."""
@@ -1958,6 +2206,9 @@ class AICodingLab(QMainWindow):
         # ── Card Frame
         card = QFrame()
         card.setObjectName("classCard")
+        is_detection = (hasattr(self, '_training_task') and self._training_task == "detection")
+        if is_detection:
+            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         card.setStyleSheet("""
             QFrame#classCard { 
                 background: white; 
@@ -1973,8 +2224,8 @@ class AICodingLab(QMainWindow):
         header_frame = QFrame()
         header_frame.setStyleSheet("background: #f8fafc; border-bottom: 1px solid #f1f5f9; border-radius: 0;")
         header_layout = QHBoxLayout(header_frame)
-        header_layout.setContentsMargins(12, 10, 12, 10)
-        header_layout.setSpacing(8)
+        header_layout.setContentsMargins(12, 6, 12, 6)
+        header_layout.setSpacing(6)
         
         # Editable class name
         name_edit = QLineEdit(label)
@@ -1985,7 +2236,7 @@ class AICodingLab(QMainWindow):
         name_edit.setStyleSheet("""
 
             QLineEdit { 
-                font-weight: bold; font-size: 14px; color: #1e293b;
+                font-weight: bold; font-size: 20px; color: #1e293b;
                 border: 1px solid transparent; border-radius: 4px;
                 background: transparent; padding: 2px 6px;
             }
@@ -1996,23 +2247,23 @@ class AICodingLab(QMainWindow):
         """)
         
         count_badge = QLabel("0 imgs")
-        count_badge.setFixedWidth(56)
+        count_badge.setFixedWidth(68)
         count_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         count_badge.setStyleSheet("""
             background: #e2e8f0; color: #64748b; 
             border-radius: 10px; padding: 2px 6px; 
-            font-size: 11px; font-weight: bold;
+            font-size: 16px; font-weight: bold;
         """)
         
         status_check = QLabel("")
         status_check.setFixedWidth(20)
-        status_check.setStyleSheet("color: #10b981; font-weight: bold; font-size: 14px;")
+        status_check.setStyleSheet("color: #10b981; font-weight: bold; font-size: 16px;")
         
         btn_del = QPushButton("🗑")
         btn_del.setFixedSize(26, 26)
         btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del.setStyleSheet("""
-            QPushButton { background: transparent; border: none; color: #94a3b8; font-size: 14px; }
+            QPushButton { background: transparent; border: none; color: #94a3b8; font-size: 16px; }
             QPushButton:hover { color: #ef4444; }
         """)
         
@@ -2031,27 +2282,46 @@ class AICodingLab(QMainWindow):
         body_layout.setContentsMargins(12, 12, 12, 12)
         body_layout.setSpacing(8)
         
-        # Image thumbnail grid (horizontal scroll)
+        # Image thumbnail area (Scroll Area)
         scroll = QScrollArea()
         scroll.setObjectName("imgScroll")
-        scroll.setFixedHeight(96)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        is_detection = (hasattr(self, '_training_task') and self._training_task == "detection")
+        
+        if is_detection:
+            scroll.setMinimumHeight(300)
+            scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        else:
+            scroll.setFixedHeight(80)
+            scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-        
+
         scroll_widget = QWidget()
         scroll_widget.setStyleSheet("background: transparent;")
-        img_grid = QHBoxLayout(scroll_widget)
-        img_grid.setContentsMargins(0, 0, 0, 0)
-        img_grid.setSpacing(6)
-        img_grid.addStretch()
-        scroll.setWidget(scroll_widget)
         
+        # In Detection mode, use a multi-row Grid Layout. In Recognition, keep Horizontal.
+        if is_detection:
+            img_grid = QGridLayout(scroll_widget)
+            img_grid.setContentsMargins(6, 6, 6, 6)
+            img_grid.setSpacing(8)
+            img_grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        else:
+            img_grid = QHBoxLayout(scroll_widget)
+            img_grid.setContentsMargins(0, 0, 0, 0)
+            img_grid.setSpacing(6)
+            img_grid.addStretch()
+            
+        scroll.setWidget(scroll_widget)
         # Placeholder hint label (shown when no images)
         hint_lbl = QLabel("No images collected yet.")
         hint_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint_lbl.setStyleSheet("color: #94a3b8; font-size: 12px; padding: 10px 0;")
+        hint_lbl.setStyleSheet("color: #94a3b8; font-size: 18px; font-weight: 500;")
+        if is_detection:
+            # Allow hint to stretch and fill the expansive 300px+ height
+            hint_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            hint_lbl.setMinimumHeight(240)
         
         body_layout.addWidget(hint_lbl)
         body_layout.addWidget(scroll)
@@ -2066,7 +2336,7 @@ class AICodingLab(QMainWindow):
         btn_cam.setStyleSheet("""
             QPushButton { 
                 background: white; border: 1px solid #e2e8f0; color: #475569;
-                border-radius: 6px; padding: 10px; font-weight: 600; font-size: 13px;
+                border-radius: 6px; padding: 10px; font-weight: 600; font-size: 19px;
             }
             QPushButton:hover { background: #f8fafc; border-color: #3b82f6; color: #3b82f6; }
             QPushButton[active="true"] { background: #eff6ff; border-color: #3b82f6; color: #2563eb; }
@@ -2077,7 +2347,7 @@ class AICodingLab(QMainWindow):
         btn_upload.setStyleSheet("""
             QPushButton { 
                 background: white; border: 1px solid #e2e8f0; color: #475569;
-                border-radius: 6px; padding: 10px; font-weight: 600; font-size: 13px;
+                border-radius: 6px; padding: 10px; font-weight: 600; font-size: 19px;
             }
             QPushButton:hover { background: #f8fafc; border-color: #10b981; color: #059669; }
         """)
@@ -2085,17 +2355,27 @@ class AICodingLab(QMainWindow):
         btn_row.addWidget(btn_cam)
         btn_row.addWidget(btn_upload)
         
-        btn_label = QPushButton("⬚  Label Series")
+        btn_label = QPushButton("⬚  Label")
         btn_label.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_label.setVisible(self._training_task == "detection")
         btn_label.setStyleSheet("""
             QPushButton { 
                 background: white; border: 1px solid #f87171; color: #ef4444;
-                border-radius: 6px; padding: 10px; font-weight: 600; font-size: 13px;
+                border-radius: 6px; padding: 10px; font-weight: 600; font-size: 19px;
             }
             QPushButton:hover { background: #fef2f2; border-color: #ef4444; }
         """)
         btn_row.addWidget(btn_label)
+        
+        # ── Tag Panel (Detection Mode Only)
+        tag_panel = None
+        if hasattr(self, '_training_task') and self._training_task == "detection":
+            tag_panel = MultiClassTagPanel()
+            body_layout.addWidget(tag_panel)
+            # Validation logic: disable Label button until classes are defined
+            tag_panel.validation_changed.connect(btn_label.setEnabled)
+            btn_label.setEnabled(False) # Initial state
+            btn_label.setToolTip("Please define at least 2 classes to start labeling.")
         
         body_layout.addLayout(btn_row)
         
@@ -2114,6 +2394,7 @@ class AICodingLab(QMainWindow):
             "btn_label": btn_label,
             "status_check": status_check,
             "btn_del": btn_del, # Store to hide in detection mode
+            "tag_panel": tag_panel, # 4-class multi-tag panel
         }
         self._class_data.append(class_info)
 
@@ -2136,7 +2417,9 @@ class AICodingLab(QMainWindow):
         self._ensure_class_folder(label)
         
         # Insert before the spacer (last item)
-        layout.insertWidget(layout.count() - 1, card)
+        # Give higher stretch in Detection mode to expand and push the spacer
+        stretch = 10 if is_detection else 0
+        layout.insertWidget(layout.count() - 1, card, stretch)
         card.show()
         
         self._update_label_status(ci)
@@ -2196,12 +2479,69 @@ class AICodingLab(QMainWindow):
         
         tile_layout.addWidget(img_lbl)
         
-        # Insert before the stretch
+        # Insert into grid (wrap if Detection) or layout
         grid = info["img_grid"]
-        grid.insertWidget(grid.count() - 1, tile)
+        if isinstance(grid, QGridLayout):
+            cols = 4
+            grid_pos = len(info["images"]) - 1
+            row, col = divmod(grid_pos, cols)
+            grid.addWidget(tile, row, col)
+        else:
+            grid.insertWidget(grid.count() - 1, tile)
         
         self._update_dataset_summary()
         self._update_label_status(idx)
+
+    def _save_bbox_annotation(self):
+        """Persist the bounding box to a YOLO format text file."""
+        if not hasattr(self, '_current_annotating_img'): return
+        
+        boxes = self._bbox_canvas.get_all_normalized_boxes()
+        if not boxes:
+            self._bbox_hint.setText("⚠️ Please draw at least one box first!")
+            return
+            
+        # Save all boxes to .txt (one line per box)
+        txt_path = os.path.splitext(self._current_annotating_img)[0] + ".txt"
+        try:
+            with open(txt_path, "w") as f:
+                for b in boxes:
+                    cx, cy, w, h, cid = b
+                    f.write(f"{cid} {cx} {cy} {w} {h}\n")
+            
+            self._bbox_hint.setText(f"✅ {len(boxes)} Boxes Saved!")
+            # Brief flash
+            self._bbox_canvas.setStyleSheet("background: #052e16;")
+            QTimer.singleShot(200, lambda: self._bbox_canvas.setStyleSheet("background: #000;"))
+            
+            # If we were in a batch, open next. If not, just stay.
+            if hasattr(self, '_is_batch_annotating') and self._is_batch_annotating:
+                QTimer.singleShot(400, lambda: self._navigate_annotation(1))
+            
+            self._update_label_status(self._current_annotating_class)
+            
+        except Exception as e:
+            print(f"[ERROR] Could not save annotation: {e}")
+            self._bbox_hint.setText("❌ Error saving box")
+
+    def _navigate_annotation(self, step):
+        """Go to the next or previous image in the current class."""
+        if self._current_annotating_class is None: return
+        info = self._class_data[self._current_annotating_class]
+        if not info or not info["images"]: return
+        
+        try:
+            curr_idx = info["images"].index(self._current_annotating_img)
+            new_idx = curr_idx + step
+            
+            if 0 <= new_idx < len(info["images"]):
+                self._open_bbox_editor(info["images"][new_idx], self._current_annotating_class)
+            elif new_idx >= len(info["images"]):
+                self.log_to_console(f"Batch complete for {info['name_edit'].text()}")
+                self._bbox_hint.setText("✅ All images in this class annotated!")
+                QTimer.singleShot(1500, self._close_bbox_panel)
+        except Exception as e:
+            print(f"[ERROR] Navigation failed: {e}")
 
     def _open_bbox_editor(self, image_path, class_idx):
         """Load image into bbox canvas and show the panel."""
@@ -2209,74 +2549,90 @@ class AICodingLab(QMainWindow):
         self._current_annotating_img = image_path
         self._current_annotating_class = class_idx
         
+        # Clear specific batch state
+        self._is_batch_annotating = True
+        
         pix = QPixmap(image_path)
         if not pix.isNull():
             self._bbox_canvas.set_image(pix)
             
-            # Check if annotation already exists
+            # Reset and Load existing boxes if any
+            self._bbox_canvas.clear_all()
             txt_path = os.path.splitext(image_path)[0] + ".txt"
             if os.path.exists(txt_path):
                 try:
                     with open(txt_path, "r") as f:
-                        line = f.readline().strip()
-                        if line:
-                            # YOLO: class_id cx cy w h
-                            parts = line.split()
+                        lines = f.readlines()
+                        for line in lines:
+                            parts = line.strip().split()
                             if len(parts) == 5:
+                                cid = int(parts[0])
                                 cx, cy, w, h = map(float, parts[1:])
-                                self._bbox_canvas.set_norm_box(cx, cy, w, h)
-                except:
-                    pass
+                                # Get name from tag_panel if available
+                                name = ""
+                                if self._training_task == "detection":
+                                    tnames = self._class_data[self._current_annotating_class]["tag_panel"].get_class_names()
+                                    if cid < len(tnames): name = tnames[cid]
+                                self._bbox_canvas.add_box(cx, cy, w, h, cid, name)
+                except: pass
         
         info = self._class_data[class_idx]
         class_name = info["name_edit"].text() if info else "Unknown"
+        self._bbox_hint.setText(f"Annotating: {os.path.basename(image_path)}")
         
-        if self._training_task == "detection":
-            self._bbox_hint.setText("Draw a box on the image above.")
+        # 🧪 Multi-class assignment in Detection mode
+        if self._training_task == "detection" and "tag_panel" in info and info["tag_panel"]:
+            self._bbox_class_selector.setVisible(True)
+            # Rebuild class selector buttons based on current tag panel names
+            # (First Clear existing)
+            for i in reversed(range(self._class_selector_layout.count())):
+                w = self._class_selector_layout.itemAt(i).widget()
+                if w: w.setParent(None); w.deleteLater()
+            self._class_btn_group = []
+            
+            names = info["tag_panel"].get_class_names()
+            colors = ["#a855f7", "#fb7185", "#3b82f6", "#10b981"] # Match MultiClassTagPanel
+            
+            for i, name in enumerate(names):
+                btn = QPushButton(name)
+                btn.setCheckable(True)
+                btn.setFixedHeight(24)
+                color = colors[i % len(colors)]
+                btn.setStyleSheet(f"""
+                    QPushButton {{ 
+                        background: transparent; color: {color}; border: 1px solid {color}; 
+                        border-radius: 4px; font-weight: bold; font-size: 10px; padding: 2px 8px;
+                    }}
+                    QPushButton:checked {{ background: {color}; color: white; }}
+                """)
+                btn.clicked.connect(lambda _, idx=i: self._set_active_label_class(idx))
+                self._class_selector_layout.addWidget(btn)
+                self._class_btn_group.append(btn)
+            
+            self._class_selector_layout.addStretch()
+            if self._class_btn_group:
+                self._set_active_label_class(0)
         else:
-            self._bbox_hint.setText(f"Draw a box for: {class_name}")
-
+            self._bbox_class_selector.setVisible(False)
         
+        # Update progress label
+        img_list = info["images"]
+        curr_num = img_list.index(image_path) + 1
+        self._lbl_batch_progress.setText(f"IMAGE {curr_num} OF {len(img_list)}")
+        
+        # Update navigation button states
+        self._btn_prev_annotation.setEnabled(curr_num > 1)
+        self._btn_next_annotation.setEnabled(curr_num < len(img_list))
+        
+        # UI visibility
         if hasattr(self, '_bbox_save_btn') and hasattr(self, '_cam_shutter_btn'):
             self._bbox_save_btn.setVisible(True)
             self._cam_shutter_btn.setVisible(False)
             
         self._bbox_panel.setVisible(True)
         self._bbox_panel_visible = True
+        self._bbox_canvas.setFocus()
         self._bbox_canvas.update()
-
-    def _save_bbox_annotation(self):
-        """Persist the bounding box to a YOLO format text file."""
-        if not hasattr(self, '_current_annotating_img'): return
-        
-        box = self._bbox_canvas.get_normalized_box()
-        if not box:
-            self._bbox_hint.setText("⚠️ Please draw a box first!")
-            return
-            
-        cx, cy, w, h = box
-        class_id = self._current_annotating_class
-        
-        # Save to .txt next to the image
-        txt_path = os.path.splitext(self._current_annotating_img)[0] + ".txt"
-        try:
-            with open(txt_path, "w") as f:
-                f.write(f"{class_id} {cx} {cy} {w} {h}\n")
-            
-            self._bbox_hint.setText("✅ Box Saved!")
-            # Brief flash
-            self._bbox_canvas.setStyleSheet("background: #052e16;")
-            QTimer.singleShot(200, lambda: self._bbox_canvas.setStyleSheet("background: #000;"))
-            
-            # If we were in a "Label Series" mode, automatically open next
-            if hasattr(self, '_is_batch_annotating') and self._is_batch_annotating:
-                QTimer.singleShot(500, lambda: self._annotate_next_in_class(self._current_annotating_class))
-            
-            self._update_label_status(self._current_annotating_class)
-            
-        except Exception as e:
-            print(f"[ERROR] Could not save annotation: {e}")
-            self._bbox_hint.setText("❌ Error saving box")
 
     def _annotate_next_in_class(self, idx):
         """Find the next unannotated image in a class and open it."""
@@ -2303,6 +2659,20 @@ class AICodingLab(QMainWindow):
             
         self._update_label_status(idx)
 
+    def _set_active_label_class(self, idx):
+        """Switch the current class index for newly drawn boxes."""
+        self._active_label_class_idx = idx
+        for i, btn in enumerate(self._class_btn_group):
+            btn.setChecked(i == idx)
+        
+        # Update canvas context
+        self._bbox_canvas.active_class_id = idx
+        if "tag_panel" in self._class_data[self._current_annotating_class]:
+            names = self._class_data[self._current_annotating_class]["tag_panel"].get_class_names()
+            if idx < len(names):
+                self._bbox_canvas.active_class_name = names[idx]
+        self._bbox_canvas.update()
+
     def _update_label_status(self, idx):
         """Update the appearance of the 'Label Series' button based on progress."""
         info = self._class_data[idx]
@@ -2324,7 +2694,7 @@ class AICodingLab(QMainWindow):
             info["btn_label"].setStyleSheet("""
                 QPushButton { 
                     background: #10b981; border: 1px solid #059669; color: white;
-                    border-radius: 6px; padding: 10px; font-weight: 800; font-size: 13px;
+                    border-radius: 6px; padding: 10px; font-weight: 800; font-size: 15px;
                 }
                 QPushButton:hover { background: #059669; }
             """)
@@ -2334,7 +2704,7 @@ class AICodingLab(QMainWindow):
             info["btn_label"].setStyleSheet("""
                 QPushButton { 
                     background: white; border: 1px solid #f87171; color: #ef4444;
-                    border-radius: 6px; padding: 10px; font-weight: 600; font-size: 13px;
+                    border-radius: 6px; padding: 10px; font-weight: 600; font-size: 17px;
                 }
                 QPushButton:hover { background: #fef2f2; border-color: #ef4444; }
             """)
@@ -2365,8 +2735,20 @@ class AICodingLab(QMainWindow):
     def _rename_class_folder(self, old_name, new_name):
         """Rename the class folder when class name changes."""
         if not new_name.strip() or old_name == new_name: return
-        old_folder = os.path.join(self._data_root, old_name)
-        new_folder = os.path.join(self._data_root, new_name)
+        
+        # Determine base directory holding class folders
+        if hasattr(self, '_project_initialized') and self._project_initialized and self._current_project_name:
+            if self._training_task == "detection":
+               # Detection mode has no class folders, everything is root
+               return
+            else:
+                parent_dir = os.path.join(self._data_root, self._current_project_name)
+        else:
+            parent_dir = self._data_root
+            
+        old_folder = os.path.join(parent_dir, old_name)
+        new_folder = os.path.join(parent_dir, new_name)
+        
         if os.path.exists(old_folder) and not os.path.exists(new_folder):
             try:
                 os.rename(old_folder, new_folder)
@@ -2374,8 +2756,10 @@ class AICodingLab(QMainWindow):
                 for cinfo in self._class_data:
                     if cinfo is None: continue
                     if cinfo["name_edit"].text() == new_name:
+                        old_s = old_folder.replace("\\", "/")
+                        new_s = new_folder.replace("\\", "/")
                         cinfo["images"] = [
-                            p.replace(old_folder, new_folder) for p in cinfo["images"]
+                            p.replace(old_s, new_s).replace(old_folder, new_folder) for p in cinfo["images"]
                         ]
             except Exception as e:
                 print(f"[WARN] Could not rename folder: {e}")
@@ -2410,17 +2794,7 @@ class AICodingLab(QMainWindow):
         info["btn_cam"].style().unpolish(info["btn_cam"])
         info["btn_cam"].style().polish(info["btn_cam"])
 
-        # Isolated: Configure Annotation Mode for Camera only in detection
-        if self._training_task == "detection":
-            self.trCamDisplay.is_capture_mode = True
-            self.trCamDisplay.class_name = info["name_edit"].text()
-            self.trCamDisplay.clear_box()
-            self.trCamDisplay.setFocus()
-        else:
-            self.trCamDisplay.is_capture_mode = False
-            self.trCamDisplay.class_name = ""
-
-        # Show the shared bottom panel in webcam mode
+        # Show webcam feed — no annotation drawing during capture
         self._show_webcam_panel(idx)
         self._cam_timer.start()
 
@@ -2453,8 +2827,12 @@ class AICodingLab(QMainWindow):
         qimg = QImage(frame_rgb.data, w, h, ch * w, QImage.Format.Format_RGB888)
         pix = QPixmap.fromImage(qimg)
         
-        # Use upgraded label methods
-        self.trCamDisplay.set_image(pix)
+        # Display live frame — just set pixmap, no annotation overlay
+        self.trCamDisplay.setPixmap(pix.scaled(
+            self.trCamDisplay.width(), self.trCamDisplay.height(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        ))
         self._last_cam_frame = frame  # Store raw BGR for saving
         
         # Position floating shutter over the camera
@@ -2500,20 +2878,8 @@ class AICodingLab(QMainWindow):
         img_save_path = os.path.join(folder, img_filename)
         cv2.imwrite(img_save_path, final_img)
         
-        # 🧪 Isolated Detection Mode Logic
-        if self._training_task == "detection":
-            box = self.trCamDisplay.get_normalized_box()
-            if box:
-                cx, cy, bw, bh = box
-                txt_filename = f"Image{count}.txt"
-                txt_save_path = os.path.join(folder, txt_filename)
-                with open(txt_save_path, "w") as f:
-                    f.write(f"{idx} {cx} {cy} {bw} {bh}\n")
-                self.log_to_console(f"Captured Image + BBox for: {class_name}")
-            else:
-                self.log_to_console(f"Captured Image (unlabeled) for: {class_name}")
-        else:
-            self.log_to_console(f"Captured Image for: {class_name}")
+        # Save image only — no annotation during camera capture
+        self.log_to_console(f"📸 Captured Image for: {class_name}")
 
         self._add_image_to_class(idx, img_save_path)
         self._update_label_status(idx)
@@ -2636,7 +3002,7 @@ class AICodingLab(QMainWindow):
         
         self.txtTrainLog.clear()
         self.txtTrainLog.appendPlainText(f"> Starting AI Training Pipeline...")
-        self.txtTrainLog.appendPlainText(f"> [CONFIG] Backbone: {self.training_mode_widget.findChild(QComboBox, 'comboBackbone').currentText()}")
+        self.txtTrainLog.appendPlainText(f"> [CONFIG] Backbone: YOLOv8 Nano (Fastest)")
         self.txtTrainLog.appendPlainText(f"> [CONFIG] Initializing weights, resizing images...")
         
         self._training_sim_timer.start(600) # Each "epoch" is 600ms for demo
@@ -2690,7 +3056,22 @@ class AICodingLab(QMainWindow):
         self.txtTrainLog.verticalScrollBar().setValue(self.txtTrainLog.verticalScrollBar().maximum())
 
 if __name__ == '__main__':
+    # Enable High DPI Scaling for PyQt5 (important for modern displays/Jetson)
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
+    
     app = QApplication(sys.argv)
+    
+    # Global Font Correction for PyQt5
+    # Bump the base font size to match the visual scale of PyQt6
+    base_font = app.font()
+    base_font.setPointSize(base_font.pointSize() + 2)
+    app.setFont(base_font)
+    
+    # Custom dark tooltip — bypasses Windows native white renderer
+    _tooltip_filter = DarkTooltipFilter()
+    app.installEventFilter(_tooltip_filter)
+    
     window = AICodingLab()
     window.showMaximized()
     sys.exit(app.exec())

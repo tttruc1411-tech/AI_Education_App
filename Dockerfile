@@ -13,7 +13,7 @@
 FROM nvcr.io/nvidia/pytorch:24.08-py3-igpu
 
 LABEL maintainer="KDI AI Education Project"
-LABEL description="AI Coding Lab — PyQt6 desktop app for Jetson Orin Nano"
+LABEL description="AI Coding Lab — PyQt5 desktop app for Jetson Orin Nano"
 LABEL jetpack="6"
 
 # ── Environment ───────────────────────────────────────────────
@@ -30,16 +30,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # ── System Dependencies ───────────────────────────────────────
-# Qt6 runtime libraries + X11 client + camera/video essentials
+# Qt5 runtime libraries + X11 client + camera/video essentials
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Qt6 runtime (PyQt6 needs these)
-    libqt6gui6 \
-    libqt6widgets6 \
-    libqt6core6 \
-    libqt6opengl6 \
-    libqt6xml6 \
-    libqt6network6 \
-    qt6-base-dev \
+    # Qt5 runtime (PyQt5 needs these)
+    libqt5gui5 \
+    libqt5widgets5 \
+    libqt5core5a \
+    libqt5opengl5 \
+    libqt5xml5 \
+    libqt5network5 \
+    qtbase5-dev \
+    python3-pyqt5 \
+    python3-pyqt5.qsci \
     # X11 / display forwarding
     libxcb-xinerama0 \
     libxcb-cursor0 \
@@ -64,13 +66,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ── Python: Core Scientific Stack ────────────────────────────
 # NOTE: torch & torchvision are already provided by the base image.
 # We upgrade/install the remaining packages from requirements.txt.
-# PyQt6-QScintilla is the syntax-highlighted code editor.
+# QScintilla (PyQt5 version) is the syntax-highlighted code editor.
 RUN pip install --upgrade pip setuptools wheel
 
 # Install packages that work fine straight from PyPI on aarch64
 RUN pip install \
-    "PyQt6>=6.4.0" \
-    "PyQt6-QScintilla>=2.14.0" \
     "numpy>=1.24.0" \
     "scikit-learn>=1.3.0" \
     "joblib>=1.3.0" \

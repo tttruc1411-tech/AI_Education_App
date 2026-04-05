@@ -46,6 +46,8 @@ while True:
 
     
     # [ENDLOOP]
-
-# Shut down camera and close windows
+
+
+# Shut down camera and close windows
+
 Close_Camera(cap)

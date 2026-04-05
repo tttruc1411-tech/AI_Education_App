@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLineEdit, QLabel
-from PyQt6.QtCore import pyqtSignal, Qt, QRegularExpression
-from PyQt6.QtGui import QRegularExpressionValidator
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLineEdit, QLabel
+from PyQt5.QtCore import pyqtSignal, Qt, QRegularExpression
+from PyQt5.QtGui import QRegularExpressionValidator
 import re
 
 class MultiClassTagPanel(QWidget):

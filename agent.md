@@ -1,10 +1,10 @@
 # 🤖 AI Agent Handover: Project "AI Coding Lab"
 
 ## 1. Project Overview
-A professional, education-focused Python development environment built with **PyQt6**. The app features a high-fidelity "Running Mode" dashboard designed to teach AI concepts through a "Learning Hub," a smart Code Editor, and real-time Camera/Results feedback.
+A professional, education-focused Python development environment built with **PyQt5**. The app features a high-fidelity "Running Mode" dashboard designed to teach AI concepts through a "Learning Hub," a smart Code Editor, and real-time Camera/Results feedback.
 
 ## 2. Core Architecture
-* **UI Framework**: Python PyQt6 using `.ui` XML files loaded dynamically via `loadUi`.
+* **UI Framework**: Python PyQt5 using `.ui` XML files loaded dynamically via `loadUi`.
 * **Localization Engine**: Custom `translations.py` module providing a reactive dictionary for all UI text, tooltips, and terminal hints.
 * **Frontend-Backend Bridge**: Function Library logic mapped to Python injection managers.
 

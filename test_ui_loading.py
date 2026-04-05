@@ -4,11 +4,11 @@ import sys
 import os
 import warnings
 
-# Suppress the sipPyTypeDict deprecation warning from PyQt6
+# Suppress the sipPyTypeDict deprecation warning from PyQt5
 warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*sipPyTypeDict.*")
 
-from PyQt6.QtWidgets import QApplication, QMainWindow
-from PyQt6.uic import loadUi
+from PyQt5.QtWidgets import QApplication, QMainWindow
+from PyQt5.uic import loadUi
 
 # Initialize Qt application
 app = QApplication(sys.argv)

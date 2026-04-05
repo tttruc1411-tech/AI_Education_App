@@ -1,0 +1,19 @@
+8| from PyQt5.QtCore import Qt, QDir, QProcess, QTimer
+9| from PyQt5.QtGui import QColor, QFont, QImage, QPixmap
+10| from PyQt5.QtWidgets import (QShortcut, QApplication, QMainWindow, QStackedWidget, QPushButton, QFrame,
+15| from PyQt5.QtGui import  QKeySequence
+16| from PyQt5.uic import loadUi
+69| from PyQt5.QtCore import pyqtSignal, QRect, QPoint, QSize
+70| from PyQt5.QtGui import QPainter, QPen
+262|         from PyQt6.QtGui import QPixmap, QFont
+380|             from PyQt5.QtWidgets import QSplitter
+443|         from PyQt5.QtWidgets import QSplitter
+616|             from PyQt5.QtWidgets import QSizePolicy
+813|             from PyQt5.QtWidgets import QListWidget, QListWidgetItem, QSizePolicy
+814|             from PyQt5.QtCore import QSize
+815|             from PyQt5.QtGui import QIcon
+853|                     from PyQt5.QtWidgets import QApplication, QStyle
+854|                     from PyQt5.QtGui import QPainter
+1127|                 from PyQt5.QtCore import QTimer
+1294|         from PyQt5.QtCore import QProcessEnvironment
+1503|         from PyQt5.QtWidgets import QButtonGroup

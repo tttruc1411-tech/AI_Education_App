@@ -85,8 +85,11 @@
     /* Footer */
     #footerFrame { 
         background-color: #1f2937; 
-        color: #9ca3af; 
-        font-size: 12px; 
+    }
+    #footerHints, #footerCredit {
+        color: white; 
+        font-size: 13px;
+        background: transparent;
     }
    </string>
   </property>

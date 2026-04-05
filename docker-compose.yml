@@ -19,10 +19,7 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
-
-    # ── Display (X11 forwarding) ──────────────────────────────
-    # Allows PyQt6 to open a window on the Jetson's desktop.
-    environment:
+      # Allows PyQt5 to open a window on the Jetson's desktop.
       - DISPLAY=${DISPLAY:-:0}
       - QT_X11_NO_MITSHM=1
       - QT_QPA_PLATFORM=xcb

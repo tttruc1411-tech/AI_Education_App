@@ -1,7 +1,7 @@
-from PyQt6.Qsci import QsciScintilla, QsciLexerPython, QsciAPIs
-from PyQt6.QtGui import QColor, QFont, QPainter, QPen
-from PyQt6.QtCore import Qt, QRect, pyqtSignal, QTimer
-from PyQt6.QtWidgets import QLabel, QFrame, QVBoxLayout, QGraphicsDropShadowEffect
+from PyQt5.Qsci import QsciScintilla, QsciLexerPython, QsciAPIs
+from PyQt5.QtGui import QColor, QFont, QPainter, QPen
+from PyQt5.QtCore import Qt, QRect, pyqtSignal, QTimer
+from PyQt5.QtWidgets import QLabel, QFrame, QVBoxLayout, QGraphicsDropShadowEffect
 from .library.definitions import LIBRARY_FUNCTIONS
 import re
 
@@ -20,7 +20,7 @@ class AdvancedPythonEditor(QsciScintilla):
         
         # 1. Setup Python Lexer with beautiful fonts
         self.lexer = QsciLexerPython()
-        base_font = QFont("Consolas", 10) # Slightly larger font for better readability
+        base_font = QFont("Consolas", 12) # Slightly larger font for better readability
         
         # Professional Light Theme Backgrounds (Beige match)
         bg_color = QColor("#faf7f2")
@@ -52,13 +52,13 @@ class AdvancedPythonEditor(QsciScintilla):
         self.setSelectionForegroundColor(QColor("white"))
         
         # 3. Line Numbers on Left Border
-        self.setMarginType(0, QsciScintilla.MarginType.NumberMargin)
+        self.setMarginType(0, QsciScintilla.NumberMargin)
         self.setMarginLineNumbers(0, True)
         self.setMarginWidth(0, "0000") # Allocates space for up to 4 digits
         self.setMarginsBackgroundColor(QColor("#f1f5f9"))
         self.setMarginsForegroundColor(QColor("#64748b"))
         
-        self.setBraceMatching(QsciScintilla.BraceMatch.SloppyBraceMatch)
+        self.setBraceMatching(QsciScintilla.SloppyBraceMatch)
         
         # --- 🚀 SNIPPET REGISTRY ---
         # Map function names to their full usage snippets
@@ -99,13 +99,13 @@ class AdvancedPythonEditor(QsciScintilla):
         self.api.prepare()
         
         # Configure Autocomplete Behavior
-        self.setAutoCompletionSource(QsciScintilla.AutoCompletionSource.AcsAll)
+        self.setAutoCompletionSource(QsciScintilla.AcsAll)
         self.setAutoCompletionThreshold(2) # Show suggestions after 2 characters
         self.setAutoCompletionCaseSensitivity(False)
         self.setAutoCompletionReplaceWord(True)
         
         # Configure Call Tips (Function parameter helpers)
-        self.setCallTipsStyle(QsciScintilla.CallTipsStyle.CallTipsContext)
+        self.setCallTipsStyle(QsciScintilla.CallTipsContext)
         self.setCallTipsBackgroundColor(QColor("#1e293b"))
         self.setCallTipsForegroundColor(QColor("white"))
         self.setCallTipsVisible(0)
@@ -122,20 +122,20 @@ class AdvancedPythonEditor(QsciScintilla):
         
         # --- 🚀 FILL-IN-THE-BLANKS & TYPE LOGIC INDICATORS ---
         self.BLANK_INDICATOR = 8
-        self.indicatorDefine(QsciScintilla.IndicatorStyle.BoxIndicator, self.BLANK_INDICATOR)
+        self.indicatorDefine(QsciScintilla.BoxIndicator, self.BLANK_INDICATOR)
         self.setIndicatorForegroundColor(QColor(239, 68, 68, 180), self.BLANK_INDICATOR) # Vibrant Red (Semi-Transparent)
         self.setIndicatorOutlineColor(QColor(185, 28, 28), self.BLANK_INDICATOR) # Dark Red Border
 
         # 🟢 NEW: Logic Match Indicator (Soft Green glow for source variables)
         self.LOGIC_MATCH_INDICATOR = 10
-        self.indicatorDefine(QsciScintilla.IndicatorStyle.BoxIndicator, self.LOGIC_MATCH_INDICATOR)
+        self.indicatorDefine(QsciScintilla.BoxIndicator, self.LOGIC_MATCH_INDICATOR)
         self.setIndicatorForegroundColor(QColor(16, 185, 129, 60), self.LOGIC_MATCH_INDICATOR) # Soft Emerald Glow
         self.setIndicatorOutlineColor(QColor(5, 150, 105, 150), self.LOGIC_MATCH_INDICATOR) 
 
         # 🟡 NEW: Occurrence Indicator (Yellow highlight for same-word matches)
         self.OCCURRENCE_INDICATOR = 11
         # Use FullBoxIndicator for the "Background Fill" look
-        self.indicatorDefine(QsciScintilla.IndicatorStyle.FullBoxIndicator, self.OCCURRENCE_INDICATOR)
+        self.indicatorDefine(QsciScintilla.FullBoxIndicator, self.OCCURRENCE_INDICATOR)
         self.setIndicatorForegroundColor(QColor(254, 240, 138, 180), self.OCCURRENCE_INDICATOR) # Yellow 200 (Semi-Transparent)
         self.setIndicatorOutlineColor(QColor(250, 204, 21), self.OCCURRENCE_INDICATOR) # Yellow 400 Border
         
@@ -173,7 +173,7 @@ class AdvancedPythonEditor(QsciScintilla):
         self.assist_label = QLabel(self.assist_box)
         self.assist_label.setWordWrap(True)
         self.assist_label.setStyleSheet("border: none; color: #1e293b; font-size: 12px; line-height: 1.5;")
-        self.assist_layout.addWidget(self.assist_label, 0, Qt.AlignmentFlag.AlignCenter)
+        self.assist_layout.addWidget(self.assist_label, 0, Qt.AlignCenter)
         
         # Add a premium drop shadow
         shadow = QGraphicsDropShadowEffect(self.assist_box)
@@ -647,7 +647,7 @@ class AdvancedPythonEditor(QsciScintilla):
 
     def dragMoveEvent(self, event):
         if event.mimeData().hasText():
-            pos = event.position().toPoint()
+            pos = event.pos()
             
             # --- 🚀 SMART CONTEXTUAL POSITIONING ---
             # Only use pixel Y to find the line. Ignore pixel X; 
@@ -668,7 +668,7 @@ class AdvancedPythonEditor(QsciScintilla):
 
     def dropEvent(self, event):
         self._drag_active = False
-        pos = event.position().toPoint()
+        pos = event.pos()
         
         char_pos = self.SendScintilla(self.SCI_POSITIONFROMPOINT, pos.x(), pos.y())
         line, _ = self.lineIndexFromPosition(char_pos)
@@ -727,7 +727,7 @@ class AdvancedPythonEditor(QsciScintilla):
             z0_x = margin_width - scroll_x
             z0_w = 4 * char_width
             # Faint vertical guide for the margins
-            painter.setPen(QPen(QColor(0, 0, 0, 15), 1, Qt.PenStyle.DotLine))
+            painter.setPen(QPen(QColor(0, 0, 0, 15), 1, Qt.DotLine))
             painter.drawLine(int(z0_x + z0_w), 0, int(z0_x + z0_w), view_h)
             painter.drawLine(int(z0_x + 2 * z0_w), 0, int(z0_x + 2 * z0_w), view_h)
 
