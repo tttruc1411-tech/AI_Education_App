@@ -109,6 +109,7 @@ class FunctionInfoPanel(QFrame):
 
     def _bold_label(self, text):
         lbl = QLabel(text)
+        lbl.setWordWrap(True)  # CRITICAL: Prevent long bold strings from locking layout widths
         lbl.setStyleSheet(
             "color: #1e293b; font-size: 14px; font-weight: 700; background: transparent;"
         )
@@ -119,6 +120,7 @@ class FunctionInfoPanel(QFrame):
         box.setReadOnly(True)
         box.setFont(QFont("JetBrains Mono, Consolas, Courier New", 10))
         box.setFixedHeight(height)
+        box.setMinimumWidth(50)  # Bypass NoWrap enforcing wide columns
         box.setLineWrapMode(
             QPlainTextEdit.NoWrap if dark
             else QPlainTextEdit.WidgetWidth

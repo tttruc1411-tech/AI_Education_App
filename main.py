@@ -415,15 +415,16 @@ class CurriculumCard(QFrame):
         # --- ROW 1: Title + Badge ---
         row1 = QHBoxLayout()
         title_lbl = QLabel(title)
-        title_lbl.setStyleSheet("font-weight: bold; font-size: 18px; color: #1e293b; background: transparent;")
+        title_lbl.setWordWrap(True)
+        title_lbl.setStyleSheet("font-weight: bold; font-size: 15px; color: #1e293b; background: transparent;")
         
         # Level Badge
         badge_colors = {"Beginner": "#08a54f", "Intermediate": "#f6710b", "Advanced": "#b51414"}
         badge_bg = badge_colors.get(level, "#64748b")
         badge = QLabel(level)
         badge.setAlignment(Qt.AlignCenter)
-        badge.setFixedSize(80, 20)
-        badge.setStyleSheet(f"background: {badge_bg}; color: white; border-radius: 6px; font-size: 14px; font-weight: bold;")
+        badge.setFixedSize(65, 20)
+        badge.setStyleSheet(f"background: {badge_bg}; color: white; border-radius: 6px; font-size: 12px; font-weight: bold;")
         
         row1.addWidget(title_lbl, 1)
         row1.addWidget(badge)
@@ -433,7 +434,7 @@ class CurriculumCard(QFrame):
         row2 = QHBoxLayout()
         desc_lbl = QLabel(desc)
         desc_lbl.setWordWrap(True)
-        desc_lbl.setStyleSheet("color: #475569; font-size: 15px; background: transparent;")
+        desc_lbl.setStyleSheet("color: #475569; font-size: 13px; background: transparent;")
         
         # Load Button
         btn_load = QPushButton("Load")
@@ -521,6 +522,7 @@ class DarkTooltipFilter(QWidget):
 class AICodingLab(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.setMinimumSize(900, 600) # Ensure it CAN shrink to fit small Jetson screens
         
         # 1. Setup Paths
         self.ui_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "ui")
@@ -720,14 +722,29 @@ class AICodingLab(QMainWindow):
 
         # 7. Set Column Ratios (1:2:1)
         if self.mainSplitter:
+            import PyQt5.QtWidgets as qtw
+            hubContainer = self.running_mode_widget.findChild(qtw.QFrame, "hubContainer")
+            if hubContainer: hubContainer.setMinimumWidth(150)
+            
+            for btn_name in ["tabExamples", "tabFunctions", "tabWorkspace"]:
+                b = self.running_mode_widget.findChild(qtw.QPushButton, btn_name)
+                if b: b.setSizePolicy(qtw.QSizePolicy.Ignored, qtw.QSizePolicy.Fixed)
+
+            self.mainSplitter.setStretchFactor(0, 1)
+            self.mainSplitter.setStretchFactor(1, 2)
+            self.mainSplitter.setStretchFactor(2, 1)
             self.mainSplitter.setSizes([300, 600, 300])
 
         # Middle Column: Editor (top) vs Console (bottom) -> Ratio 3:1
         if self.runningEditorSplitter:
+            self.runningEditorSplitter.setStretchFactor(0, 3)
+            self.runningEditorSplitter.setStretchFactor(1, 1)
             self.runningEditorSplitter.setSizes([600, 200])
 
         # Right Column: Camera (top) vs Results (bottom) -> Ratio 1:1
         if self.rightSplitter:
+            self.rightSplitter.setStretchFactor(0, 1)
+            self.rightSplitter.setStretchFactor(1, 1)
             self.rightSplitter.setSizes([300, 300])
 
 
@@ -2336,7 +2353,7 @@ class AICodingLab(QMainWindow):
         btn_cam.setStyleSheet("""
             QPushButton { 
                 background: white; border: 1px solid #e2e8f0; color: #475569;
-                border-radius: 6px; padding: 10px; font-weight: 600; font-size: 19px;
+                border-radius: 6px; padding: 6px; font-weight: 600; font-size: 13px;
             }
             QPushButton:hover { background: #f8fafc; border-color: #3b82f6; color: #3b82f6; }
             QPushButton[active="true"] { background: #eff6ff; border-color: #3b82f6; color: #2563eb; }
@@ -2347,7 +2364,7 @@ class AICodingLab(QMainWindow):
         btn_upload.setStyleSheet("""
             QPushButton { 
                 background: white; border: 1px solid #e2e8f0; color: #475569;
-                border-radius: 6px; padding: 10px; font-weight: 600; font-size: 19px;
+                border-radius: 6px; padding: 6px; font-weight: 600; font-size: 13px;
             }
             QPushButton:hover { background: #f8fafc; border-color: #10b981; color: #059669; }
         """)
@@ -2361,7 +2378,7 @@ class AICodingLab(QMainWindow):
         btn_label.setStyleSheet("""
             QPushButton { 
                 background: white; border: 1px solid #f87171; color: #ef4444;
-                border-radius: 6px; padding: 10px; font-weight: 600; font-size: 19px;
+                border-radius: 6px; padding: 6px; font-weight: 600; font-size: 13px;
             }
             QPushButton:hover { background: #fef2f2; border-color: #ef4444; }
         """)
@@ -3056,8 +3073,10 @@ class AICodingLab(QMainWindow):
         self.txtTrainLog.verticalScrollBar().setValue(self.txtTrainLog.verticalScrollBar().maximum())
 
 if __name__ == '__main__':
-    # Enable High DPI Scaling for PyQt5 (important for modern displays/Jetson)
-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
+    # Disable aggressive auto-scaling on Linux/Jetson which explodes layout sizes
+    import os
+    os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
+    os.environ["QT_SCALE_FACTOR"] = "1"
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
     
     app = QApplication(sys.argv)
