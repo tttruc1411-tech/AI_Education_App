@@ -1,7 +1,7 @@
 # TITLE: Object Detection
 # TITLE_VI: Nhận diện vật thể (YOLOv10)
 # LEVEL: Intermediate
-# ICON: "src\ui\components\object_detection_icon.png"
+# ICON: 🔍
 # COLOR: #22c55e
 # DESC: Detect 80+ objects with YOLOv10.
 # DESC_VI: Nhận diện hơn 80 loại vật thể khác nhau bằng mô hình YOLOv10.

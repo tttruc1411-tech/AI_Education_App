@@ -1,9 +1,26 @@
-import cv2
 import sys
-import base64
 import os
+import base64
+
+# Suppress noisy C-library warnings on Jetson before imports trigger them
+os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
+os.environ["ORT_LOG_LEVEL"] = "ERROR"
+
+import cv2
 import numpy as np
+
+# Temporarily silence fd-level stderr during ORT import to suppress
+# the C++ "device_discovery.cc" warning on Jetson (writes to fd 2 directly)
+_devnull = os.open(os.devnull, os.O_WRONLY)
+_old_stderr = os.dup(2)
+os.dup2(_devnull, 2)
 import onnxruntime as ort
+os.dup2(_old_stderr, 2)
+os.close(_devnull)
+os.close(_old_stderr)
+
+cv2.setLogLevel(0)
+ort.set_default_logger_severity(3)  # 3 = ERROR only
 
 def Init_Camera(camera_id=0):
     """
@@ -114,9 +131,10 @@ def Update_Dashboard(camera_frame, var_name=None, var_value=None):
         
     # 2. Stream Frame to UI
     if camera_frame is not None:
-        _, buffer = cv2.imencode('.jpg', camera_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        img_b64 = base64.b64encode(buffer).decode('utf-8')
-        print(f"IMG:{img_b64}")
+        ok, buffer = cv2.imencode('.jpg', camera_frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        if ok:
+            img_b64 = base64.b64encode(buffer).decode('utf-8')
+            print(f"IMG:{img_b64}")
         
     # 3. Flush output for real-time performance
     sys.stdout.flush()
@@ -196,12 +214,23 @@ def Draw_Detections_MultiClass(camera_frame, outputs, classes, conf_threshold=0.
 def Load_ONNX_Model(model_path):
     """
     Loads an ONNX AI model natively using Microsoft's ONNX Runtime.
+    Prefers GPU (TensorRT > CUDA) when available, falls back to CPU.
     """
     if not os.path.exists(model_path):
         print(f"ERROR: Model {model_path} missing! Check your projects/model folder.")
         return None
-    print(f"[OK] Loading AI Model using ONNX Runtime...")
-    session = ort.InferenceSession(model_path)
+
+    available = ort.get_available_providers()
+    providers = []
+    if 'TensorrtExecutionProvider' in available:
+        providers.append('TensorrtExecutionProvider')
+    if 'CUDAExecutionProvider' in available:
+        providers.append('CUDAExecutionProvider')
+    providers.append('CPUExecutionProvider')
+
+    device = "GPU" if len(providers) > 1 else "CPU"
+    print(f"[OK] Loading AI Model using ONNX Runtime ({device})...")
+    session = ort.InferenceSession(model_path, providers=providers)
     return session
 
 def Run_ONNX_Model(model_session, camera_frame, img_size=640):

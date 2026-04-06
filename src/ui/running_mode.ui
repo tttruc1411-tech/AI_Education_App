@@ -20,9 +20,9 @@
     #hubContainer { background-color: #f8fafc; border: none; }
     #middlePanel { background-color: #1e1e1e; }
     QFrame#hubHeader { background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #7c3aed, stop:1 #2563eb); border: none; padding: 8px 0px; }
-    #hubTitle { color: white; font-weight: bold; font-size: 18px; padding: 2px 8px; background: transparent; }
+    #hubTitle { color: white; font-weight: bold; font-size: 22px; padding: 2px 10px; background: transparent; }
     QFrame#hubTabsContainer { background: transparent; border: none; margin: 0px; }
-    #tabExamples, #tabFunctions, #tabWorkspace { background-color: #8b5cf6; color: white; border-radius: 8px; font-weight: bold; padding: 4px 8px; border: 1px solid #7c3aed; margin-right: 1px; font-size: 13px; }
+    #tabExamples, #tabFunctions, #tabWorkspace { background-color: #8b5cf6; color: white; border-radius: 8px; font-weight: bold; padding: 4px 8px; border: 1px solid #7c3aed; margin-right: 1px; font-size: 15px; }
     #tabExamples:checked, #tabFunctions:checked, #tabWorkspace:checked { background-color: white; color: #7c3aed; border: 2px solid #7c3aed; }
     #tabExamples:hover:!checked, #tabFunctions:hover:!checked, #tabWorkspace:hover:!checked { background-color: #7c3aed; }
     #hubStackedWidget, #pageExamples, #pageFunctions, #pageWorkspace { background: transparent; border: none; }
@@ -853,14 +853,14 @@
               <widget class="QPushButton" name="tabPlus">
                <property name="minimumSize">
                 <size>
-                 <width>32</width>
-                 <height>32</height>
+                 <width>26</width>
+                 <height>26</height>
                 </size>
                </property>
                <property name="maximumSize">
                 <size>
-                 <width>32</width>
-                 <height>32</height>
+                 <width>26</width>
+                 <height>26</height>
                 </size>
                </property>
                <property name="styleSheet">

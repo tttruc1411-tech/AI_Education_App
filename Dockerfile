@@ -20,6 +20,9 @@ LABEL jetpack="6"
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    # Skip the desktop-GPU driver version check — irrelevant on Jetson
+    # where CUDA is part of the L4T BSP and always matches the hardware
+    NVIDIA_DISABLE_REQUIRE=1 \
     # X11 display forwarding — set at runtime via 'run.sh'
     DISPLAY=:0 \
     QT_X11_NO_MITSHM=1 \
@@ -69,9 +72,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # QScintilla (PyQt5 version) is the syntax-highlighted code editor.
 RUN pip install --upgrade pip setuptools wheel
 
-# Install packages that work fine straight from PyPI on aarch64
+# Pin numpy<2 — the base image ships NumPy 2.x but OpenCV and other
+# pre-compiled aarch64 packages were built against NumPy 1.x ABI.
 RUN pip install \
-    "numpy>=1.24.0" \
+    "numpy>=1.24.0,<2" \
     "scikit-learn>=1.3.0" \
     "joblib>=1.3.0" \
     "matplotlib>=3.7.0"
@@ -83,21 +87,44 @@ RUN pip install \
 RUN pip install "opencv-python-headless>=4.8.0"
 
 # ── ONNX Runtime (GPU build for Jetson) ──────────────────────
-# The standard onnxruntime wheel from PyPI is CPU-only.
-# The GPU build for JetPack 6 / aarch64 is distributed by NVIDIA:
-#   https://elinux.org/Jetson_Zoo#ONNX_Runtime
-# We pull the pre-built wheel directly (adjust version/URL if needed).
-ARG ONNXRUNTIME_VERSION=1.18.0
+# The standard 'onnxruntime' wheel from PyPI is CPU-only (no CUDA provider).
+# For GPU inference on Jetson (JetPack 6, CUDA 12.6, cuDNN 9.3, TensorRT 10.3),
+# you need onnxruntime-gpu built for aarch64 + CUDA 12.
+#
+# Option A — NVIDIA pre-built wheel (preferred, check for latest):
+#   Browse: https://elinux.org/Jetson_Zoo#ONNX_Runtime
+#   Or:     https://github.com/dusty-nv/jetson-containers
+#
+# Option B — Build from source:
+#   git clone --recursive https://github.com/microsoft/onnxruntime
+#   ./build.sh --config Release --use_cuda --cuda_home /usr/local/cuda \
+#              --cudnn_home /usr --use_tensorrt --tensorrt_home /usr \
+#              --build_wheel --parallel --skip_tests
+#
+# Override ONNXRUNTIME_URL at build time with the correct wheel for your setup:
+#   docker build --build-arg ONNXRUNTIME_URL=<your_url> .
+ARG ONNXRUNTIME_VERSION=1.20.0
 ARG ONNXRUNTIME_WHEEL=onnxruntime_gpu-${ONNXRUNTIME_VERSION}-cp310-cp310-linux_aarch64.whl
-ARG ONNXRUNTIME_URL=https://nvidia.box.com/shared/static/48dtuob7meiw6ebgfsfqakc9vse62sg4.whl
+ARG ONNXRUNTIME_URL=""
 
-RUN wget -q -O /tmp/${ONNXRUNTIME_WHEEL} ${ONNXRUNTIME_URL} && \
-    pip install /tmp/${ONNXRUNTIME_WHEEL} && \
-    rm /tmp/${ONNXRUNTIME_WHEEL}
+RUN if [ -n "${ONNXRUNTIME_URL}" ]; then \
+        wget -q -O /tmp/${ONNXRUNTIME_WHEEL} ${ONNXRUNTIME_URL} && \
+        pip install /tmp/${ONNXRUNTIME_WHEEL} && \
+        rm /tmp/${ONNXRUNTIME_WHEEL}; \
+    else \
+        echo "WARNING: No ONNXRUNTIME_URL provided — installing CPU-only fallback." && \
+        pip install "onnxruntime>=1.18.0"; \
+    fi
 
 # ── Ultralytics / YOLOv8 ─────────────────────────────────────
 # Install without pulling in a conflicting torch version.
 RUN pip install "ultralytics>=8.0.0" --extra-index-url https://pypi.ngc.nvidia.com
+
+# ── NumPy ABI fix ────────────────────────────────────────────
+# MUST run AFTER all pip installs. The base image and some packages
+# pull in NumPy 2.x, but OpenCV (and other aarch64 binaries) were
+# compiled against NumPy 1.x ABI. Force downgrade as the final step.
+RUN pip install "numpy>=1.24.0,<2"
 
 # ── Application Code ──────────────────────────────────────────
 WORKDIR /app

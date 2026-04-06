@@ -413,28 +413,51 @@ LIBRARY_FUNCTIONS = {
         "color": "#8b5cf6",  # Violet 500
         "icon": "🤖",
         "functions": {
-            "Move_Robot": {
-                "desc": "Move the robot via an ORC Hub pin/port",
+            "DC_Run": {
+                "desc": "Run a DC or encoder motor at a given speed (with optional duration)",
                 "params": [
-                    {"name": "motor_pin", "type": "Number (int)", "desc": "Port number on hub (usually 1–8)"},
-                    {"name": "motor_speed", "type": "Power %", "desc": "Motor power (-100 to 100)"}
+                    {"name": "pin", "type": "Text (str)", "desc": "Motor port: 'M1', 'M2', 'M3', 'M4', 'E1', or 'E2'"},
+                    {"name": "speed", "type": "Number (int)", "desc": "Power from -100 to 100 (positive = forward, negative = backward)"},
+                    {"name": "time_ms", "type": "Number (int)", "desc": "Duration in milliseconds — leave blank to run forever"},
                 ],
-                "returns": {"type": "None", "desc": "Hardware Control"},
-                "usage": "Move_Robot(motor_pin = '1', motor_speed = '100')",
-                "import_statement": "from src.modules.library.functions.robotics import Move_Robot",
-                "source_func": "Move_Robot",
+                "returns": {"type": "None", "desc": "Motor runs until time expires or DC_Stop is called"},
+                "usage": "DC_Run(pin = 'M1', speed = 50, time_ms = None)",
+                "import_statement": "from src.modules.library.functions.robotics import DC_Run",
+                "source_func": "DC_Run",
                 "source_module": "src.modules.library.functions.robotics",
             },
-            "Turn_Robot": {
-                "desc": "Rotate the robot left or right",
+            "DC_Stop": {
+                "desc": "Stop a specific motor or all motors at once",
                 "params": [
-                    {"name": "turn_direction", "type": "Text (str)", "desc": "'left' or 'right'"},
-                    {"name": "turn_speed", "type": "Power %", "desc": "Power to apply during turn (0 to 100)"}
+                    {"name": "pin", "type": "Text (str)", "desc": "Motor port: 'M1'-'M4', 'E1'-'E2' — leave blank to stop ALL"},
                 ],
-                "returns": {"type": "None", "desc": "Hardware Control"},
-                "usage": "Turn_Robot(turn_direction = 'left', turn_speed = '75')",
-                "import_statement": "from src.modules.library.functions.robotics import Turn_Robot",
-                "source_func": "Turn_Robot",
+                "returns": {"type": "None", "desc": "Motor(s) stop immediately"},
+                "usage": "DC_Stop(pin = 'M1')",
+                "import_statement": "from src.modules.library.functions.robotics import DC_Stop",
+                "source_func": "DC_Stop",
+                "source_module": "src.modules.library.functions.robotics",
+            },
+            "Get_Speed": {
+                "desc": "Read encoder motor speed in RPM (E1 or E2 only)",
+                "params": [
+                    {"name": "pin", "type": "Text (str)", "desc": "Encoder port: 'E1' or 'E2'"},
+                ],
+                "returns": {"type": "Number (float)", "desc": "Current speed in RPM"},
+                "usage": "rpm = Get_Speed(pin = 'E1')",
+                "import_statement": "from src.modules.library.functions.robotics import Get_Speed",
+                "source_func": "Get_Speed",
+                "source_module": "src.modules.library.functions.robotics",
+            },
+            "Set_Servo": {
+                "desc": "Rotate a servo motor to a specific angle",
+                "params": [
+                    {"name": "pin", "type": "Text (str)", "desc": "Servo port: 'S1', 'S2', 'S3', or 'S4'"},
+                    {"name": "angle", "type": "Number (int)", "desc": "Target angle from 0 to 180 degrees"},
+                ],
+                "returns": {"type": "None", "desc": "Servo holds the target angle"},
+                "usage": "Set_Servo(pin = 'S1', angle = 90)",
+                "import_statement": "from src.modules.library.functions.robotics import Set_Servo",
+                "source_func": "Set_Servo",
                 "source_module": "src.modules.library.functions.robotics",
             },
         }

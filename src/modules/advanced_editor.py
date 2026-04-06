@@ -136,12 +136,26 @@ class AdvancedPythonEditor(QsciScintilla):
         self.OCCURRENCE_INDICATOR = 11
         # Use FullBoxIndicator for the "Background Fill" look
         self.indicatorDefine(QsciScintilla.FullBoxIndicator, self.OCCURRENCE_INDICATOR)
-        self.setIndicatorForegroundColor(QColor(254, 240, 138, 180), self.OCCURRENCE_INDICATOR) # Yellow 200 (Semi-Transparent)
-        self.setIndicatorOutlineColor(QColor(250, 204, 21), self.OCCURRENCE_INDICATOR) # Yellow 400 Border
-        
-        # Set transparency for the fill
-        self.SendScintilla(self.SCI_INDICSETALPHA, self.OCCURRENCE_INDICATOR, 100)
-        self.SendScintilla(self.SCI_INDICSETOUTLINEALPHA, self.OCCURRENCE_INDICATOR, 200)
+        self.setIndicatorForegroundColor(QColor(255, 255, 0), self.OCCURRENCE_INDICATOR)  # Pure Neon Yellow
+        self.setIndicatorOutlineColor(QColor(220, 180, 0), self.OCCURRENCE_INDICATOR)     # Deep gold border
+        self.SendScintilla(self.SCI_INDICSETALPHA, self.OCCURRENCE_INDICATOR, 255)        # pure solid color since it's underneath
+        self.SendScintilla(self.SCI_INDICSETOUTLINEALPHA, self.OCCURRENCE_INDICATOR, 255)
+        # 🔑 Critical: Draw the background UNDER the text so it doesn't overlap and wash out the text colors!
+        # SCI_INDICSETUNDER = 2510
+        self.SendScintilla(2510, self.OCCURRENCE_INDICATOR, True)
+
+
+        # 🟣 Occurrence Text Indicator — forces text color over Lexer tokens
+        self.OCCURRENCE_TEXT_INDICATOR = 12
+        if hasattr(QsciScintilla, 'TextColorIndicator'):
+            self.indicatorDefine(QsciScintilla.TextColorIndicator, self.OCCURRENCE_TEXT_INDICATOR)
+        else:
+            self.indicatorDefine(17, self.OCCURRENCE_TEXT_INDICATOR) # INDIC_TEXTFORE = 17
+        # SCI_INDICSETFLAGS = 2523, SC_INDICFLAG_VALUEFORE = 1
+        # This absolutely forces Scintilla to use the value we pass as the text foreground
+        self.SendScintilla(2523, self.OCCURRENCE_TEXT_INDICATOR, 1)
+        # Globally set the dark purple text color (#3b0764) for fallback
+        self.setIndicatorForegroundColor(QColor(59, 7, 100), self.OCCURRENCE_TEXT_INDICATOR)
         self.SendScintilla(self.SCI_INDICSETALPHA, self.BLANK_INDICATOR, 30)
         self.SendScintilla(self.SCI_INDICSETOUTLINEALPHA, self.BLANK_INDICATOR, 80)
         
@@ -194,6 +208,8 @@ class AdvancedPythonEditor(QsciScintilla):
 
     def _show_assistance(self, pos, x, y, trigger="cursor"):
         """Central logic to show/hide the balanced assist box based on context."""
+        if pos < 0:
+            return
         # 1. Area-Aware Parameter Detection
         # Check if the hover/cursor position is anywhere inside a Red Blank Indicator
         is_in_blank = self.SendScintilla(self.SCI_INDICATORVALUEAT, self.BLANK_INDICATOR, pos)
@@ -312,7 +328,7 @@ class AdvancedPythonEditor(QsciScintilla):
                            var_type_actual = var_info["type"].split("(")[0].strip().lower()
                            target_type_simple = param_type.split("(")[0].strip().lower()
                            
-                           if var_type_actual != target_type_simple:
+                           if var_type_actual != target_type_simple and target_type_simple != "any" and var_type_actual != "any":
                                is_mismatch = True
 
             # 🎨 --- 🚥 DYNAMIC COLOR-CODING ---
@@ -447,7 +463,7 @@ class AdvancedPythonEditor(QsciScintilla):
                                             var_type_actual = var_info["type"].split("(")[0].strip().lower()
                                             target_type_simple = target_type.split("(")[0].strip().lower()
                                             
-                                            if var_type_actual != target_type_simple:
+                                            if var_type_actual != target_type_simple and target_type_simple != "any" and var_type_actual != "any":
                                                 # Valid variable but WRONG logical type!
                                                 should_highlight = True
 
@@ -529,6 +545,8 @@ class AdvancedPythonEditor(QsciScintilla):
 
     def _get_word_at_pos(self, pos):
         """Helper to extract the word string at a specific absolute position."""
+        if pos < 0:
+            return ""
         start = self.SendScintilla(self.SCI_WORDSTARTPOSITION, pos, True)
         end = self.SendScintilla(self.SCI_WORDENDPOSITION, pos, True)
         if start == end: return ""
@@ -539,6 +557,8 @@ class AdvancedPythonEditor(QsciScintilla):
 
     def _handle_dwell_start(self, pos, x, y):
         """Show instructional tooltips when hovering over AI functions or parameters."""
+        if pos < 0:
+            return
         # Use our unified persistent assist box for hovers too
         self._show_assistance(pos, x, y, trigger="dwell")
 
@@ -552,9 +572,11 @@ class AdvancedPythonEditor(QsciScintilla):
 
     def _update_occurrence_highlights(self):
         """Finds and highlights all occurrences of the currently selected word."""
-        # 1. Clear previous highlights
-        total_lines = self.lines()
-        self.clearIndicatorRange(0, 0, total_lines if total_lines > 0 else 0, 120, self.OCCURRENCE_INDICATOR)
+        # 1. Clear previous highlights (both fill + text color layers)
+        total_lines = max(0, self.lines() - 1)
+        self.clearIndicatorRange(0, 0, total_lines, 120, self.OCCURRENCE_INDICATOR)
+        if hasattr(self, 'OCCURRENCE_TEXT_INDICATOR'):
+            self.clearIndicatorRange(0, 0, total_lines, 120, self.OCCURRENCE_TEXT_INDICATOR)
 
         # 2. Extract selected word
         if not self.hasSelectedText():
@@ -570,17 +592,26 @@ class AdvancedPythonEditor(QsciScintilla):
         content = self.text()
         pattern = rf"\b{re.escape(selected_text)}\b"
         
+        # Dark purple #3b0764 as Scintilla RGB integer: R=59, G=7, B=100
+        dark_purple_rgb = 59 | (7 << 8) | (100 << 16)
+       
         for match in re.finditer(pattern, content):
-            start_pos = match.start()
-            end_pos = match.end()
-            
             # Convert char offsets to BYTES, then to line/col for fillIndicatorRange
-            byte_start = len(content[:start_pos].encode('utf-8'))
-            byte_end = len(content[:end_pos].encode('utf-8'))
-            
+            byte_start = len(content[:match.start()].encode('utf-8'))
+            byte_end = len(content[:match.end()].encode('utf-8'))
+           
             s_line, s_col = self.lineIndexFromPosition(byte_start)
             e_line, e_col = self.lineIndexFromPosition(byte_end)
+           
+            # Layer 1: Neon yellow FullBox background
             self.fillIndicatorRange(s_line, s_col, e_line, e_col, self.OCCURRENCE_INDICATOR)
+
+
+            # Layer 2: Dark purple text via SC_INDICFLAG_VALUEFORE using raw int constants
+            # 2500=SCI_SETINDICATORCURRENT, 2501=SCI_SETINDICATORVALUE, 2504=SCI_INDICATORFILLRANGE
+            self.SendScintilla(2500, self.OCCURRENCE_TEXT_INDICATOR)
+            self.SendScintilla(2501, dark_purple_rgb)
+            self.SendScintilla(2504, byte_start, byte_end - byte_start)
 
     def _scan_variable_types(self):
         """Analyzes the current script to find what variables represent what data types."""

@@ -57,7 +57,11 @@ STRINGS = {
         "IF_ELSE": "If / Else Control",
         "TR_ANNOTATE_TITLE": "⬚ Bounding Box Editor",
         "TR_ANNOTATE_HINT": "Click an image to begin annotating.",
-        "BTN_SAVE_BBOX": "Save Box & Continue ▶"
+        "BTN_SAVE_BBOX": "Save Box & Continue ▶",
+        "ORC_HUB_LABEL": "ORC Hub",
+        "ORC_CONNECTED": "ORC Hub: Connected",
+        "ORC_DISCONNECTED": "ORC Hub: Not Connected",
+        "ORC_REFRESH_TIP": "Re-check ORC Hub connection",
     },
     "vi": {
         "APP_SUBTITLE": "Học AI & Thị giác Máy tính bằng cách Lập trình!",
@@ -115,6 +119,10 @@ STRINGS = {
         "IF_ELSE": "Nếu / Không Thì",
         "TR_ANNOTATE_TITLE": "⬚ Chỉnh sửa Khung",
         "TR_ANNOTATE_HINT": "Nhấn vào ảnh để bắt đầu vẽ khung.",
-        "BTN_SAVE_BBOX": "Lưu Khung & Tiếp tục ▶"
+        "BTN_SAVE_BBOX": "Lưu Khung & Tiếp tục ▶",
+        "ORC_HUB_LABEL": "ORC Hub",
+        "ORC_CONNECTED": "ORC Hub: Đã kết nối",
+        "ORC_DISCONNECTED": "ORC Hub: Chưa kết nối",
+        "ORC_REFRESH_TIP": "Kiểm tra lại kết nối ORC Hub",
     }
 }

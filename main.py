@@ -1,5 +1,23 @@
 import sys
 import os
+
+# Suppress noisy C-library warnings on Jetson (must be set before imports)
+os.environ["ORT_LOG_LEVEL"] = "ERROR"
+os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
+
+# Pre-import onnxruntime with fd-level stderr silenced to suppress
+# the C++ "device_discovery.cc" DRM warning on Jetson Orin Nano
+try:
+    _devnull = os.open(os.devnull, os.O_WRONLY)
+    _old_stderr = os.dup(2)
+    os.dup2(_devnull, 2)
+    import onnxruntime  # noqa: F401
+    os.dup2(_old_stderr, 2)
+    os.close(_devnull)
+    os.close(_old_stderr)
+except Exception:
+    pass
+
 import warnings
 import subprocess
 import base64
@@ -423,8 +441,8 @@ class CurriculumCard(QFrame):
         badge_bg = badge_colors.get(level, "#64748b")
         badge = QLabel(level)
         badge.setAlignment(Qt.AlignCenter)
-        badge.setFixedSize(65, 20)
-        badge.setStyleSheet(f"background: {badge_bg}; color: white; border-radius: 6px; font-size: 12px; font-weight: bold;")
+        badge.setFixedSize(80, 20)
+        badge.setStyleSheet(f"background: {badge_bg}; color: white; border-radius: 6px; font-size: 10px; font-weight: bold;")
         
         row1.addWidget(title_lbl, 1)
         row1.addWidget(badge)
@@ -816,8 +834,83 @@ class AICodingLab(QMainWindow):
             self.camDisplay.setText("Camera Ready")
             self.camDisplay.setStyleSheet("color: #4b5563; background: black; font-weight: bold;")
 
-        # 10. Final Retranslation Initial
+        # 10. ORC Hub Connection Indicator (in resFooter)
+        self._setup_orc_indicator()
+
+        # 11. Final Retranslation Initial
         self.retranslate_ui()
+
+        # 12. Deferred ORC Hub check (after UI is visible)
+        self._orc_connected = False
+        QTimer.singleShot(500, self._check_orc_connection)
+
+    # --- ORC Hub Indicator ---
+    def _setup_orc_indicator(self):
+        """Inject ORC Hub status widgets into the existing resFooter bar."""
+        footer_layout = self.running_mode_widget.findChild(QHBoxLayout, "footerLayout")
+        if not footer_layout:
+            return
+
+        # Find insertion index (just before lblTimestamp, which is the last widget)
+        ts_index = footer_layout.count() - 1  # lblTimestamp position
+
+        # Thin vertical separator
+        sep = QFrame()
+        sep.setFrameShape(QFrame.VLine)
+        sep.setFixedWidth(1)
+        sep.setStyleSheet("color: #334155; background: transparent;")
+
+        # Status dot
+        self.lblOrcDot = QLabel("\u2B24")  # ⬤
+        self.lblOrcDot.setFixedWidth(16)
+        self.lblOrcDot.setStyleSheet("color: #6b7280; font-size: 10px; background: transparent;")
+
+        # Label
+        self.lblOrcText = QLabel("ORC Hub")
+        self.lblOrcText.setStyleSheet("color: #94a3b8; font-size: 12px; background: transparent;")
+
+        # Refresh button
+        self.btnOrcRefresh = QPushButton("\u21BB")  # ↻
+        self.btnOrcRefresh.setFixedSize(22, 22)
+        self.btnOrcRefresh.setCursor(Qt.PointingHandCursor)
+        self.btnOrcRefresh.setStyleSheet("""
+            QPushButton {
+                color: #94a3b8; font-size: 14px; font-weight: bold;
+                background: transparent; border: none;
+            }
+            QPushButton:hover { color: #e2e8f0; }
+        """)
+        self.btnOrcRefresh.clicked.connect(self._check_orc_connection)
+
+        # Insert: [sep] [dot] [label] [refresh]  before [timestamp]
+        footer_layout.insertWidget(ts_index, sep)
+        footer_layout.insertWidget(ts_index + 1, self.lblOrcDot)
+        footer_layout.insertWidget(ts_index + 2, self.lblOrcText)
+        footer_layout.insertWidget(ts_index + 3, self.btnOrcRefresh)
+
+    def _check_orc_connection(self):
+        """Probe ORC Hub via I2C and update the indicator."""
+        try:
+            from src.modules.library.functions.motor_driver_v2 import check_orc_hub
+            connected, info = check_orc_hub()
+        except Exception:
+            connected, info = False, "Driver module unavailable"
+        self._orc_connected = connected
+        self._update_orc_indicator()
+
+    def _update_orc_indicator(self):
+        """Set dot color and tooltip based on connection state."""
+        if not hasattr(self, 'lblOrcDot'):
+            return
+        s = STRINGS[self.current_lang]
+        if self._orc_connected:
+            self.lblOrcDot.setStyleSheet("color: #22c55e; font-size: 10px; background: transparent;")
+            tip = s.get("ORC_CONNECTED", "ORC Hub: Connected")
+        else:
+            self.lblOrcDot.setStyleSheet("color: #6b7280; font-size: 10px; background: transparent;")
+            tip = s.get("ORC_DISCONNECTED", "ORC Hub: Not Connected")
+        self.lblOrcDot.setToolTip(tip)
+        self.lblOrcText.setToolTip(tip)
 
     # --- Language Support ---
     def set_language(self, lang_code):
@@ -871,6 +964,14 @@ class AICodingLab(QMainWindow):
         if hasattr(self, 'btnClearConsole') and self.btnClearConsole: self.btnClearConsole.setText(s["BTN_CLEAR"])
         if hasattr(self, 'camTitle') and self.camTitle: self.camTitle.setText(s["CAM_TITLE"])
         if hasattr(self, 'resTitle') and self.resTitle: self.resTitle.setText(s["RES_TITLE"])
+
+        # ORC Hub indicator
+        if hasattr(self, 'lblOrcText') and self.lblOrcText:
+            self.lblOrcText.setText(s.get("ORC_HUB_LABEL", "ORC Hub"))
+        if hasattr(self, 'btnOrcRefresh') and self.btnOrcRefresh:
+            self.btnOrcRefresh.setToolTip(s.get("ORC_REFRESH_TIP", "Re-check ORC Hub connection"))
+        if hasattr(self, '_orc_connected'):
+            self._update_orc_indicator()
 
         # Update variable count immediate display
         if hasattr(self, 'lblVarCount') and self.lblVarCount:
@@ -1517,6 +1618,7 @@ class AICodingLab(QMainWindow):
         # Cleanup on finish
         self._run_process.finished.connect(self._on_process_finished)
 
+        self._stdout_buf = ""
         self._run_process.start()
 
         if not self._run_process.waitForStarted(3000):
@@ -1536,7 +1638,15 @@ class AICodingLab(QMainWindow):
         if not self._run_process:
             return
         raw = bytes(self._run_process.readAllStandardOutput()).decode("utf-8", errors="replace")
-        for line in raw.splitlines():
+
+        # Buffer partial lines: large IMG: payloads may arrive split across reads
+        if not hasattr(self, '_stdout_buf'):
+            self._stdout_buf = ""
+        self._stdout_buf += raw
+
+        # Only process complete lines (ending with \n); keep the rest buffered
+        while "\n" in self._stdout_buf:
+            line, self._stdout_buf = self._stdout_buf.split("\n", 1)
             line = line.rstrip()
             if not line:
                 continue
@@ -1555,8 +1665,8 @@ class AICodingLab(QMainWindow):
                         pixmap = self._decode_base64_to_pixmap(img_data)
                         if pixmap and not pixmap.isNull():
                             self.camDisplay.setPixmap(pixmap)
-                except Exception as e:
-                    print(f"Image decode error: {e}")
+                except Exception:
+                    pass  # Silently drop corrupt frames
             else:
                 self.log_to_console(line)
 
@@ -1568,6 +1678,9 @@ class AICodingLab(QMainWindow):
         except:
             return None
 
+    _SUPPRESSED_STDERR = ("Corrupt JPEG data", "premature end of data segment",
+                          "Failed to open file", "/sys/class/drm")
+
     def _on_stderr(self):
         """Called whenever the child process writes to stderr."""
         if not self._run_process:
@@ -1575,7 +1688,7 @@ class AICodingLab(QMainWindow):
         raw = bytes(self._run_process.readAllStandardError()).decode("utf-8", errors="replace")
         for line in raw.splitlines():
             line = line.rstrip()
-            if line:
+            if line and not any(s in line for s in self._SUPPRESSED_STDERR):
                 self.log_to_console(line, is_error=True)
 
     def _on_process_finished(self, exit_code, exit_status):
@@ -2268,8 +2381,8 @@ class AICodingLab(QMainWindow):
         count_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         count_badge.setStyleSheet("""
             background: #e2e8f0; color: #64748b; 
-            border-radius: 10px; padding: 2px 6px; 
-            font-size: 16px; font-weight: bold;
+            border-radius: 10px; padding: 2px 2px; 
+            font-size: 14px; font-weight: bold;
         """)
         
         status_check = QLabel("")
@@ -2334,7 +2447,7 @@ class AICodingLab(QMainWindow):
         # Placeholder hint label (shown when no images)
         hint_lbl = QLabel("No images collected yet.")
         hint_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint_lbl.setStyleSheet("color: #94a3b8; font-size: 18px; font-weight: 500;")
+        hint_lbl.setStyleSheet("color: #94a3b8; font-size: 14px; font-weight: 50;")
         if is_detection:
             # Allow hint to stretch and fill the expansive 300px+ height
             hint_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -2353,7 +2466,7 @@ class AICodingLab(QMainWindow):
         btn_cam.setStyleSheet("""
             QPushButton { 
                 background: white; border: 1px solid #e2e8f0; color: #475569;
-                border-radius: 6px; padding: 6px; font-weight: 600; font-size: 13px;
+                border-radius: 6px; padding: 6px; font-weight: 600; font-size: 15px;
             }
             QPushButton:hover { background: #f8fafc; border-color: #3b82f6; color: #3b82f6; }
             QPushButton[active="true"] { background: #eff6ff; border-color: #3b82f6; color: #2563eb; }
@@ -2364,7 +2477,7 @@ class AICodingLab(QMainWindow):
         btn_upload.setStyleSheet("""
             QPushButton { 
                 background: white; border: 1px solid #e2e8f0; color: #475569;
-                border-radius: 6px; padding: 6px; font-weight: 600; font-size: 13px;
+                border-radius: 6px; padding: 6px; font-weight: 600; font-size: 15px;
             }
             QPushButton:hover { background: #f8fafc; border-color: #10b981; color: #059669; }
         """)
@@ -2378,7 +2491,7 @@ class AICodingLab(QMainWindow):
         btn_label.setStyleSheet("""
             QPushButton { 
                 background: white; border: 1px solid #f87171; color: #ef4444;
-                border-radius: 6px; padding: 6px; font-weight: 600; font-size: 13px;
+                border-radius: 6px; padding: 6px; font-weight: 600; font-size: 15px;
             }
             QPushButton:hover { background: #fef2f2; border-color: #ef4444; }
         """)
@@ -3073,8 +3186,11 @@ class AICodingLab(QMainWindow):
         self.txtTrainLog.verticalScrollBar().setValue(self.txtTrainLog.verticalScrollBar().maximum())
 
 if __name__ == '__main__':
-    # Disable aggressive auto-scaling on Linux/Jetson which explodes layout sizes
+    # Suppress Qt/DRM warnings on Jetson
     import os
+    os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false"
+
+    # Disable aggressive auto-scaling on Linux/Jetson which explodes layout sizes
     os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
     os.environ["QT_SCALE_FACTOR"] = "1"
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)

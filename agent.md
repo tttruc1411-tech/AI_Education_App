@@ -36,6 +36,22 @@ A professional, education-focused Python development environment built with **Py
 * **Rich Definitions**: The `definitions.py` registry manages snippet injection, automatic imports, and source-code previews for every individual block.
 * **Custom Color Themes**: Categories use modern HSL-inspired colors (Amber for Camera, Blue for Processing, Mint for AI, Indigo for Display, Pink for Logic, Violet for Robotics) for high-contrast usability.
 
+### 🤖 Robotics (ORC Hub) — Motor Driver V2 Integration
+* **Status**: ✅ **COMPLETED**
+* **Hardware**: OhStem Motor Driver V2 connected via I2C (Bus 1, Address `0x54`). Wiring: SDA→Pin27, SCL→Pin28, GND→Pin30.
+* **Supported Ports**: M1–M4 (DC motors), E1–E2 (Encoder DC motors with RPM reading), S1–S4 (Servos).
+* **Function Blocks** (4 blocks in the Function Library, Violet `#8b5cf6` category):
+    | Block | Snippet | Behavior |
+    |-------|---------|----------|
+    | **DC_Run** | `DC_Run(pin='M1', speed=50, time_ms=None)` | Run motor at speed (-100 to 100). `time_ms=None` runs forever; set a value (e.g. `2000`) for timed run. |
+    | **DC_Stop** | `DC_Stop(pin='M1')` | Stop a specific motor. Omit `pin` to stop ALL motors. |
+    | **Get_Speed** | `rpm = Get_Speed(pin='E1')` | Read encoder RPM (E1/E2 only). Returns `0.0` if hub disconnected. |
+    | **Set_Servo** | `Set_Servo(pin='S1', angle=90)` | Rotate servo to angle 0–180. Servo holds position (no stop command — hardware limitation). |
+* **Shared Driver Singleton**: `_get_driver()` in `robotics.py` initializes the I2C connection once on first use. Uses `_driver_init_attempted` flag to prevent repeated retry on failure. All functions print a friendly `[Robotics]` message and return gracefully if the hub is absent.
+* **Pin Resolution**: Students use string names (`'M1'`, `'E1'`, `'S3'`) — internally mapped to bitmask constants via `_PIN_MAP` / `_SERVO_MAP`.
+* **ORC Hub Connection Indicator**: A live status dot in the `resFooter` bar (bottom of the Results column). Green = connected, Gray = disconnected. Includes a refresh button (`↻`) to re-probe I2C. Auto-checks 500ms after app launch via `QTimer.singleShot`. Fully bilingual (EN/VI) via translation keys `ORC_HUB_LABEL`, `ORC_CONNECTED`, `ORC_DISCONNECTED`, `ORC_REFRESH_TIP`.
+* **Lightweight I2C Probe**: `check_orc_hub()` in `motor_driver_v2.py` reads the WHO_AM_I register without instantiating the full driver — safe, fast (~10ms), non-destructive.
+
 ### 🍱 Ghost Block & Smart Logic
 * **Horizontal Layers (Contextual Scope)**: Real-time background tinting during drag-and-drop that shows the "Main", "Loop", and "Condition" blocks. Empty lines are automatically color-coded based on the *intended* scope by scanning the previous code blocks.
 * **Occupied Line Protection (Smart Injection)**: Dropping content on an existing code line automatically creates a new line and pushes the existing code down, preventing accidental logic merging.
@@ -91,6 +107,10 @@ A professional, education-focused Python development environment built with **Py
 * `src/modules/advanced_editor.py`: The QScintilla custom logic (modular).
 * `src/modules/training_components.py`: Reusable UI widgets (Tag Panels, etc.).
 * `src/modules/library/functions/ai_blocks.py`: Functional block scripts.
+* `src/modules/library/functions/robotics.py`: Student-facing robotics blocks (DC_Run, DC_Stop, Get_Speed, Set_Servo).
+* `src/modules/library/functions/motor_driver_v2.py`: Low-level I2C driver for OhStem Motor Driver V2 + `check_orc_hub()` probe.
+* `src/modules/library/functions/motor.py`: Brain layer with async motor control (DCMotor class, run_time, run_until_stalled).
+* `src/modules/library/definitions.py`: Master function registry for all Library categories.
 
 ## 6. Next Steps for Development
 * [x] **Dual-Language**: Full Vietnamese/English support across the entire GUI.
@@ -100,6 +120,8 @@ A professional, education-focused Python development environment built with **Py
 * [x] **Batch Labeling Workflow**: "Label Series" engine for rapid dataset annotation.
 * [x] **UX Guardrails**: Strict naming validation and interaction-based input locking.
 * [x] **Premium Tooltips**: Custom dark-themed tooltip engine for OS-agnostic styling.
+* [x] **Robotics Blocks**: 4 function blocks (DC_Run, DC_Stop, Get_Speed, Set_Servo) wired to Motor Driver V2 via I2C.
+* [x] **ORC Hub Status Indicator**: Live connection dot in footer with refresh button and bilingual tooltips.
 * [ ] **Backend Training Engine**: Connect the actual YOLOv8 `ultralytics` training engine.
 * [ ] **Dataset Augmentation**: Add UI controls for Flip, Blur, and Noise simulations.
 * [ ] **Model Export**: Implement a 1-click export of trained `.pt` weights.
