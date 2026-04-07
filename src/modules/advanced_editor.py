@@ -20,7 +20,7 @@ class AdvancedPythonEditor(QsciScintilla):
         
         # 1. Setup Python Lexer with beautiful fonts
         self.lexer = QsciLexerPython()
-        base_font = QFont("Consolas", 12) # Slightly larger font for better readability
+        base_font = QFont("Consolas", 10) # Compact font for better visibility of long scripts
         
         # Professional Light Theme Backgrounds (Beige match)
         bg_color = QColor("#faf7f2")
@@ -186,7 +186,7 @@ class AdvancedPythonEditor(QsciScintilla):
         self.assist_layout.setContentsMargins(15, 15, 15, 15) # Better padding
         self.assist_label = QLabel(self.assist_box)
         self.assist_label.setWordWrap(True)
-        self.assist_label.setStyleSheet("border: none; color: #1e293b; font-size: 12px; line-height: 1.5;")
+        self.assist_label.setStyleSheet("border: none; color: #1e293b; font-size: 10px; line-height: 1.5;")
         self.assist_layout.addWidget(self.assist_label, 0, Qt.AlignCenter)
         
         # Add a premium drop shadow

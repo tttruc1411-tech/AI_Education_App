@@ -26,7 +26,8 @@ A professional, education-focused Python development environment built with **Py
 
 ### 📚 Learning Hub & Curriculum
 * **Design**: Immersive cards with row-based alignment. Descriptions are now perfectly aligned with the "Load" buttons for a premium visual balance.
-* **Vision Inference**: Powered by **Microsoft ONNX Runtime**, ensuring stable execution for YOLOv10 and YuNet blocks.
+* **Vision Inference**: Multi-engine support including **Microsoft ONNX Runtime** (YOLOv10, YuNet) and **NVIDIA TensorRT** via Ultralytics for high-performance Jetson execution.
+* **TensorRT Support**: ⚡ **LOGIC APPLIED** (Pending Jetson testing). Native support for `.engine` models via the Ultralytics YOLO framework, optimized for zero-latency inference.
 * **Logic Operations**: Dedicated block category for `while True` and `if/else` control flow, using structural anchors (`# [START] / # [END]`) to teach Python scope.
 
 ### 📚 Function Library & Learning Hub
@@ -95,6 +96,19 @@ A professional, education-focused Python development environment built with **Py
 * **Professional Canvas**: `AnnotationLabel` enhanced with mouse-tracking crosshairs, interactive resizing handles, and color-coded tag overlays.
 * **Realistic Metadata**: The 'Start Training' action now validates the project structure and automatically generates a compliant `dataset.yaml` in the project root.
 
+### 🚀 Integrated Training Engine (YOLOv8)
+* **Status**: ✅ **COMPLETED**
+* **Engine**: Headless `ultralytics` YOLOv8 process optimized for Jetson hardware (Batch Size 2, Workers 2).
+* **Automated Data Preparation**: 
+    *   **Fixed Workspace**: Uses `src/modules/training/detection/` as the internal training site.
+    *   **Smart Split**: Automatically performs a randomized 80/20 train/validation split of project images and annotations.
+    *   **Dynamic Metadata**: Generates `dataset.yaml` on-the-fly based on active class names.
+* **Real-time Synchronized Dashboard**:
+    *   **Metric Stream**: Live parsing of training logs to update Loss and mAP (Accuracy) charts in the UI.
+    *   **Progress Tracking**: Smooth 1-100% progress bar and epoch counting synchronized with the backend process.
+* **Automated TensorRT Export**: One-click transition from `.pt` (PyTorch) to `.engine` (TensorRT) format upon training completion, ready for high-performance deployment.
+* **Model Relocation**: Prompt-driven model naming and automated migration to the foundational `projects/model/` workspace.
+
 ## 4. Stability & Performance
 * **Custom Event Routing**: Implementation of a global `QEventFilter` for tooltips to bypass OS-level rendering restrictions.
 * **Deferred Init**: Application launches instantly regardless of editor complexity.
@@ -122,6 +136,7 @@ A professional, education-focused Python development environment built with **Py
 * [x] **Premium Tooltips**: Custom dark-themed tooltip engine for OS-agnostic styling.
 * [x] **Robotics Blocks**: 4 function blocks (DC_Run, DC_Stop, Get_Speed, Set_Servo) wired to Motor Driver V2 via I2C.
 * [x] **ORC Hub Status Indicator**: Live connection dot in footer with refresh button and bilingual tooltips.
-* [ ] **Backend Training Engine**: Connect the actual YOLOv8 `ultralytics` training engine.
+* [x] **Backend Training Engine**: Fully integrated YOLOv8 `ultralytics` training engine with Jetson-specific optimizations.
+* [x] **Model Export**: Automated 1-click export of trained `.engine` weights directly after training.
 * [ ] **Dataset Augmentation**: Add UI controls for Flip, Blur, and Noise simulations.
-* [ ] **Model Export**: Implement a 1-click export of trained `.pt` weights.
+* [x] **TensorRT Support**: Native support for `.engine` models via the Ultralytics YOLO framework.

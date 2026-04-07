@@ -617,11 +617,31 @@ class AICodingLab(QMainWindow):
         self.populate_curriculum_hub()
         
         if self.btnCreateFile: self.btnCreateFile.clicked.connect(self.create_new_file)
-        if self.btnRunCode: self.btnRunCode.clicked.connect(self.save_and_run_code)
+        if self.btnRunCode: 
+            self.btnRunCode.clicked.connect(self.save_and_run_code)
+            self.btnRunCode.setFixedHeight(40)
+            self.btnRunCode.setStyleSheet("""
+                QPushButton { 
+                    background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #10b981, stop:1 #059669);
+                    color: white; border-radius: 8px; font-weight: bold; font-size: 16px; padding: 0 16px;
+                }
+                QPushButton:hover { background: #059669; }
+                QPushButton:pressed { background: #047857; }
+            """)
         if self.tabPlus: self.tabPlus.clicked.connect(self.create_new_tab)
 
         self.btnSaveFile = self.running_mode_widget.findChild(QPushButton, "btnSaveFile")
-        if self.btnSaveFile: self.btnSaveFile.clicked.connect(self.save_current_file)
+        if self.btnSaveFile: 
+            self.btnSaveFile.clicked.connect(self.save_current_file)
+            self.btnSaveFile.setFixedHeight(40)
+            self.btnSaveFile.setStyleSheet("""
+                QPushButton { 
+                    background: #2D84E0; color: white; border: none;
+                    border-radius: 8px; font-weight: bold; font-size: 16px; padding: 0 16px;
+                }
+                QPushButton:hover { background: #0E5FB5; }
+                QPushButton:pressed { background: #094D94; }
+            """)
 
         # Ctrl+S shortcut
         save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
@@ -1229,6 +1249,8 @@ class AICodingLab(QMainWindow):
                 btn_open = self._icon_action_button("📂", "Open",  "#43CF0C")
                 btn_rename = self._icon_action_button("🖊", "Rename", "#C23DD9")
                 btn_delete = self._icon_action_button("🗑️", "Delete", "#E82727")
+                btn_copy = self._icon_action_button("📋", "Copy Path", "#0EA5E9")
+                btn_copy.setVisible(folder_type in ["Model", "Code", "Projects"])
 
                 # Smart Permission Layer Mapping
                 if folder_type == "Model":
@@ -1243,6 +1265,7 @@ class AICodingLab(QMainWindow):
                 btn_open.clicked.connect(lambda _, p=file_path: self.load_file_from_path(p))
                 btn_rename.clicked.connect(lambda _, p=file_path, t=folder_type: self.handle_rename(p, t))
                 btn_delete.clicked.connect(lambda _, p=file_path, t=folder_type: self.handle_delete(p, t))
+                btn_copy.clicked.connect(lambda _, p=file_path, t=folder_type: self.handle_copy_path(p, t))
 
                 # Container for Buttons to keep them tight
                 btn_container = QWidget()
@@ -1252,6 +1275,7 @@ class AICodingLab(QMainWindow):
                 btn_layout.setSpacing(0) # No space between buttons
                 
                 btn_layout.addWidget(btn_open)
+                btn_layout.addWidget(btn_copy)
                 btn_layout.addWidget(btn_rename)
                 btn_layout.addWidget(btn_delete)
                 
@@ -1301,6 +1325,16 @@ class AICodingLab(QMainWindow):
             path.unlink()
             self.show_folder_contents(folder_type)
             self.update_workspace_counts()
+
+    def handle_copy_path(self, path, folder_type):
+        # Format: projects/model/file.onnx
+        # folder_type is "Model", "Code", etc.
+        folder_name = folder_type.lower()
+        rel_path = f"projects/{folder_name}/{path.name}"
+        
+        from PyQt5.QtWidgets import QApplication
+        QApplication.clipboard().setText(rel_path)
+        self.log_to_console(f"📋 Copied path: {rel_path}")
 
     def setup_file_explorer(self):
         self.file_model = QFileSystemModel()
@@ -1447,20 +1481,20 @@ class AICodingLab(QMainWindow):
         tab_widget = QFrame()
         tab_widget.setObjectName("TabWidget")
         layout = QHBoxLayout(tab_widget)
-        layout.setContentsMargins(8, 2, 6, 2)
-        layout.setSpacing(4)
+        layout.setContentsMargins(2, 1, 2, 1)
+        layout.setSpacing(2)
         
         # Title Button
         btn_title = QPushButton(filename)
         btn_title.setObjectName("TabTitle")
-        btn_title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        btn_title.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
         btn_title.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_title.clicked.connect(lambda _, n=filename: self.load_file_by_tab(n))
         
         # Close Button
         btn_close = QPushButton("×")
         btn_close.setObjectName("TabClose")
-        btn_close.setFixedSize(20, 20)
+        btn_close.setFixedSize(18, 18)
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_close.clicked.connect(lambda _, n=filename: self.close_tab(n))
         
@@ -1506,14 +1540,14 @@ class AICodingLab(QMainWindow):
             
             if name == filename:
                 widget.setStyleSheet("QFrame#TabWidget { background-color: #2563eb; border-radius: 6px; }")
-                if title: title.setStyleSheet("color: white; background: transparent; border: none; text-align: left; padding: 4px;")
-                if close: close.setStyleSheet("color: white; background: rgba(255,255,255,0.1); border-radius: 10px; border: none; font-size: 16px; font-weight: bold;")
+                if title: title.setStyleSheet("color: white; background: transparent; border: none; text-align: left; padding: 2px;")
+                if close: close.setStyleSheet("color: white; background: rgba(255,255,255,0.1); border-radius: 9px; border: none; font-size: 14px; font-weight: bold;")
             else:
                 widget.setStyleSheet("QFrame#TabWidget { background-color: #374151; border-radius: 6px; }")
-                if title: title.setStyleSheet("color: #94a3b8; background: transparent; border: none; text-align: left; padding: 4px;")
+                if title: title.setStyleSheet("color: #94a3b8; background: transparent; border: none; text-align: left; padding: 2px;")
                 if close: close.setStyleSheet("color: transparent; background: transparent; border: none;") # Hide X on inactive tabs for cleaner look? No, user might want to close them
                 # Let's keep it visible but subtle
-                if close: close.setStyleSheet("color: #64748b; background: transparent; border: none; font-size: 16px;")
+                if close: close.setStyleSheet("color: #64748b; background: transparent; border: none; font-size: 14px;")
 
     def create_new_tab(self):
         filename, ok = QInputDialog.getText(self, "New Python Tab", "Enter script name (without .py):")
@@ -1820,6 +1854,9 @@ class AICodingLab(QMainWindow):
         
         self._current_project_name = ""
         self._project_initialized = False
+        self._train_process = None
+        self._training_is_running = False
+        self._last_exported_engine = None
 
         
         # Wire Recognition / Detection toggle (Group 1 - Task)
@@ -3093,36 +3130,57 @@ class AICodingLab(QMainWindow):
             pass
 
     def _start_training(self):
-        """Toggle the training simulation state (React-like demo)."""
-        if self._training_is_running:
+        """Launch the real background training process for YOLOv8."""
+        if self._train_process is not None:
             # Stop training
+            self._train_process.kill()
+            self._train_process = None
             self._training_is_running = False
-            self._training_sim_timer.stop()
             self.btnStartTraining.setText("🚀 Resume Training")
             self.btnStartTraining.setEnabled(True)
-            self.txtTrainLog.appendPlainText("> Training Paused.")
+            self.txtTrainLog.appendPlainText("> Training Stopped by User.")
             return
 
-        # Start training
-        self._training_is_running = True
-        self._training_epoch = 0
+        # 1. Validation Logic
+        if not self._project_initialized:
+            self.log_to_console("Error: Project not initialized.", is_error=True)
+            return
         
-        # Get config from UI
+        # Check for backbone model yolov8n.pt (Stored in backend for protection)
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        backbone_path = Path(project_root) / "src" / "modules" / "training" / "yolov8n.pt"
+        
+        if not backbone_path.exists():
+            self.log_to_console(f"Error: Backbone model not found at {backbone_path}", is_error=True)
+            self.log_to_console("Please place 'yolov8n.pt' in the src/modules/training/ folder.")
+            return
+
+        # 2. Get config from UI
         spin_epochs = self.training_mode_widget.findChild(QSpinBox, "spinEpochs")
-        epochs = spin_epochs.value() if spin_epochs else 50
+        epochs = spin_epochs.value() if spin_epochs else 20
         self._training_total_epochs = epochs
         
-        # UI Feedback - Headers
+        # Image size
+        imgsz = self._capture_size
+        
+        # Class names (from Tag Panel)
+        info = self._class_data[0] # Detection mode uses first class card
+        if not info or "tag_panel" not in info:
+            self.log_to_console("Error: Class tags not found.", is_error=True)
+            return
+        names = ",".join(info["tag_panel"].get_class_names())
+
+        # 3. UI Feedback - Prepare Dashboard
         self.btnStartTraining.setText("⏹ Stop Training")
         if hasattr(self, 'statusPlaceholder') and self.statusPlaceholder: 
-            self.statusPlaceholder.setVisible(False) # Hide camera preview during training
+            self.statusPlaceholder.setVisible(False)
         if self.metricsPanel: self.metricsPanel.setVisible(True)
         if self.epochBarFrame: self.epochBarFrame.setVisible(True)
         
         if self.progEpoch: self.progEpoch.setValue(0)
         if self.lblEpochCounter: self.lblEpochCounter.setText(f"0 / {epochs}")
         
-        # Reset charts if starting fresh
+        # Reset charts
         self.canvasLoss.x_data = []
         self.canvasLoss.y_train = []
         self.canvasLoss.y_val = []
@@ -3131,59 +3189,133 @@ class AICodingLab(QMainWindow):
         self.canvasAcc.y_val = []
         
         self.txtTrainLog.clear()
-        self.txtTrainLog.appendPlainText(f"> Starting AI Training Pipeline...")
-        self.txtTrainLog.appendPlainText(f"> [CONFIG] Backbone: YOLOv8 Nano (Fastest)")
-        self.txtTrainLog.appendPlainText(f"> [CONFIG] Initializing weights, resizing images...")
-        
-        self._training_sim_timer.start(600) # Each "epoch" is 600ms for demo
+        self.txtTrainLog.appendPlainText(f"> [START] Initializing AI Training Pipeline...")
+        self.txtTrainLog.appendPlainText(f"> Project: {self._current_project_name}")
+        self.txtTrainLog.appendPlainText(f"> Parameters: Epochs={epochs}, ImgSz={imgsz}")
 
-    def _on_training_step(self):
-        """Simulate one epoch of training metrics and update visuals."""
-        if self._training_epoch >= self._training_total_epochs:
-            self._training_sim_timer.stop()
-            self._training_is_running = False
+        # 4. Launch QProcess
+        self._train_process = QProcess(self)
+        
+        # Setup Environment
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        env = QProcessEnvironment.systemEnvironment()
+        python_path = env.value("PYTHONPATH", "")
+        env.insert("PYTHONPATH", f"{project_root}{os.pathsep}{python_path}" if python_path else project_root)
+        self._train_process.setProcessEnvironment(env)
+        self._train_process.setWorkingDirectory(project_root)
+
+        # Build Arguments
+        script_path = os.path.join(project_root, "src", "modules", "training", "trainer.py")
+        data_path = os.path.join(self._data_root, self._current_project_name)
+        
+        args = [
+            script_path,
+            "--model", str(backbone_path.resolve()),
+            "--project_path", str(Path(data_path).resolve()),
+            "--epochs", str(epochs),
+            "--imgsz", str(imgsz),
+            "--names", names
+        ]
+        
+        self._train_process.setProgram(sys.executable)
+        self._train_process.setArguments(args)
+
+        # Connect Signals
+        self._train_process.readyReadStandardOutput.connect(self._on_train_stdout)
+        self._train_process.readyReadStandardError.connect(self._on_train_stderr)
+        self._train_process.finished.connect(self._on_train_finished)
+
+        self._training_is_running = True
+        self._train_process.start()
+
+    def _on_train_stdout(self):
+        """Parse trainer.py output and update UI metrics."""
+        if not self._train_process: return
+        raw = bytes(self._train_process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line: continue
+            
+            if line.startswith("STATUS:"):
+                # General feedback
+                msg = line[7:].strip()
+                self.txtTrainLog.appendPlainText(f"  [INFO] {msg}")
+            
+            elif line.startswith("EPOCH:"):
+                # Format: EPOCH:Current:Total:Loss
+                parts = line.split(":")
+                if len(parts) == 4:
+                    curr, total, loss = int(parts[1]), int(parts[2]), float(parts[3])
+                    self.progEpoch.setValue(int((curr / total) * 100))
+                    self.lblEpochCounter.setText(f"{curr} / {total}")
+                    if self.lblValueLoss: self.lblValueLoss.setText(f"{loss:.4f}")
+                    # Update Loss Chart
+                    self.canvasLoss.update_data(curr, loss, loss * 1.1)
+            
+            elif line.startswith("METRIC:acc:"):
+                # Accuracy/mAP report
+                acc = float(line.split(":")[-1])
+                if self.lblValueAccuracy: self.lblValueAccuracy.setText(f"{acc:.1f}%")
+                if hasattr(self.canvasAcc, 'x_data') and self.canvasAcc.x_data:
+                    curr_epoch = self.canvasAcc.x_data[-1] + 1
+                    self.canvasAcc.update_data(curr_epoch, acc, acc * 0.9)
+                else:
+                    self.canvasAcc.update_data(1, acc, acc * 0.9)
+
+            elif line.startswith("RESULT_MODEL_ENGINE:"):
+                self._last_exported_engine = line[20:].strip()
+
+            else:
+                # Fallback to standard logging
+                self.txtTrainLog.appendPlainText(line)
+
+    def _on_train_stderr(self):
+        """Forward stderr logs to the training console."""
+        if not self._train_process: return
+        raw = bytes(self._train_process.readAllStandardError()).decode("utf-8", errors="replace")
+        for line in raw.splitlines():
+            line = line.strip()
+            if line and "warn" not in line.lower():
+                self.txtTrainLog.appendPlainText(f"  [SYSTEM] {line}")
+
+    def _on_train_finished(self, exit_code, exit_status):
+        """Cleanup and final model relocation."""
+        self._training_is_running = False
+        self._train_process = None
+        
+        if exit_code == 0:
             self.btnStartTraining.setText("✅ Training Complete")
             self.btnStartTraining.setEnabled(False)
-            self.txtTrainLog.appendPlainText("> Done! Model weights saved to projects/models/latest.pt")
+            self.txtTrainLog.appendPlainText("> Success! Final model generated.")
+            
+            # Relocate .engine if found
+            if self._last_exported_engine and os.path.exists(self._last_exported_engine):
+                # Prompt for name or use project name
+                new_name, ok = QInputDialog.getText(self, "Export Model", "Enter model name:", text=self._current_project_name)
+                if not ok or not new_name:
+                    new_name = self._current_project_name
+                
+                if not new_name.endswith(".engine"): new_name += ".engine"
+                dest_path = self.file_manager.model_dir / new_name
+                
+                try:
+                    import shutil
+                    shutil.move(self._last_exported_engine, dest_path)
+                    self.log_to_console(f"✨ Model saved to: projects/model/{new_name}")
+                    self.txtTrainLog.appendPlainText(f"✨ Saved to projects/model/{new_name}")
+                except Exception as e:
+                    self.log_to_console(f"Error moving model: {e}", is_error=True)
+            
             if hasattr(self, 'statusPlaceholder') and self.statusPlaceholder:
                 self.statusPlaceholder.setVisible(True)
                 msg = self.training_mode_widget.findChild(QLabel, "statusMsg")
                 if msg: msg.setText("Model Ready ✨")
-            return
-            
-        self._training_epoch += 1
-        ep = self._training_epoch
-        total = self._training_total_epochs
+        else:
+            self.btnStartTraining.setText("❌ Training Failed")
+            self.log_to_console("Training failed. Check terminal for details.", is_error=True)
         
-        # Mathematical Simulation of Learning Curves
-        noise = (np.random.random() - 0.5) * 0.05
-        # Loss decreases exponentially with noise
-        train_loss = max(0.05, 0.85 * (0.94 ** ep) + (noise * 0.2))
-        val_loss = train_loss * 1.15 + abs(noise * 0.5)
-        
-        # Accuracy increases logistically
-        train_acc = min(99.9, 85 * (1 - (0.7 ** ep)) + 15 + (noise * 5))
-        val_acc = train_acc * 0.94 - (abs(noise) * 3)
-        
-        m_ap = train_acc * 0.88 + (noise * 2)
-        
-        # Update UI labels
-        if self.lblValueAccuracy: self.lblValueAccuracy.setText(f"{train_acc:.1f}%")
-        if self.lblValueLoss: self.lblValueLoss.setText(f"{train_loss:.3f}")
-        
-        if self.progEpoch: self.progEpoch.setValue(int((ep / total) * 100))
-        if self.lblEpochCounter: self.lblEpochCounter.setText(f"{ep} / {total}")
-        
-        # Update Live Charts
-        self.canvasLoss.update_data(ep, train_loss, val_loss)
-        self.canvasAcc.update_data(ep, train_acc, val_acc)
-        
-        # Log to terminal-style widget
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        self.txtTrainLog.appendPlainText(f"[{timestamp}] Ep {ep}: loss={train_loss:.4f}  acc={train_acc:.2f}%  val_acc={val_acc:.2f}%")
-        
-        # Auto-scroll log
-        self.txtTrainLog.verticalScrollBar().setValue(self.txtTrainLog.verticalScrollBar().maximum())
+        self.update_workspace_counts()
 
 if __name__ == '__main__':
     # Suppress Qt/DRM warnings on Jetson

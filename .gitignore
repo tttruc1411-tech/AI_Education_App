@@ -2,3 +2,7 @@
 __pycache__/ 
 *.pyc 
 .DS_Store
+run_engine_code.py 
+.claude/ 
+*.engine 
+*.pt 

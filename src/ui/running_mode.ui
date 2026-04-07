@@ -31,7 +31,7 @@
     #editorTitle { color: white; font-weight: bold; font-size: 22px; padding: 2px 10px; }
     #btnRunCode { background-color: #12b54d; color: white; border-radius: 4px; font-size: 14px; font-weight: bold; padding: 6px 15px; }
     #btnRunCode:hover { background-color: #16a34a; }
-    #btnSaveFile { background-color: rgba(255,255,255,0.15); color: white; border-radius: 4px; padding: 6px 12px; font-weight: bold; font-size: 14px; }
+    #btnSaveFile { background-color: rgba(255,255,255,0.15); color: white; border-radius: 4px; padding: 4px 10px; font-weight: bold; font-size: 14px; }
     #editorTabBar { background-color: #1f2937; }
     #monacoPlaceholder { color: #1e293b; font-family: Consolas, monospace; font-size: 16px; padding: 10px; border: none; background-color: #faf7f2; }
     #consoleBody { background-color: #0f172a; color: #5ff97b; font-family: 'Consolas', monospace; font-size: 15px; border: none; padding: 10px; }
@@ -42,9 +42,9 @@
     #resTitle { color: white; font-weight: bold; font-size: 22px; padding: 2px 10px; }
     #exampleTitle { font-weight: bold; color: #1f2937; font-size: 17px; }
     #exampleDesc { color: #475569; font-size: 14px; }
-    #exampleBadge1 { background: #f6710b; color: white; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: bold; min-width: 60px; max-width: 80px; min-height: 22px; max-height: 22px; }
-    #exampleBadge2 { background: #08a54f; color: white; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: bold; min-width: 60px; max-width: 80px; min-height: 22px; max-height: 22px; }
-    #exampleBadge3 { background: #b51414; color: white; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: bold; min-width: 60px; max-width: 80px; min-height: 22px; max-height: 22px; }
+    #exampleBadge1 { background: #f6710b; color: white; border-radius: 6px; padding: 2px 8px; font-size: 18px; font-weight: bold; min-width: 60px; max-width: 80px; min-height: 22px; max-height: 26px; }
+    #exampleBadge2 { background: #08a54f; color: white; border-radius: 6px; padding: 2px 8px; font-size: 18px; font-weight: bold; min-width: 60px; max-width: 80px; min-height: 22px; max-height: 26px; }
+    #exampleBadge3 { background: #b51414; color: white; border-radius: 6px; padding: 2px 8px; font-size: 18px; font-weight: bold; min-width: 60px; max-width: 80px; min-height: 22px; max-height: 26px; }
     #btnLoadFaceDetect, #btnLoadObjectDetect, #btnLoadLLMChatbot { background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #7c3aed); color: white; border-radius: 10px; font-weight: bold; padding: 2px 12px; min-height: 32px; min-width: 70px; border: none; font-size: 14px; }
     #btnLoadFaceDetect:hover, #btnLoadObjectDetect:hover, #btnLoadLLMChatbot:hover { background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #2563eb, stop:1 #6d28d9); }
     QScrollArea { border: none; background: #faf7f2; }
@@ -473,10 +473,10 @@
                   <item>
                    <widget class="QFrame" name="cardCode">
                     <property name="minimumHeight">
-                     <number>120</number>
+                     <number>100</number>
                     </property>
                     <property name="maximumHeight">
-                     <number>160</number>
+                     <number>130</number>
                     </property>
                     <property name="cursor">
                      <cursorShape>PointingHandCursor</cursorShape>
@@ -491,7 +491,7 @@
                         <widget class="QLabel">
                          <property name="font">
                           <font>
-                           <pointsize>20</pointsize>
+                           <pointsize>12</pointsize>
                           </font>
                          </property>
                          <property name="text">
@@ -503,7 +503,7 @@
                         <widget class="QLabel">
                          <property name="font">
                           <font>
-                           <pointsize>15</pointsize>
+                           <pointsize>11</pointsize>
                            <bold>true</bold>
                           </font>
                          </property>
@@ -531,7 +531,7 @@
                       <widget class="QLabel" name="countCode">
                        <property name="font">
                         <font>
-                         <pointsize>24</pointsize>
+                         <pointsize>20</pointsize>
                          <weight>50</weight>
                          <bold>true</bold>
                         </font>
@@ -547,10 +547,10 @@
                   <item>
                    <widget class="QFrame" name="cardData">
                     <property name="minimumHeight">
-                     <number>120</number>
+                     <number>100</number>
                     </property>
                     <property name="maximumHeight">
-                     <number>160</number>
+                     <number>130</number>
                     </property>
                     <property name="cursor">
                      <cursorShape>PointingHandCursor</cursorShape>
@@ -565,7 +565,7 @@
                         <widget class="QLabel">
                          <property name="font">
                           <font>
-                           <pointsize>20</pointsize>
+                           <pointsize>12</pointsize>
                           </font>
                          </property>
                          <property name="text">
@@ -577,7 +577,7 @@
                         <widget class="QLabel">
                          <property name="font">
                           <font>
-                           <pointsize>15</pointsize>
+                           <pointsize>11</pointsize>
                            <bold>true</bold>
                           </font>
                          </property>
@@ -605,7 +605,7 @@
                       <widget class="QLabel" name="countData">
                        <property name="font">
                         <font>
-                         <pointsize>24</pointsize>
+                         <pointsize>20</pointsize>
                          <weight>50</weight>
                          <bold>true</bold>
                         </font>
@@ -621,10 +621,10 @@
                   <item>
                    <widget class="QFrame" name="cardModel">
                     <property name="minimumHeight">
-                     <number>120</number>
+                     <number>100</number>
                     </property>
                     <property name="maximumHeight">
-                     <number>160</number>
+                     <number>130</number>
                     </property>
                     <property name="cursor">
                      <cursorShape>PointingHandCursor</cursorShape>
@@ -639,7 +639,7 @@
                         <widget class="QLabel">
                          <property name="font">
                           <font>
-                           <pointsize>20</pointsize>
+                           <pointsize>12</pointsize>
                           </font>
                          </property>
                          <property name="text">
@@ -651,7 +651,7 @@
                         <widget class="QLabel">
                          <property name="font">
                           <font>
-                           <pointsize>15</pointsize>
+                           <pointsize>11</pointsize>
                            <bold>true</bold>
                           </font>
                          </property>
@@ -679,7 +679,7 @@
                       <widget class="QLabel" name="countModel">
                        <property name="font">
                         <font>
-                         <pointsize>24</pointsize>
+                         <pointsize>20</pointsize>
                          <weight>50</weight>
                          <bold>true</bold>
                         </font>
@@ -853,18 +853,18 @@
               <widget class="QPushButton" name="tabPlus">
                <property name="minimumSize">
                 <size>
-                 <width>26</width>
-                 <height>26</height>
+                 <width>20</width>
+                 <height>20</height>
                 </size>
                </property>
                <property name="maximumSize">
                 <size>
-                 <width>26</width>
-                 <height>26</height>
+                 <width>20</width>
+                 <height>20</height>
                 </size>
                </property>
                <property name="styleSheet">
-                <string notr="true">QPushButton { color: white; background: transparent; border: none; font-size: 20px; font-weight: bold; } QPushButton:hover { color: #dbeafe; background: rgba(255,255,255,0.1); border-radius: 4px; }</string>
+                <string notr="true">QPushButton { color: white; background: transparent; border: none; font-size: 16px; font-weight: bold; } QPushButton:hover { color: #dbeafe; background: rgba(255,255,255,0.1); border-radius: 4px; }</string>
                </property>
                <property name="text">
                 <string>＋</string>

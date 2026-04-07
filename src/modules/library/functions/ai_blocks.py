@@ -19,7 +19,6 @@ os.dup2(_old_stderr, 2)
 os.close(_devnull)
 os.close(_old_stderr)
 
-cv2.setLogLevel(0)
 ort.set_default_logger_severity(3)  # 3 = ERROR only
 
 def Init_Camera(camera_id=0):
@@ -248,3 +247,52 @@ def Run_ONNX_Model(model_session, camera_frame, img_size=640):
     # Run the "Brain"
     outputs = model_session.run(None, {input_name: blob})
     return outputs
+
+def Load_Engine_Model(model_path):
+    """
+    Loads a TensorRT (.engine) model using the Ultralytics YOLO framework.
+    This is optimized for high-speed inference on AI-enabled devices like Jetson.
+    """
+    if not os.path.exists(model_path):
+        print(f"ERROR: Model {model_path} not found!")
+        print("TIP: Check the workspace to ensure the file path is correct.")
+        return None
+        
+    # Proactive check for TensorRT library to provide a student-friendly error
+    try:
+        import tensorrt
+    except ImportError:
+        print("ERROR: TensorRT library not found in this environment.")
+        print("TIP: .engine models require 'tensorrt' package. Run 'pip install tensorrt' or use a Jetson/GPU environment.")
+        return None
+
+    from ultralytics import YOLO
+    print(f"[OK] Loading TensorRT Model (.engine)...")
+    # task='detect' is explicitly set to ensure consistent output format
+    model = YOLO(model_path, task='detect')
+    return model
+
+def Run_Engine_Model(engine_model, camera_frame):
+    """
+    Runs high-speed inference on a camera frame using the loaded engine model.
+    Returns a list of detections: [x1, y1, x2, y2, confidence, class_id]
+    """
+    if engine_model is None or camera_frame is None:
+        return []
+        
+    results = engine_model(camera_frame, verbose=False)
+    
+    # Process the first result from the list
+    if len(results) > 0 and len(results[0].boxes) > 0:
+        # results[0].boxes.data contains [x1, y1, x2, y2, conf, cls] as a tensor
+        return results[0].boxes.data.tolist()
+        
+    return []
+
+def Draw_Engine_Detections(camera_frame, results, classes=None):
+    """
+    High-fidelity drawing block for .engine model results.
+    Returns the number of objects detected.
+    """
+    # Simply reuse the robust multi-format Draw_Detections block
+    return Draw_Detections(camera_frame, results, label=classes if classes else "Object")

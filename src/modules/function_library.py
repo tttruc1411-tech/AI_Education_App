@@ -99,7 +99,7 @@ class FunctionInfoPanel(QFrame):
         layout.addWidget(self._bold_label("Source Code:"))
         source_text = self._load_source(info)
         if source_text:
-            layout.addWidget(self._code_block(source_text, height=200, dark=True))
+            layout.addWidget(self._code_block(source_text, height=200, dark=True, font_size=7))
         else:
             no_src = QLabel("Source code not available.")
             no_src.setStyleSheet("color: #94a3b8; font-size: 13px; background: transparent;")
@@ -115,10 +115,10 @@ class FunctionInfoPanel(QFrame):
         )
         return lbl
 
-    def _code_block(self, text, height=42, dark=False):
+    def _code_block(self, text, height=42, dark=False, font_size=8):
         box = QPlainTextEdit(text)
         box.setReadOnly(True)
-        box.setFont(QFont("JetBrains Mono, Consolas, Courier New", 10))
+        box.setFont(QFont("JetBrains Mono, Consolas, Courier New", font_size))
         box.setFixedHeight(height)
         box.setMinimumWidth(50)  # Bypass NoWrap enforcing wide columns
         box.setLineWrapMode(
@@ -218,6 +218,8 @@ class ToggleLabel(QLabel):
 # ────────────────────────────────────────────────────────────
 
 class DraggableFunctionBlock(QFrame):
+    expandRequested = pyqtSignal(object)
+
     def __init__(self, func_id, info, category_color, category_icon="🌣"):
         super().__init__()
         self.func_id        = func_id
@@ -242,19 +244,20 @@ class DraggableFunctionBlock(QFrame):
         self._header.setCursor(Qt.PointingHandCursor)
 
         row = QHBoxLayout(self._header)
-        row.setContentsMargins(10, 8, 10, 8)
+        row.setContentsMargins(10, 12, 10, 12)
         row.setSpacing(8)
         row.setAlignment(Qt.AlignTop)
 
         # Icon badge
         icon_lbl = QLabel(self.category_icon)
-        icon_lbl.setFixedSize(32, 32)
+        icon_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
+        icon_lbl.setFixedSize(36, 36)
         icon_lbl.setAlignment(Qt.AlignCenter)
         icon_lbl.setStyleSheet(f"""
             background-color: {category_color};
             color: #ffffff;
             border-radius: 10px;
-            font-size: 16px;
+            font-size: 18px;
             font-weight: bold;
         """)
         row.addWidget(icon_lbl, 0, Qt.AlignTop)
@@ -263,22 +266,27 @@ class DraggableFunctionBlock(QFrame):
         text_box = QVBoxLayout()
         text_box.setSpacing(1)
         name_lbl = QLabel(func_id)
+        name_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
         name_lbl.setStyleSheet(
-            "font-weight: 700; color: #1e293b; font-size: 18px; background: transparent;"
+            "font-weight: 700; color: #1e293b; font-size: 16px; background: transparent;"
         )
         short_desc = QLabel(info.get("desc", ""))
+        short_desc.setAttribute(Qt.WA_TransparentForMouseEvents)
         short_desc.setStyleSheet(
-            "color: #94a3b8; font-size: 15px; background: transparent;"
+            "color: #94a3b8; font-size: 14px; background: transparent;"
         )
         short_desc.setWordWrap(True)
         text_box.addWidget(name_lbl)
         text_box.addWidget(short_desc)
         row.addLayout(text_box, stretch=1)
 
-        # Arrow toggle
         self._arrow = ToggleLabel()
-        self._arrow.clicked.connect(self._toggle)
+        self._arrow.setAttribute(Qt.WA_TransparentForMouseEvents)
         row.addWidget(self._arrow, 0, Qt.AlignTop)
+
+        # 🖱️ Make the whole header clickable for smooth interaction
+        self._header.mousePressEvent = self._on_header_pressed
+        self._header.mouseReleaseEvent = self._on_header_released
 
         self._root.addWidget(self._header)
 
@@ -287,9 +295,30 @@ class DraggableFunctionBlock(QFrame):
         self._panel.setVisible(False)
         self._root.addWidget(self._panel)
 
+    def _on_header_pressed(self, event):
+        self._drag_start_pos = event.pos()
+
+    def _on_header_released(self, event):
+        if hasattr(self, '_drag_start_pos'):
+            # Only toggle if the mouse didn't move much (distinguishing click from drag)
+            if (event.pos() - self._drag_start_pos).manhattanLength() < 5:
+                self._toggle()
+
     # ── Toggle ──────────────────────────────────────────────
 
+    def collapse(self):
+        """Force-close this block if it's expanded."""
+        if self._expanded:
+            self._expanded = False
+            self._panel.setVisible(False)
+            self._arrow.set_expanded(False)
+            self._set_header_style(False)
+
     def _toggle(self):
+        # If we are about to expand, notify others to collapse
+        if not self._expanded:
+            self.expandRequested.emit(self)
+
         self._expanded = not self._expanded
         self._panel.setVisible(self._expanded)
         self._arrow.set_expanded(self._expanded)
@@ -342,43 +371,57 @@ class CategoryHeader(QPushButton):
         super().__init__()
         self.setCheckable(True)
         self.setChecked(False)
-        self.setFixedHeight(40)
+        self.setFixedHeight(52)
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: {color};
                 color: white;
                 border-radius: 8px;
-                padding: 0 12px;
+                padding-right: 0px;
                 margin: 4px 8px 2px 8px;
-                font-size: 18px;
             }}
             QPushButton:hover {{ background-color: {_darken_hex(color)}; }}
             QPushButton:checked:hover {{ background-color: {_darken_hex(color)}; }}
         """)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 0, 10, 0)
+        layout.setContentsMargins(10, 0, 4, 0)
+        layout.setSpacing(12)
 
-        # 🏞️ Rich Text Label: BIG Icon + Professional Title
-        title_lbl = QLabel(f"<span style='font-size:20px;'>{icon}</span>&nbsp;&nbsp;&nbsp;{title}")
-        title_lbl.setTextFormat(Qt.RichText)
+        # 🚀 Icon Block (Left Side Tab)
+        icon_box = QLabel(icon)
+        icon_box.setFixedSize(50, 52)
+        icon_box.setAlignment(Qt.AlignCenter)
+        icon_box.setStyleSheet(f"""
+            background: rgba(0, 0, 0, 0); 
+            border-top-left-radius: 8px; 
+            border-bottom-left-radius: 8px;
+            font-size: 24px;
+        """)
+        icon_box.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        # 🏞️ Title Label
+        title_lbl = QLabel(title)
+        title_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
         title_lbl.setStyleSheet(
-            "color: white; background: transparent; font-weight: 900; font-size: 20px; letter-spacing: 1px;"
+            "color: white; background: transparent; font-weight: 900; font-size: 18px; letter-spacing: 1px;"
         )
         title_lbl.setAlignment(Qt.AlignVCenter)
 
         # Count badge
         count_lbl = QLabel(str(count))
+        count_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
         count_lbl.setStyleSheet("""
             background: rgba(255,255,255,0.25);
             border-radius: 6px;
-            padding: 2px 8px;
-            font-size: 14px;
+            padding: 4px 10px;
+            font-size: 12px;
             font-weight: bold;
             color: white;
         """)
 
+        layout.addWidget(icon_box)
         layout.addWidget(title_lbl)
         layout.addStretch()
         layout.addWidget(count_lbl)
@@ -400,6 +443,29 @@ def populate_functions_tab(running_mode_widget):
     # Pin content to top — critical so collapsed headers sit at top, not center
     layout.setAlignment(Qt.AlignTop)
 
+    # 🤝 ACCORDION MANAGERS
+    all_blocks = []
+    all_category_containers = []
+    all_category_buttons = []
+
+    def collapse_all_blocks(except_block):
+        for block in all_blocks:
+            if block != except_block:
+                block.collapse()
+
+    def on_category_clicked(checked, clicked_header, clicked_container):
+        if checked:
+            # 1. Collapse all other categories
+            for btn, cont in zip(all_category_buttons, all_category_containers):
+                if btn != clicked_header:
+                    btn.setChecked(False)
+                    cont.setVisible(False)
+            # 2. Collapse all function blocks for a fresh start
+            collapse_all_blocks(None)
+            clicked_container.setVisible(True)
+        else:
+            clicked_container.setVisible(False)
+
     for cat_name, cat_data in LIBRARY_FUNCTIONS.items():
         color = cat_data["color"]
         icon  = cat_data.get("icon", "📂")
@@ -407,12 +473,16 @@ def populate_functions_tab(running_mode_widget):
 
         header = CategoryHeader(cat_name, count, color, icon=icon)
         layout.addWidget(header)
+        all_category_buttons.append(header)
 
         container = QWidget()
         container.setStyleSheet("background: transparent;")
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 2, 0, 6)
         container_layout.setSpacing(4)
+        all_category_containers.append(container)
+
+        header.clicked.connect(lambda chk, h=header, c=container: on_category_clicked(chk, h, c))
 
         for func_id, info in cat_data["functions"].items():
             block = DraggableFunctionBlock(
@@ -421,8 +491,9 @@ def populate_functions_tab(running_mode_widget):
                 category_color=color,
                 category_icon=icon
             )
+            all_blocks.append(block)
+            block.expandRequested.connect(collapse_all_blocks)
             container_layout.addWidget(block)
 
         container.setVisible(False)
         layout.addWidget(container)
-        header.clicked.connect(lambda checked, c=container: c.setVisible(checked))

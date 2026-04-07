@@ -11,7 +11,7 @@
 
 LIBRARY_FUNCTIONS = {
     "Camera": {
-        "color": "#F57700",  # Emerald (Minty Green)
+        "color": "#f97316",  # Orange 500
         "icon": "📸",
         "functions": {
             "Init_Camera": {
@@ -58,7 +58,7 @@ LIBRARY_FUNCTIONS = {
         },
     },
     "Image Processing": {
-        "color": "#3b82f6",  # Vibrant Blue (Blue 500)
+        "color": "#10b981",  # Vibrant Mint (Distinct from Sky/Cyan)
         "icon": "🖼️",
         "functions": {
             "convert_to_gray": {
@@ -184,7 +184,7 @@ LIBRARY_FUNCTIONS = {
         },
     },
     "AI Vision Core": {
-        "color": "#10b981",  # Amber 500
+        "color": "#8b5cf6",  # Vibrant Violet (Contrast for light pink Brain icon)
         "icon": "🧠",
         "functions": {
             "Load_YuNet_Model": {
@@ -274,6 +274,47 @@ LIBRARY_FUNCTIONS = {
                 "source_func": "Run_ONNX_Model",
                 "source_module": "src.modules.library.functions.ai_blocks",
             },
+            "Load_Engine_Model": {
+                "desc": "Load a high-speed TensorRT (.engine) model for Jetson",
+                "params": [
+                    {
+                        "name": "model_path",
+                        "type": "Text (str)",
+                        "desc": "Path to the .engine model file",
+                    },
+                ],
+                "returns": {
+                    "type": "AI Model",
+                    "desc": "An optimized YOLO engine object",
+                },
+                "usage": "engine_model = Load_Engine_Model(model_path = None)",
+                "import_statement": "from src.modules.library.functions.ai_blocks import Load_Engine_Model",
+                "source_func": "Load_Engine_Model",
+                "source_module": "src.modules.library.functions.ai_blocks",
+            },
+            "Run_Engine_Model": {
+                "desc": "Run ultra-fast inference using a TensorRT engine",
+                "params": [
+                    {
+                        "name": "engine_model",
+                        "type": "AI Model",
+                        "desc": "The loaded .engine model object",
+                    },
+                    {
+                        "name": "camera_frame",
+                        "type": "Image",
+                        "desc": "The camera frame to process",
+                    },
+                ],
+                "returns": {
+                    "type": "Array",
+                    "desc": "List of detections [x1, y1, x2, y2, conf, cls]",
+                },
+                "usage": "engine_results = Run_Engine_Model(engine_model = None, camera_frame = None)",
+                "import_statement": "from src.modules.library.functions.ai_blocks import Run_Engine_Model",
+                "source_func": "Run_Engine_Model",
+                "source_module": "src.modules.library.functions.ai_blocks",
+            },
         },
     },
     "Display & Dashboard": {
@@ -341,6 +382,34 @@ LIBRARY_FUNCTIONS = {
                 "source_func": "Draw_Detections_MultiClass",
                 "source_module": "src.modules.library.functions.ai_blocks",
             },
+            "Draw_Engine_Detections": {
+                "desc": "Draw bounding boxes from .engine model results",
+                "params": [
+                    {
+                        "name": "camera_frame",
+                        "type": "Image",
+                        "desc": "The camera frame to draw on",
+                    },
+                    {
+                        "name": "results",
+                        "type": "Array",
+                        "desc": "The detections list from Run_Engine_Model",
+                    },
+                    {
+                        "name": "classes",
+                        "type": "List",
+                        "desc": "Optional list of class names (default: None)",
+                    },
+                ],
+                "returns": {
+                    "type": "Number (int)",
+                    "desc": "Total count of objects detected",
+                },
+                "usage": "obj_count = Draw_Engine_Detections(camera_frame = None, results = None, classes = None)",
+                "import_statement": "from src.modules.library.functions.ai_blocks import Draw_Engine_Detections",
+                "source_func": "Draw_Engine_Detections",
+                "source_module": "src.modules.library.functions.ai_blocks",
+            },
             "Update_Dashboard": {
                 "desc": "Send image and results to the app UI in one block",
                 "params": [
@@ -373,14 +442,14 @@ LIBRARY_FUNCTIONS = {
     },
 
     "Logic Operations": {
-        "color": "#F50097",  # Vibrant Pink (Pink 500)
+        "color": "#06b6d4",  # Fun Cyan (Swapped from Robotics)
         "icon": "⚡",
         "functions": {
             "Loop_Forever": {
                 "desc": "Create a 'while True' loop to keep your AI running continuously",
                 "params": [],
                 "returns": {"type": "Control Flow", "desc": "Infinite loop"},
-                "usage": "while True:\n    # 🔵 Start Loop\n    # Add your code here (indented 4 spaces)\n    \n    # 🔴 End Loop",
+                "usage": "while True:\n    # 🔵 Start Loop\n    # Add your code here \n    \n    # 🔴 End Loop",
                 "import_statement": "",
                 "source_func": None,
                 "source_module": None,
@@ -410,7 +479,7 @@ LIBRARY_FUNCTIONS = {
         }
     },
     "Robotics (ORC Hub)": {
-        "color": "#8b5cf6",  # Violet 500
+        "color": "#f43f5e",  # Vibrant Rose (Swapped from Logic)
         "icon": "🤖",
         "functions": {
             "DC_Run": {
