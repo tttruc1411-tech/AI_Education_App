@@ -99,6 +99,12 @@ class MultiClassTagPanel(QWidget):
     def get_class_names(self):
         return [t.text().strip() for t in self.tags if t.text().strip()]
 
+    def set_class_names(self, names):
+        """Programmatically populate tag fields from a list of class names."""
+        for i, edit in enumerate(self.tags):
+            edit.setText(names[i] if i < len(names) else "")
+        self._validate()
+
     def lock_classes(self):
         """Permanent lock for tag inputs once collection/labeling begins."""
         for edit in self.tags:

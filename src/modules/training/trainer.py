@@ -90,9 +90,20 @@ def main():
     try:
         from ultralytics import YOLO
         import torch
+        # Skip the AMP check — it downloads an extra model and OOMs on Jetson Orin Nano.
+        # AMP itself (FP16 training) is fine and saves memory; only the check is problematic.
+        # Patch both the module-level function AND the local import in the trainer module.
+        _amp_skip = lambda *args, **kwargs: True
+        import ultralytics.utils.checks
+        ultralytics.utils.checks.check_amp = _amp_skip
+        import ultralytics.engine.trainer as _utrainer
+        _utrainer.check_amp = _amp_skip
     except ImportError:
         print("ERROR: Ultralytics or Torch not found.")
         sys.exit(1)
+
+    # Free GPU memory before loading model (PyQt app + thumbnails consume shared memory)
+    torch.cuda.empty_cache()
 
     print(f"STATUS: loading backbone {args.model}...")
     model = YOLO(args.model)
@@ -117,14 +128,15 @@ def main():
 
     model.add_callback("on_train_epoch_end", on_train_epoch_end)
 
-    # Optimized config for Jetson (matching train_code.py)
+    # Optimized config for Jetson Orin Nano (7.6GB shared CPU/GPU memory)
     train_config = {
-        "batch": 2,
-        "workers": 2,
+        "batch": 1,        # Minimal batch — 640x640 with batch=2 OOMs on Orin Nano
+        "workers": 0,      # In-process loading — worker subprocesses eat shared memory
         "freeze": 5,
-        "cache": True,
+        "cache": "disk",   # Disk cache instead of RAM — RAM competes with GPU on unified memory
         "patience": 20,
         "plots": False,
+        "amp": True,       # FP16 training — saves memory (AMP check is monkey-patched above)
         "device": 0 if torch.cuda.is_available() else "cpu",
     }
 
@@ -136,15 +148,30 @@ def main():
         **train_config
     )
 
-    print("STATUS: Training complete. Exporting to TensorRT Engine...")
-    
-    # 3. Export to Engine
-    # Note: Ultralytics export(format='engine') creates a .engine file in the same weights folder
-    engine_path = model.export(format='engine', device=train_config["device"])
-    
-    print(f"RESULT_MODEL_PT:{results.save_dir}/weights/best.pt")
-    # For newer ultralytics versions, export returns the path to the exported file
-    print(f"RESULT_MODEL_ENGINE:{engine_path}")
+    print("STATUS: Training complete.")
+
+    # 3. Copy best.pt to local path immediately (always available for validation)
+    local_dir = Path(__file__).parent
+    best_pt = Path(f"{results.save_dir}/weights/best.pt")
+    local_pt = local_dir / "best.pt"
+    local_engine = local_dir / "best.engine"
+
+    if best_pt.exists():
+        shutil.copy2(best_pt, local_pt)
+        print(f"RESULT_MODEL_PT:{best_pt}")
+        print(f"RESULT_MODEL_LOCAL:{local_pt}")
+
+    # Free training memory before TRT export
+    del model
+    torch.cuda.empty_cache()
+
+    # 4. TensorRT export — SKIPPED on Orin Nano
+    # The TRT engine builder OOMs on 7.6GB shared memory (needs ~12MB GPU alloc that
+    # fails after training consumed most of it).  The C++ OOM crashes the subprocess
+    # before Python's try/except can catch it, causing _on_train_finished to see a
+    # non-zero exit code and skip validation.  Validation works fine with .pt.
+    print("STATUS: TensorRT export skipped (Orin Nano memory). Using .pt for validation.")
+
     print("STATUS: Finished!")
 
 if __name__ == "__main__":

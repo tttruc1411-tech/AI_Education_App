@@ -218,7 +218,7 @@
       <property name="handleWidth"><number>6</number></property>
 
       <widget class="QFrame" name="configPanel">
-       <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>2</verstretch></sizepolicy></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>10</verstretch></sizepolicy></property>
        <layout class="QVBoxLayout" name="midLayout">
         <property name="spacing"><number>0</number></property>
         <property name="leftMargin"><number>0</number></property>
@@ -362,7 +362,7 @@
       </widget>
  
       <widget class="QFrame" name="progressPanel">
-       <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>1</verstretch></sizepolicy></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>18</verstretch></sizepolicy></property>
        <layout class="QVBoxLayout" name="progressLayout">
         <property name="spacing"><number>0</number></property>
         <property name="leftMargin"><number>0</number></property>
@@ -440,9 +440,9 @@
              </widget>
             </item>
             
-            <item><widget class="QFrame" name="chartLoss"><property name="minimumSize"><size><width>0</width><height>140</height></size></property><property name="styleSheet"><string notr="true">background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;</string></property></widget></item>
-            
-            <item><widget class="QPlainTextEdit" name="txtTrainLog"><property name="readOnly"><bool>true</bool></property><property name="styleSheet"><string notr="true">background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; font-family: 'Consolas'; font-size: 10px; padding: 5px;</string></property></widget></item>
+            <item><widget class="QFrame" name="chartAcc"><property name="minimumSize"><size><width>0</width><height>220</height></size></property><property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>3</verstretch></sizepolicy></property><property name="styleSheet"><string notr="true">background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;</string></property></widget></item>
+
+            <item><widget class="QPlainTextEdit" name="txtTrainLog"><property name="readOnly"><bool>true</bool></property><property name="maximumSize"><size><width>16777215</width><height>120</height></size></property><property name="styleSheet"><string notr="true">background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; font-family: 'Consolas'; font-size: 10px; padding: 5px; border-radius: 0 0 6px 6px;</string></property></widget></item>
             
            </layout>
           </widget>

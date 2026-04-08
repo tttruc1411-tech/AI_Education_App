@@ -98,16 +98,52 @@ A professional, education-focused Python development environment built with **Py
 
 ### 🚀 Integrated Training Engine (YOLOv8)
 * **Status**: ✅ **COMPLETED**
-* **Engine**: Headless `ultralytics` YOLOv8 process optimized for Jetson hardware (Batch Size 2, Workers 2).
-* **Automated Data Preparation**: 
+* **Engine**: Headless `ultralytics` YOLOv8n process launched as `QProcess`, optimized for **Jetson Orin Nano** (7.6GB shared CPU/GPU memory).
+* **Jetson Orin Nano Optimizations**:
+    *   `batch=1` — minimal batch to avoid OOM on 640x640 images.
+    *   `workers=0` — in-process data loading (worker subprocesses eat shared memory).
+    *   `cache='disk'` — disk cache instead of RAM (RAM competes with GPU on unified memory).
+    *   `amp=True` — FP16 training saves memory; AMP safety check monkey-patched (`check_amp → True`) to avoid downloading an extra model that OOMs.
+    *   `freeze=5` — freeze first 5 backbone layers for faster convergence with small datasets.
+    *   Explicit `torch.cuda.empty_cache()` at every stage transition (post-training, pre-export, pre-validation).
+* **Automated Data Preparation**:
     *   **Fixed Workspace**: Uses `src/modules/training/detection/` as the internal training site.
     *   **Smart Split**: Automatically performs a randomized 80/20 train/validation split of project images and annotations.
     *   **Dynamic Metadata**: Generates `dataset.yaml` on-the-fly based on active class names.
 * **Real-time Synchronized Dashboard**:
-    *   **Metric Stream**: Live parsing of training logs to update Loss and mAP (Accuracy) charts in the UI.
+    *   **Accuracy Chart**: Single large `matplotlib` chart showing mAP50 accuracy over epochs (loss displayed in metric card only). Chart has expanded height (220px min) with 12pt bold title.
+    *   **Animated Progress**: Cycling "Training." / "Training.." / "Training..." dots on the epoch counter while waiting for first epoch to complete — gives immediate visual feedback that training is active.
     *   **Progress Tracking**: Smooth 1-100% progress bar and epoch counting synchronized with the backend process.
-* **Automated TensorRT Export**: One-click transition from `.pt` (PyTorch) to `.engine` (TensorRT) format upon training completion, ready for high-performance deployment.
-* **Model Relocation**: Prompt-driven model naming and automated migration to the foundational `projects/model/` workspace.
+    *   **Collapsible Console**: Training log console hidden by default behind a "▶ Console" toggle button. Advanced users can expand to see detailed STATUS/SYSTEM messages.
+* **Stdout IPC Protocol** (between `trainer.py` QProcess and main UI):
+    *   `STATUS:{message}` — general status updates.
+    *   `EPOCH:{current}:{total}:{loss}` — per-epoch metrics.
+    *   `METRIC:acc:{value}` — mAP50 accuracy percentage.
+    *   `RESULT_MODEL_PT:{path}` — PyTorch model location.
+    *   `RESULT_MODEL_LOCAL:{path}` — local model path for validation.
+* **Local Model Storage**: After training, `best.pt` is copied to `src/modules/training/best.pt` (overwritten each session). TensorRT export is **skipped** on Orin Nano to avoid C++-level OOM crashes.
+* **Resilient Finish Handler**: `_on_train_finished` checks for `best.pt` existence even on non-zero exit codes — if a model file exists despite a subprocess crash, validation starts anyway.
+* **Re-trainable**: After stopping validation, the "Start Training" button re-enables so users can iterate on their model.
+
+### 🎯 Post-Training Fast Validation
+* **Status**: ✅ **COMPLETED**
+* **Auto-Start**: Validation camera launches automatically in the right panel after training completes — no manual step required.
+* **Standalone Process**: `src/modules/training/validator.py` runs as an isolated `QProcess` (~100 lines, no app imports).
+    *   Loads model via `ultralytics.YOLO(model_path, task='detect')`.
+    *   Opens camera via `cv2.VideoCapture(0)`.
+    *   Runs real-time inference loop with bounding box drawing (4-color palette matching the tag panel: Purple, Rose, Blue, Emerald).
+    *   Streams annotated frames via `IMG:{base64}` stdout protocol (same as Running Mode).
+* **Buffered Frame Decoding**: `_on_val_stdout` uses `_val_stdout_buf` to reassemble large base64 `IMG:` strings that arrive split across multiple `readAllStandardOutput()` calls — prevents corrupt JPEG errors.
+* **Save Model**: "Save Model" button prompts for a name via `QInputDialog`, copies `best.pt` (or `.engine` if available) to `projects/model/{name}.ext`.
+* **Stop Validation**: "Stop Validation" button kills the QProcess, releases camera/GPU, and re-enables the training button.
+
+### 📂 Project Reload (Detection Mode)
+* **Status**: ✅ **COMPLETED**
+* **Reload Button**: Amber "📂" button in the project row opens a dropdown of existing detection projects (scanned from `projects/data/`).
+* **Class Name Recovery**: Reads `classes.txt` from the project folder. Falls back to scanning annotation `.txt` files for the maximum class ID and generating placeholder names.
+* **Class Persistence**: `_save_classes_txt()` writes class names to `projects/data/[project]/classes.txt` — called during annotation saves and before training starts.
+* **Full State Restore**: Reloads all image thumbnails, populates the `MultiClassTagPanel`, detects image resolution (320 or 640) from the first image, updates all UI states including size toggle buttons and labels.
+* **Overwrite Protection**: When initializing a project folder that already has data, a confirmation dialog warns the user before clearing existing images/annotations.
 
 ## 4. Stability & Performance
 * **Custom Event Routing**: Implementation of a global `QEventFilter` for tooltips to bypass OS-level rendering restrictions.
@@ -116,11 +152,17 @@ A professional, education-focused Python development environment built with **Py
 * **Init Order Logic**: All UI splitters and containers are fully initialized before the translation engine applies the first string map.
 
 ## 5. File Structure
-* `main.py`: Central controller and UI integrator.
+* `main.py`: Central controller and UI integrator (~3600+ lines).
+* `src/ui/training_mode.ui`: Training mode layout (3-column QSplitter with config/progress/validation panels).
+* `src/ui/running_mode.ui`: Running mode layout.
+* `src/ui/main_window.ui`: Main window shell with mode switcher.
 * `src/modules/translations.py`: Global translation registry (EN/VI).
 * `src/modules/advanced_editor.py`: The QScintilla custom logic (modular).
-* `src/modules/training_components.py`: Reusable UI widgets (Tag Panels, etc.).
-* `src/modules/library/functions/ai_blocks.py`: Functional block scripts.
+* `src/modules/training_components.py`: Reusable UI widgets (`MultiClassTagPanel` with `set_class_names()`, `lock_classes()`).
+* `src/modules/training/trainer.py`: Backend YOLOv8 training script (QProcess). Handles dataset split, YAML generation, training loop with epoch/metric reporting, local model copy.
+* `src/modules/training/validator.py`: Standalone post-training validation script (QProcess). Live camera inference with bounding box drawing and `IMG:` frame streaming.
+* `src/modules/training/detection/`: Internal training workspace (auto-generated train/val splits + `dataset.yaml`).
+* `src/modules/library/functions/ai_blocks.py`: Functional block scripts (Camera, YuNet, ONNX, TensorRT inference).
 * `src/modules/library/functions/robotics.py`: Student-facing robotics blocks (DC_Run, DC_Stop, Get_Speed, Set_Servo).
 * `src/modules/library/functions/motor_driver_v2.py`: Low-level I2C driver for OhStem Motor Driver V2 + `check_orc_hub()` probe.
 * `src/modules/library/functions/motor.py`: Brain layer with async motor control (DCMotor class, run_time, run_until_stalled).
@@ -136,7 +178,11 @@ A professional, education-focused Python development environment built with **Py
 * [x] **Premium Tooltips**: Custom dark-themed tooltip engine for OS-agnostic styling.
 * [x] **Robotics Blocks**: 4 function blocks (DC_Run, DC_Stop, Get_Speed, Set_Servo) wired to Motor Driver V2 via I2C.
 * [x] **ORC Hub Status Indicator**: Live connection dot in footer with refresh button and bilingual tooltips.
-* [x] **Backend Training Engine**: Fully integrated YOLOv8 `ultralytics` training engine with Jetson-specific optimizations.
-* [x] **Model Export**: Automated 1-click export of trained `.engine` weights directly after training.
+* [x] **Backend Training Engine**: Fully integrated YOLOv8n training engine with Jetson Orin Nano memory optimizations (batch=1, workers=0, disk cache, AMP monkey-patch).
+* [x] **Post-Training Fast Validation**: Auto-launching live camera detection stream after training completes, with Save Model and Stop Validation buttons.
+* [x] **Project Reload**: Reload existing detection projects with class name recovery from `classes.txt` or annotation file scanning.
+* [x] **Collapsible Training Console**: Toggle button for advanced users; collapsed by default.
+* [x] **Training Progress Animation**: Animated "Training..." dots while waiting for first epoch to complete.
+* [x] **Resilient Training Pipeline**: Non-fatal TRT export, model availability check on crash, GPU memory cleanup between stages.
+* [x] **TensorRT Support**: Native support for `.engine` models via the Ultralytics YOLO framework (TRT export skipped on Orin Nano due to memory constraints).
 * [ ] **Dataset Augmentation**: Add UI controls for Flip, Blur, and Noise simulations.
-* [x] **TensorRT Support**: Native support for `.engine` models via the Ultralytics YOLO framework.
