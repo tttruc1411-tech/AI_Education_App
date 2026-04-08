@@ -1,4 +1,4 @@
-path: /home/kdirnd/kdi/AI_Education_App/src/modules/training/detection
+path: E:/AI_Education_App/src/modules/training/detection
 train: train/images
 val: val/images
 

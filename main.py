@@ -84,6 +84,24 @@ class TrainingCanvas(FigureCanvas):
         self.axes.autoscale_view()
         self.draw()
 
+    def set_small_mode(self, is_small):
+        if not hasattr(self, 'axes') or self.axes is None:
+            return
+        size = 8 if is_small else 12
+        lbl_size = 7 if is_small else 9
+        try:
+            self.axes.title.set_fontsize(size)
+            curr_label = self.axes.get_ylabel()
+            if curr_label:
+                self.axes.set_ylabel(str(curr_label), fontsize=lbl_size)
+            self.axes.tick_params(labelsize=lbl_size-1)
+            if self.axes.get_legend():
+                for text in self.axes.get_legend().get_texts():
+                    text.set_fontsize(lbl_size-1)
+            self.draw_idle() # Use draw_idle instead of draw for better stability
+        except Exception:
+            pass
+
 # ────────────────────────────────────────────────────────────
 #  Annotation Label for Detection Mode
 # ────────────────────────────────────────────────────────────
@@ -375,10 +393,12 @@ class AnnotationLabel(QLabel):
 
 
 class CurriculumCard(QFrame):
-    def __init__(self, filename, title, level, icon, color, desc, on_load_click):
+    def __init__(self, filename, title, level, icon, color, desc, on_load_click, is_small=False):
         super().__init__()
         self.filename = filename
-        self.setMinimumHeight(90)
+        card_h = 70 if is_small else 90
+        self.setMinimumHeight(card_h)
+        self.setMaximumHeight(card_h + 20)
         
         # Consistent colorful card design
         self.setObjectName("CurriculumCard")
@@ -399,10 +419,14 @@ class CurriculumCard(QFrame):
         """)
         
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(12)
+        # Scale margins and spacing
+        margin = 6 if is_small else 12
+        layout.setContentsMargins(margin, margin, margin, margin)
+        layout.setSpacing(margin)
         
         # 1. Icon
+        icon_size = 30 if is_small else 40
+        icon_font = 18 if is_small else 24
         icon_str = icon.strip('"\' ')
         icon_lbl = QLabel()
         from PyQt5.QtGui import QPixmap, QFont
@@ -421,10 +445,8 @@ class CurriculumCard(QFrame):
         else:
             # Render standard emoji
             icon_lbl.setText(icon_str)
-            icon_lbl.setFont(QFont("Segoe UI", 24))
-            
-        icon_lbl.setMinimumWidth(40)
         icon_lbl.setAlignment(Qt.AlignCenter)
+        icon_lbl.setFont(QFont("Segoe UI", icon_font))
         layout.addWidget(icon_lbl)
         
         # 2. Body Container (V-Box to hold the two horizontal rows)
@@ -433,17 +455,18 @@ class CurriculumCard(QFrame):
         
         # --- ROW 1: Title + Badge ---
         row1 = QHBoxLayout()
+        title_font = 13 if is_small else 15
         title_lbl = QLabel(title)
-        title_lbl.setWordWrap(True)
-        title_lbl.setStyleSheet("font-weight: bold; font-size: 15px; color: #1e293b; background: transparent;")
+        title_lbl.setStyleSheet(f"font-weight: bold; font-size: {title_font}px; color: #1e293b; background: transparent;")
         
         # Level Badge
         badge_colors = {"Beginner": "#08a54f", "Intermediate": "#f6710b", "Advanced": "#b51414"}
         badge_bg = badge_colors.get(level, "#64748b")
         badge = QLabel(level)
         badge.setAlignment(Qt.AlignCenter)
-        badge.setFixedSize(80, 20)
-        badge.setStyleSheet(f"background: {badge_bg}; color: white; border-radius: 6px; font-size: 10px; font-weight: bold;")
+        badge_w, badge_h = (60, 16) if is_small else (80, 20)
+        badge.setFixedSize(badge_w, badge_h)
+        badge.setStyleSheet(f"background: {badge_bg}; color: white; border-radius: 6px; font-size: 9px; font-weight: bold;")
         
         row1.addWidget(title_lbl, 1)
         row1.addWidget(badge)
@@ -451,29 +474,30 @@ class CurriculumCard(QFrame):
         
         # --- ROW 2: Description + Load Button ---
         row2 = QHBoxLayout()
+        desc_font = 11 if is_small else 13
         desc_lbl = QLabel(desc)
-        desc_lbl.setWordWrap(True)
-        desc_lbl.setStyleSheet("color: #475569; font-size: 13px; background: transparent;")
+        desc_lbl.setStyleSheet(f"color: #475569; font-size: {desc_font}px; background: transparent;")
         
         # Load Button
         btn_load = QPushButton("Load")
         btn_load.setCursor(Qt.PointingHandCursor)
-        btn_load.setFixedSize(80, 28)
-        btn_load.setStyleSheet("""
-            QPushButton { 
+        btn_w, btn_h = (60, 24) if is_small else (80, 28)
+        btn_load.setFixedSize(btn_w, btn_h)
+        btn_load.setStyleSheet(f"""
+            QPushButton {{ 
                 background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, 
                                           stop:0 #3b82f6, stop:1 #7c3aed); 
                 color: white; 
-                border-radius: 12px; 
+                border-radius: {btn_h//2}px; 
                 font-weight: bold; 
-                font-size: 15px; 
+                font-size: {desc_font+2}px; 
                 border: none;
-                padding: 4px;
-            }
-            QPushButton:hover {
+                padding: 2px;
+            }}
+            QPushButton:hover {{
                 background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, 
                                           stop:0 #2563eb, stop:1 #6d28d9);
-            }
+            }}
         """)
         btn_load.clicked.connect(lambda: on_load_click(filename))
         
@@ -489,6 +513,7 @@ from src.modules.file_manager import FileManager
 from src.modules.function_library import populate_functions_tab
 from src.modules.results_panel import update_results_panel
 from src.modules.library.manager import prepare_code_injection
+
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -548,6 +573,7 @@ class AICodingLab(QMainWindow):
         
         self.file_manager = FileManager(os.path.dirname(os.path.abspath(__file__)))
         self.current_lang = "en" # Default to English
+        self.is_small_screen = False
         self.current_open_file = None
         print(STRINGS[self.current_lang]["HINT_DIR_INITIALIZED"])
         
@@ -604,6 +630,10 @@ class AICodingLab(QMainWindow):
         if self.btnLangEN and self.btnLangVN:
             self.btnLangEN.clicked.connect(lambda: self.set_language("en"))
             self.btnLangVN.clicked.connect(lambda: self.set_language("vi"))
+
+        self.btnResToggle = self.findChild(QPushButton, "btnResToggle")
+        if self.btnResToggle:
+            self.btnResToggle.clicked.connect(self.toggle_resolution)
 
         # 6. Wire up Running Mode internal components
         # A) Editor & Basic Buttons
@@ -735,7 +765,7 @@ class AICodingLab(QMainWindow):
 
         # F) POPULATE FUNCTIONS
         try:
-            populate_functions_tab(self.running_mode_widget)
+            populate_functions_tab(self.running_mode_widget, is_small=self.is_small_screen)
         except Exception as e:
             print(f"Error populating functions tab: {e}")
 
@@ -943,6 +973,200 @@ class AICodingLab(QMainWindow):
         self.populate_curriculum_hub()
         self.update_workspace_counts()
 
+    def toggle_resolution(self, checked):
+        """Toggle between standard and small (10-inch) screen layout."""
+        self.is_small_screen = checked
+        
+        if checked:
+            # Small Screen (16:9 / 16:10 for Jetson)
+            self.setMinimumSize(800, 480)
+            self.resize(1024, 600)
+        else:
+            self.setMinimumSize(900, 600)
+            self.resize(1280, 800)
+            
+        self.refresh_ui_resolution(is_transition=True)
+        try:
+            self.log_to_console(f"Layout changed to {'Small Screen' if checked else 'Standard'}")
+        except Exception:
+            pass
+    def refresh_ui_resolution(self, is_transition=False):
+        """Update font sizes and dimensions across the application."""
+        is_small = self.is_small_screen
+        
+        # 1. Update Core Header/Footer font sizes via variables
+        title_font = 18 if is_small else 24
+        subtitle_font = 10 if is_small else 12
+        footer_font = 11 if is_small else 13
+        
+        # 2. Update Splitter Sizes (Only during transition)
+        if is_transition:
+            if is_small:
+                if self.mainSplitter: self.mainSplitter.setSizes([180, 564, 280])
+                if self.runningEditorSplitter: self.runningEditorSplitter.setSizes([400, 150])
+                if self.rightSplitter: self.rightSplitter.setSizes([300, 300])
+            else:
+                if self.mainSplitter: self.mainSplitter.setSizes([280, 720, 280])
+                if self.runningEditorSplitter: self.runningEditorSplitter.setSizes([600, 200])
+                if self.rightSplitter: self.rightSplitter.setSizes([400, 400])
+        
+        # Override minimum widths from .ui files to allow more aggressive shrinking
+        # We use 100 instead of 0 to prevent "snapping" / total collapse which feels broken
+        min_w = 100 if is_small else 200
+        # Ensure splitters don't snap to zero
+        if self.mainSplitter: self.mainSplitter.setChildrenCollapsible(False)
+        if self.runningEditorSplitter: self.runningEditorSplitter.setChildrenCollapsible(False)
+        if self.rightSplitter: self.rightSplitter.setChildrenCollapsible(False)
+
+        # Training Mode
+        if hasattr(self, 'training_mode_widget') and self.training_mode_widget:
+            for p_name in ["leftPanel", "rightPanel", "configPanel", "progressPanel"]:
+                p = self.training_mode_widget.findChild(QFrame, p_name)
+                if p: p.setMinimumWidth(min_w)
+                
+        # Running Mode
+        if hasattr(self, 'running_mode_widget') and self.running_mode_widget:
+            for p_name in ["hubContainer", "monacoPlaceholder", "rightSplitter", "camContainer", "resContainer"]:
+                p = self.running_mode_widget.findChild(QWidget, p_name)
+                if p: p.setMinimumWidth(min_w)
+        
+        style = self.styleSheet()
+        # Regex replacement for specific font sizes in stylesheet
+        import re
+        style = re.sub(r"(#appTitle\s*\{\s*color:\s*white;\s*font-size:\s*)\d+px", rf"\g<1>{title_font}px", style)
+        style = re.sub(r"(#appSubtitle\s*\{\s*color:\s*rgba\(255,255,255,0.8\);\s*font-size:\s*)\d+px", rf"\g<1>{subtitle_font}px", style)
+        style = re.sub(r"(#footerHints,\s*#footerCredit\s*\{\s*color:\s*white;\s*font-size:\s*)\d+px", rf"\g<1>{footer_font}px", style)
+        try:
+            self.setStyleSheet(style)
+        except Exception as e:
+            print(f"Error applying stylesheet: {e}")
+
+        # 3. Refresh Dynamic Components
+        if hasattr(self, 'hubContentLayout') and self.hubContentLayout:
+            # Small delay to allow layout engine to settle before re-populating complex widgets
+            QTimer.singleShot(50, self.populate_curriculum_hub)
+        
+        # Refresh Training charts if they exist
+        if hasattr(self, '_charts') and self._charts:
+            for chart in self._charts:
+                if chart:
+                    chart.set_small_mode(is_small)
+        
+        # 4. Handle Training Mode scaling if possible
+        if hasattr(self, 'training_mode_widget') and self.training_mode_widget:
+            w = self.training_mode_widget
+            
+            # Panel Titles
+            titles = w.findChildren(QLabel, "panelTitle")
+            t_size = 13 if is_small else 16
+            for t in titles:
+                t.setStyleSheet(f"font-weight: bold; font-size: {t_size}px; color: white;")
+            
+            # Form Labels and Inputs
+            lbl_size = 13 if is_small else 17
+            input_size = 13 if is_small else 17
+            
+            # Target specific label types via name or class
+            all_labels = w.findChildren(QLabel)
+            target_labels = ["lblBackbone", "lblEpochs", "lblBatch", "lblLR", "lblOpt", "lblImgSize", "lblStaticBackbone", "lblStaticImgSize"]
+            for lbl in all_labels:
+                if lbl.objectName() in target_labels:
+                    lbl.setStyleSheet(f"font-weight: bold; font-size: {lbl_size}px; color: #1e293b; background: transparent;")
+                elif lbl.objectName() == "lblValueAccuracy" or lbl.objectName() == "lblValueLoss" or lbl.objectName() == "metricValue":
+                    mv_size = 16 if is_small else 20
+                    lbl.setStyleSheet(f"color: #0f172a; font-size: {mv_size}px; font-weight: bold; background: transparent;")
+                elif lbl.objectName() == "metricTitle":
+                    mt_size = 10 if is_small else 14
+                    lbl.setStyleSheet(f"color: rgba(0,0,0,0.6); font-size: {mt_size}px; font-weight: bold; background: transparent;")
+            
+            # Input fields
+            from PyQt5.QtWidgets import QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit
+            for field in w.findChildren((QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit)):
+                field.setStyleSheet(f"border: 1px solid #e2e8f0; border-radius: 6px; padding: {'4px' if is_small else '10px'}; \n"
+                                  f"background-color: #f8fafc; font-size: {input_size}px; color: #0f172a;")
+            
+            # Training Log
+            if hasattr(self, 'txtTrainLog') and self.txtTrainLog:
+                log_font = 8 if is_small else 10
+                self.txtTrainLog.setStyleSheet(f"background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; \n"
+                                             f"font-family: 'Consolas'; font-size: {log_font}px; padding: 5px; border-radius: 0 0 6px 6px;")
+            
+            # Action Buttons
+            btn_add_size = 12 if is_small else 16
+            btn_start_size = 14 if is_small else 18
+            btn_add = w.findChild(QPushButton, "btnAddClass")
+            if btn_add:
+                btn_add.setStyleSheet(f"border: 2px dashed #cbd5e1; background: #f8fafc; color: #64748b; "
+                                     f"border-radius: 8px; padding: {'6px' if is_small else '12px'}; font-weight: bold; margin: 4px; font-size: {btn_add_size}px;")
+            btn_start = w.findChild(QPushButton, "btnStartTraining")
+            if btn_start:
+                btn_start.setStyleSheet(f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #16a34a, stop:1 #059669); "
+                                       f"color: white; border-radius: 8px; font-weight: bold; border: none; "
+                                       f"min-height: {'36px' if is_small else '48px'}; font-size: {btn_start_size}px; margin: 6px;")
+            
+            # Status messages
+            msg_size = 14 if is_small else 18
+            hint_size = 11 if is_small else 14
+            status_msg = w.findChild(QLabel, "statusMsg")
+            if status_msg: status_msg.setStyleSheet(f"font-weight: bold; font-size: {msg_size}px; color: #94a3b8;")
+            status_hint = w.findChild(QLabel, "statusHint")
+            if status_hint: status_hint.setStyleSheet(f"color: #94a3b8; font-size: {hint_size}px; padding: 0 10px;")
+
+        # 5. Handle Running Mode scaling if possible
+        if hasattr(self, 'running_mode_widget') and self.running_mode_widget:
+            rw = self.running_mode_widget
+            title_size = 14 if is_small else 18
+            
+            # Panel headers
+            for t_name in ["hubTitle", "editorTitle", "camTitle", "resTitle", "lblCT"]:
+                t_lbl = rw.findChild(QLabel, t_name)
+                if t_lbl:
+                    t_lbl.setStyleSheet(f"font-weight: bold; font-size: {title_size}px; color: white; background: transparent;")
+            
+            # Console Body
+            if hasattr(self, 'consoleBody') and self.consoleBody:
+                c_font = 9 if is_small else 14
+                self.consoleBody.setStyleSheet(f"background-color: transparent; color: #334155; font-family: 'Consolas', 'Courier New'; font-size: {c_font}px;")
+                
+            # Monaco Placeholder (for now it's a QTextEdit)
+            if hasattr(self, 'monacoPlaceholder') and self.monacoPlaceholder:
+                e_font = 10 if is_small else 16
+                self.monacoPlaceholder.setStyleSheet(f"background-color: white; border: none; font-family: 'Consolas', 'Courier New'; font-size: {e_font}px; color: #1e293b;")
+                
+            # Footer Workspace Label
+            if hasattr(self, 'lblCurrentFolder') and self.lblCurrentFolder:
+                wf_size = 11 if is_small else 15
+                self.lblCurrentFolder.setStyleSheet(f"font-weight: bold; color: #475569; font-size: {wf_size}px;")
+                
+            # Refresh Function Library with scaling
+            from src.modules.function_library import populate_functions_tab
+            populate_functions_tab(self.running_mode_widget, is_small=is_small)
+            
+            # Workspace Dashboard Scaling
+            if hasattr(self, 'workspaceDashboard') and self.workspaceDashboard:
+                d = self.workspaceDashboard
+                card_title_font = 9 if is_small else 11
+                card_count_font = 14 if is_small else 20
+                for card_name, color in [("cardCode", "#2563eb"), ("cardData", "#16a34a"), ("cardModel", "#9333ea")]:
+                    card = d.findChild(QFrame, card_name)
+                    if card:
+                        # Scale cards height
+                        card.setMinimumHeight(60 if is_small else 100)
+                        card.setMaximumHeight(80 if is_small else 130)
+                        for lbl in card.findChildren(QLabel):
+                            if lbl.objectName().startswith("count"):
+                                lbl.setStyleSheet(f"font-size: {card_count_font}px; font-weight: bold; color: {color}; background: transparent;")
+                            else:
+                                lbl.setStyleSheet(f"font-size: {card_title_font}px; font-weight: bold; color: {color}; background: transparent;")
+                                
+            # Editor Buttons
+            if hasattr(self, 'btnRunCode') and self.btnRunCode:
+                r_size = 11 if is_small else 14
+                self.btnRunCode.setStyleSheet(f"background-color: #12b54d; color: white; border-radius: 4px; font-size: {r_size}px; font-weight: bold; padding: {'4px 8px' if is_small else '6px 15px'};")
+            if hasattr(self, 'btnSaveFile') and self.btnSaveFile:
+                s_size = 11 if is_small else 14
+                self.btnSaveFile.setStyleSheet(f"background-color: rgba(255,255,255,0.15); color: white; border-radius: 4px; padding: {'4px 8px' if is_small else '4px 10px'}; font-weight: bold; font-size: {s_size}px;")
+
     def retranslate_ui(self):
         """Update all core UI strings from the translation dictionary."""
         s = STRINGS[self.current_lang]
@@ -953,6 +1177,7 @@ class AICodingLab(QMainWindow):
         if hasattr(self, 'btnTrainMode'): self.btnTrainMode.setText(s["MODE_TRAINING"])
         if hasattr(self, 'footerHints'): self.footerHints.setText(s["FOOTER_HINTS"])
         if hasattr(self, 'footerCredit'): self.footerCredit.setText(s["FOOTER_CREDIT"])
+        if hasattr(self, 'btnResToggle') and self.btnResToggle: self.btnResToggle.setToolTip(s["TIP_RES_TOGGLE"])
         
         # running_mode.ui elements (tabs)
         if hasattr(self, 'tabExamples'): self.tabExamples.setText(s["TAB_EXAMPLES"])
@@ -1238,13 +1463,15 @@ class AICodingLab(QMainWindow):
                 
                 # Icon + Name
                 icon_lbl = QLabel(theme['icon'])
-                icon_lbl.setFont(QFont("Segoe UI", 12))
-                icon_lbl.setFixedWidth(24)
+                i_f_size = 10 if self.is_small_screen else 12
+                icon_lbl.setFont(QFont("Segoe UI", i_f_size))
+                icon_lbl.setFixedWidth(20 if self.is_small_screen else 24)
                 icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 icon_lbl.setStyleSheet(f"color: {theme['text']}; background: transparent;")
                 
                 name_lbl = QLabel(file_path.name)
-                name_lbl.setStyleSheet(f"color: {theme['text']}; font-weight: bold; font-size: 13px; background: transparent;")
+                n_f_size = 10 if self.is_small_screen else 13
+                name_lbl.setStyleSheet(f"color: {theme['text']}; font-weight: bold; font-size: {n_f_size}px; background: transparent;")
                 
                 # Action Buttons (Icon Only)
                 btn_open = self._icon_action_button("📂", "Open",  "#43CF0C")
@@ -2028,6 +2255,9 @@ class AICodingLab(QMainWindow):
             chart_acc_frame.setMinimumHeight(300) 
             self.canvasAcc = TrainingCanvas(chart_acc_frame, title="Accuracy (mAP50) Over Epochs", ylabel="Accuracy (%)", color_train="#10b981", color_val="#f59e0b")
             chart_acc_frame.layout().addWidget(self.canvasAcc)
+            self._charts = [self.canvasAcc]
+        else:
+            self._charts = []
 
         self._training_total_epochs = 20
         

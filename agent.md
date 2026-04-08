@@ -64,6 +64,9 @@ A professional, education-focused Python development environment built with **Py
 * **IDE Features**: Interactive line numbers, intelligent auto-indentation, and smart snippet injection.
 * **Ghost Block System**: Semi-transparent, color-coded visual guidance (Green, Blue, Purple) that matches the current block's indentation level.
 * **Smart Contextual Indentation**: Custom logic that automatically detects the correct indentation level based on preceding colons (`:`) or end markers. The user only chooses the drop line; the system manages the exact column alignment.
+* **Read-Only Fixed Tags (Syntax Guardrails)**: Automatically detects and locks "Key" segments of code (e.g., `model_path =`, `cap = `, `id =`) to prevent accidental deletion or syntax corruption.
+    *   **Logic**: Typing, Backspace, and Delete are blocked within protected segments.
+    *   **Option A Deletion Policy**: To ensure students aren't "stuck," the system allows deleting an entire line if it is fully selected, enabling easy block removal while preventing partial syntax errors.
 
 ### 🧠 Deep Learning Dashboard (Training Mode)
 * **Design**: High-fidelity, transparent glassmorphism design with vibrant color-coded headers (Indigo, Purple, Emerald) and 12px-16px rounded modern inputs.
@@ -185,4 +188,5 @@ A professional, education-focused Python development environment built with **Py
 * [x] **Training Progress Animation**: Animated "Training..." dots while waiting for first epoch to complete.
 * [x] **Resilient Training Pipeline**: Non-fatal TRT export, model availability check on crash, GPU memory cleanup between stages.
 * [x] **TensorRT Support**: Native support for `.engine` models via the Ultralytics YOLO framework (TRT export skipped on Orin Nano due to memory constraints).
+* [x] **Read-Only Fixed Tags**: High-fidelity syntax protection system that locks parameter names and assignment keys, preventing common student syntax errors.
 * [ ] **Dataset Augmentation**: Add UI controls for Flip, Blur, and Noise simulations.

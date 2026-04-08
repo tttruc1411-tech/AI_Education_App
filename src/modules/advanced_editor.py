@@ -156,8 +156,13 @@ class AdvancedPythonEditor(QsciScintilla):
         self.SendScintilla(2523, self.OCCURRENCE_TEXT_INDICATOR, 1)
         # Globally set the dark purple text color (#3b0764) for fallback
         self.setIndicatorForegroundColor(QColor(59, 7, 100), self.OCCURRENCE_TEXT_INDICATOR)
-        self.SendScintilla(self.SCI_INDICSETALPHA, self.BLANK_INDICATOR, 30)
         self.SendScintilla(self.SCI_INDICSETOUTLINEALPHA, self.BLANK_INDICATOR, 80)
+        
+        # 🔒 NEW: Protected/Read-Only Tag Indicator (Indicator 13)
+        self.PROTECTED_INDICATOR = 13
+        self.indicatorDefine(QsciScintilla.PlainIndicator, self.PROTECTED_INDICATOR)
+        # We don't want visual clutter, so we make it invisible but logically active
+        self.setIndicatorForegroundColor(QColor(0,0,0,0), self.PROTECTED_INDICATOR)
         
         # Scanner Timer for performance (only scan 300ms after last keypress)
         self._blank_timer = QTimer(self)
@@ -402,6 +407,7 @@ class AdvancedPythonEditor(QsciScintilla):
         if total_lines > 0:
             last_line_len = len(self.text(total_lines - 1))
             self.clearIndicatorRange(0, 0, total_lines - 1, last_line_len, self.BLANK_INDICATOR)
+            self.clearIndicatorRange(0, 0, total_lines - 1, last_line_len, self.PROTECTED_INDICATOR)
             
         content_bytes = self.text().encode('utf-8')
         content_str = content_bytes.decode('utf-8', errors='ignore')
@@ -482,6 +488,26 @@ class AdvancedPythonEditor(QsciScintilla):
                                     s_line, s_col = self.lineIndexFromPosition(byte_start)
                                     e_line, e_col = self.lineIndexFromPosition(byte_end)
                                     self.fillIndicatorRange(s_line, s_col, e_line, e_col, self.BLANK_INDICATOR)
+                                    
+                                    # 🔒 LOCK the 'Key =' part
+                                    key_match = p_match.group(1) + "="
+                                    key_len_bytes = len(key_match.encode('utf-8'))
+                                    self.fillIndicatorRange(s_line, s_col, s_line, s_col + len(key_match), self.PROTECTED_INDICATOR)
+
+                        # New: Lock assignments like 'cap = '
+                        prefix_match = re.search(rf"\b([a-zA-Z_]\w*)\s*=\s*{f_name}\b", content_str[:f_match.start()])
+                        if prefix_match:
+                             p_start = len(content_str[:f_match.start() - (len(f_match.group(0)) + 50)].encode('utf-8')) # safe range
+                             # Finding the actual match in the line
+                             l_line, _ = self.lineIndexFromPosition(f_match.start())
+                             l_text = self.text(l_line)
+                             l_match = re.search(rf"\b([a-zA-Z_]\w*)\s*=\s*{f_name}\b", l_text)
+                             if l_match:
+                                 # Lock the result variable + equals sign
+                                 lock_text = l_match.group(1) + " ="
+                                 lock_start = l_text.find(lock_text)
+                                 if lock_start != -1:
+                                     self.fillIndicatorRange(l_line, lock_start, l_line, lock_start + len(lock_text), self.PROTECTED_INDICATOR)
 
                         current_offset += len(arg) + 1 # +1 for comma
 
@@ -634,6 +660,61 @@ class AdvancedPythonEditor(QsciScintilla):
                     }
         
         return registry
+        
+    def keyPressEvent(self, event):
+        """Intercept and block attempts to modify 'Fixed Tags' (Indicator 13)."""
+        # 1. Allow Navigation and Selection keys
+        if event.key() in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down, 
+                           Qt.Key_Home, Qt.Key_End, Qt.Key_PageUp, Qt.Key_PageDown,
+                           Qt.Key_Control, Qt.Key_Shift, Qt.Key_Alt):
+            super().keyPressEvent(event)
+            return
+
+        # 🚀 OPTION A: If the entire line is selected, allow deletion even if it has protected zones
+        if self.hasSelectedText():
+            start_line, start_col, end_line, end_col = self.getSelection()
+            # If the selection spans the entire line(s) content
+            if start_col == 0 and end_col >= len(self.text(end_line).strip()):
+                super().keyPressEvent(event)
+                return
+            
+            # Otherwise check if the selection overlaps any protected indicators
+            sel_start = self.SendScintilla(self.SCI_GETSELECTIONSTART)
+            sel_end = self.SendScintilla(self.SCI_GETSELECTIONEND)
+            for i in range(sel_start, sel_end):
+                if self.SendScintilla(self.SCI_INDICATORVALUEAT, self.PROTECTED_INDICATOR, i):
+                    # Blocking selection modification if it touches protected code
+                    return 
+        
+        # 2. Check current cursor and intended modification
+        pos = self.SendScintilla(self.SCI_GETCURRENTPOS)
+        
+        # CASE: Backspacing into a protected zone
+        if event.key() == Qt.Key_Backspace:
+            if pos > 0 and self.SendScintilla(self.SCI_INDICATORVALUEAT, self.PROTECTED_INDICATOR, pos - 1):
+                return # Block
+                
+        # CASE: Deleting a character inside a protected zone
+        elif event.key() == Qt.Key_Delete:
+            if self.SendScintilla(self.SCI_INDICATORVALUEAT, self.PROTECTED_INDICATOR, pos):
+                return # Block
+        
+        # CASE: Regular typing / Enter / Space
+        elif event.text() or event.key() in (Qt.Key_Enter, Qt.Key_Return, Qt.Key_Tab):
+            # If cursor is INSIDE a protected word (not at the end of it)
+            if self.SendScintilla(self.SCI_INDICATORVALUEAT, self.PROTECTED_INDICATOR, pos):
+                # EXCEPTION: If we are at the very END of the protected zone, and NOT backspacing, allow.
+                # Indicator 13 is set for 'param_name ='
+                # If we are at the space after '=', we should be free.
+                is_prev_protected = self.SendScintilla(self.SCI_INDICATORVALUEAT, self.PROTECTED_INDICATOR, pos - 1) if pos > 0 else False
+                if is_prev_protected:
+                    # We are on the edge or inside.
+                    # Verify if the CURRENT position is ALSO protected (inside the zone)
+                    if self.SendScintilla(self.SCI_INDICATORVALUEAT, self.PROTECTED_INDICATOR, pos):
+                        return # Block
+        
+        # If we passed all checks, allow the event
+        super().keyPressEvent(event)
 
     # ── Smart Scope Detection ───────────────────────────────────────
     

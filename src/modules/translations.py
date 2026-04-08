@@ -37,7 +37,7 @@ STRINGS = {
         "TR_CONFIG": "⚙️ Training Configuration",
         "TR_FAST_CHECK": "⚡ Fast Check",
         "TR_RECOGNITION": "Recognition",
-        "TR_DETECTION": "Detection (Boxes)",
+        "TR_DETECTION": "Detection",
         "TR_ADD_CLASS": "+ Add a Class",
         "TR_START": "▶ Start Training",
         "TR_DS_SUMMARY": "Dataset Summary",
@@ -62,6 +62,7 @@ STRINGS = {
         "ORC_CONNECTED": "ORC Hub: Connected",
         "ORC_DISCONNECTED": "ORC Hub: Not Connected",
         "ORC_REFRESH_TIP": "Re-check ORC Hub connection",
+        "TIP_RES_TOGGLE": "Toggle between Standard and 10-inch screen resolution",
     },
     "vi": {
         "APP_SUBTITLE": "Học AI & Thị giác Máy tính bằng cách Lập trình!",
@@ -99,7 +100,7 @@ STRINGS = {
         "TR_CONFIG": "⚙️ Cấu hình Huấn luyện",
         "TR_FAST_CHECK": "⚡ Kiểm tra nhanh",
         "TR_RECOGNITION": "Nhận diện",
-        "TR_DETECTION": "Phát hiện (Khung)",
+        "TR_DETECTION": "Phát hiện",
         "TR_ADD_CLASS": "+ Thêm lớp mới",
         "TR_START": "▶ Bắt đầu Huấn luyện",
         "TR_DS_SUMMARY": "Tóm tắt Bộ dữ liệu",
@@ -124,5 +125,6 @@ STRINGS = {
         "ORC_CONNECTED": "ORC Hub: Đã kết nối",
         "ORC_DISCONNECTED": "ORC Hub: Chưa kết nối",
         "ORC_REFRESH_TIP": "Kiểm tra lại kết nối ORC Hub",
+        "TIP_RES_TOGGLE": "Chuyển đổi giữa độ phân giải Tiêu chuẩn và màn hình 10 inch",
     }
 }

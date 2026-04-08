@@ -34,7 +34,7 @@ class FunctionInfoPanel(QFrame):
     Flat design: Snippet → Parameters → Returns → Source Code.
     """
 
-    def __init__(self, func_id, info, category_color):
+    def __init__(self, func_id, info, category_color, is_small=False):
         super().__init__()
         self.setObjectName("InfoPanel")
         self.setStyleSheet(f"""
@@ -75,8 +75,9 @@ class FunctionInfoPanel(QFrame):
                               f" – {desc}")
                 line.setWordWrap(True)
                 line.setTextFormat(Qt.RichText)
+                f_size = 12 if is_small else 16
                 line.setStyleSheet(
-                    "color: #334155; font-size: 16px; background: transparent;"
+                    f"color: #334155; font-size: {f_size}px; background: transparent;"
                 )
                 layout.addWidget(line)
 
@@ -90,8 +91,9 @@ class FunctionInfoPanel(QFrame):
             )
             ret_line.setWordWrap(True)
             ret_line.setTextFormat(Qt.RichText)
+            f_size = 12 if is_small else 16
             ret_line.setStyleSheet(
-                "color: #334155; font-size: 16px; background: transparent;"
+                f"color: #334155; font-size: {f_size}px; background: transparent;"
             )
             layout.addWidget(ret_line)
 
@@ -107,11 +109,12 @@ class FunctionInfoPanel(QFrame):
 
     # ── Helpers ────────────────────────────────────────────
 
-    def _bold_label(self, text):
+    def _bold_label(self, text, is_small=False):
         lbl = QLabel(text)
         lbl.setWordWrap(True)  # CRITICAL: Prevent long bold strings from locking layout widths
+        f_size = 11 if is_small else 14
         lbl.setStyleSheet(
-            "color: #1e293b; font-size: 14px; font-weight: 700; background: transparent;"
+            f"color: #1e293b; font-size: {f_size}px; font-weight: 700; background: transparent;"
         )
         return lbl
 
@@ -220,7 +223,7 @@ class ToggleLabel(QLabel):
 class DraggableFunctionBlock(QFrame):
     expandRequested = pyqtSignal(object)
 
-    def __init__(self, func_id, info, category_color, category_icon="🌣"):
+    def __init__(self, func_id, info, category_color, category_icon="🌣", is_small=False):
         super().__init__()
         self.func_id        = func_id
         self.info           = info
@@ -251,13 +254,15 @@ class DraggableFunctionBlock(QFrame):
         # Icon badge
         icon_lbl = QLabel(self.category_icon)
         icon_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
-        icon_lbl.setFixedSize(36, 36)
+        i_box = 24 if is_small else 36
+        i_font = 12 if is_small else 18
+        icon_lbl.setFixedSize(i_box, i_box)
         icon_lbl.setAlignment(Qt.AlignCenter)
         icon_lbl.setStyleSheet(f"""
             background-color: {category_color};
             color: #ffffff;
-            border-radius: 10px;
-            font-size: 18px;
+            border-radius: {'6px' if is_small else '10px'};
+            font-size: {i_font}px;
             font-weight: bold;
         """)
         row.addWidget(icon_lbl, 0, Qt.AlignTop)
@@ -267,13 +272,15 @@ class DraggableFunctionBlock(QFrame):
         text_box.setSpacing(1)
         name_lbl = QLabel(func_id)
         name_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
+        n_size = 13 if is_small else 16
         name_lbl.setStyleSheet(
-            "font-weight: 700; color: #1e293b; font-size: 16px; background: transparent;"
+            f"font-weight: 700; color: #1e293b; font-size: {n_size}px; background: transparent;"
         )
         short_desc = QLabel(info.get("desc", ""))
         short_desc.setAttribute(Qt.WA_TransparentForMouseEvents)
+        d_size = 11 if is_small else 14
         short_desc.setStyleSheet(
-            "color: #94a3b8; font-size: 14px; background: transparent;"
+            f"color: #94a3b8; font-size: {d_size}px; background: transparent;"
         )
         short_desc.setWordWrap(True)
         text_box.addWidget(name_lbl)
@@ -291,7 +298,7 @@ class DraggableFunctionBlock(QFrame):
         self._root.addWidget(self._header)
 
         # ── Info panel (hidden) ──────────────────────────────
-        self._panel = FunctionInfoPanel(func_id, info, category_color)
+        self._panel = FunctionInfoPanel(func_id, info, category_color, is_small=is_small)
         self._panel.setVisible(False)
         self._root.addWidget(self._panel)
 
@@ -367,11 +374,11 @@ class DraggableFunctionBlock(QFrame):
 # ────────────────────────────────────────────────────────────
 
 class CategoryHeader(QPushButton):
-    def __init__(self, title, count, color, icon="📂"):
+    def __init__(self, title, count, color, icon="📂", is_small=False):
         super().__init__()
         self.setCheckable(True)
         self.setChecked(False)
-        self.setFixedHeight(52)
+        self.setFixedHeight(36 if is_small else 52)
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet(f"""
             QPushButton {{
@@ -391,21 +398,24 @@ class CategoryHeader(QPushButton):
 
         # 🚀 Icon Block (Left Side Tab)
         icon_box = QLabel(icon)
-        icon_box.setFixedSize(50, 52)
+        i_h = 36 if is_small else 52
+        i_font = 18 if is_small else 24
+        icon_box.setFixedSize(40 if is_small else 50, i_h)
         icon_box.setAlignment(Qt.AlignCenter)
         icon_box.setStyleSheet(f"""
             background: rgba(0, 0, 0, 0); 
             border-top-left-radius: 8px; 
             border-bottom-left-radius: 8px;
-            font-size: 24px;
+            font-size: {i_font}px;
         """)
         icon_box.setAttribute(Qt.WA_TransparentForMouseEvents)
 
         # 🏞️ Title Label
         title_lbl = QLabel(title)
         title_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
+        t_font = 14 if is_small else 18
         title_lbl.setStyleSheet(
-            "color: white; background: transparent; font-weight: 900; font-size: 18px; letter-spacing: 1px;"
+            f"color: white; background: transparent; font-weight: 900; font-size: {t_font}px; letter-spacing: 1px;"
         )
         title_lbl.setAlignment(Qt.AlignVCenter)
 
@@ -431,7 +441,7 @@ class CategoryHeader(QPushButton):
 #  Populate the Functions Tab
 # ────────────────────────────────────────────────────────────
 
-def populate_functions_tab(running_mode_widget):
+def populate_functions_tab(running_mode_widget, is_small=False):
     layout = running_mode_widget.findChild(QVBoxLayout, "functionsListLayout")
 
     # Remove all existing items (widgets + spacers)
@@ -471,7 +481,7 @@ def populate_functions_tab(running_mode_widget):
         icon  = cat_data.get("icon", "📂")
         count = len(cat_data["functions"])
 
-        header = CategoryHeader(cat_name, count, color, icon=icon)
+        header = CategoryHeader(cat_name, count, color, icon=icon, is_small=is_small)
         layout.addWidget(header)
         all_category_buttons.append(header)
 
@@ -489,7 +499,8 @@ def populate_functions_tab(running_mode_widget):
                 func_id=func_id,
                 info=info,
                 category_color=color,
-                category_icon=icon
+                category_icon=icon,
+                is_small=is_small
             )
             all_blocks.append(block)
             block.expandRequested.connect(collapse_all_blocks)

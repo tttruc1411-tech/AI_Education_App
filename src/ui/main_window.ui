@@ -82,6 +82,25 @@
         background-color: rgba(255, 255, 255, 0.1);
     }
     
+    /* Resolution Toggle (Compact/Standard) */
+    #btnResToggle {
+        background-color: rgba(0, 0, 0, 0.15); 
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 17px; 
+        color: white; 
+        font-size: 18px;
+        padding: 4px;
+        min-width: 34px;
+        min-height: 34px;
+    }
+    #btnResToggle:checked {
+        background-color: rgba(255, 255, 255, 0.25); 
+        border: 1px solid rgba(255, 255, 255, 0.6);  
+    }
+    #btnResToggle:hover:!checked {
+        background-color: rgba(255, 255, 255, 0.1);
+    }
+    
     /* Footer */
     #footerFrame { 
         background-color: #1f2937; 
@@ -192,6 +211,15 @@
               </widget>
              </item>
             </layout>
+           </widget>
+          </item>
+
+          <!-- Resolution Toggle -->
+          <item>
+           <widget class="QPushButton" name="btnResToggle">
+            <property name="text"><string>💻</string></property>
+            <property name="checkable"><bool>true</bool></property>
+            <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
            </widget>
           </item>
          </layout>
