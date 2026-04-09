@@ -198,12 +198,12 @@ def Draw_Detections_MultiClass(camera_frame, outputs, classes, conf_threshold=0.
             name = classes[cls_id] if cls_id < len(classes) else f"ID:{cls_id}"
             display_text = f"{name} ({conf*100:.0f}%)"
             
-            cv2.rectangle(frame, (x, y), (x2, y2), (0, 255, 0), 2)
+            cv2.rectangle(camera_frame, (x, y), (x2, y2), (0, 255, 0), 2)
             
             (tw, th), _ = cv2.getTextSize(display_text, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
-            cv2.rectangle(frame, (x, y - th - 10), (x + tw, y), (0, 255, 0), -1)
+            cv2.rectangle(camera_frame, (x, y - th - 10), (x + tw, y), (0, 255, 0), -1)
             
-            cv2.putText(frame, display_text, (x, y - 5), 
+            cv2.putText(camera_frame, display_text, (x, y - 5), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 2)
                         
             count += 1

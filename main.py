@@ -4,6 +4,7 @@ import os
 # Suppress noisy C-library warnings on Jetson (must be set before imports)
 os.environ["ORT_LOG_LEVEL"] = "ERROR"
 os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
+os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.xcb.xcbclipboard=false"
 
 # Pre-import onnxruntime with fd-level stderr silenced to suppress
 # the C++ "device_discovery.cc" DRM warning on Jetson Orin Nano
@@ -566,20 +567,21 @@ class DarkTooltipFilter(QWidget):
 class AICodingLab(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setMinimumSize(900, 600) # Ensure it CAN shrink to fit small Jetson screens
+        self.setMinimumSize(800, 480) # Ensure it CAN shrink to fit small Jetson screens
         
         # 1. Setup Paths
         self.ui_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "ui")
         
         self.file_manager = FileManager(os.path.dirname(os.path.abspath(__file__)))
         self.current_lang = "en" # Default to English
-        self.is_small_screen = False
+        self.is_small_screen = True
         self.current_open_file = None
         print(STRINGS[self.current_lang]["HINT_DIR_INITIALIZED"])
         
         # 2. Load the Main Shell
         try:
             loadUi(os.path.join(self.ui_dir, "main_window.ui"), self)
+            self.base_style = self.styleSheet() # Store template for clean resolution switching
             print("Main shell loaded.")
         except Exception as e:
             print(f"Error loading main shell: {e}")
@@ -633,6 +635,7 @@ class AICodingLab(QMainWindow):
 
         self.btnResToggle = self.findChild(QPushButton, "btnResToggle")
         if self.btnResToggle:
+            self.btnResToggle.setChecked(True)
             self.btnResToggle.clicked.connect(self.toggle_resolution)
 
         # 6. Wire up Running Mode internal components
@@ -710,6 +713,7 @@ class AICodingLab(QMainWindow):
 
         # 2a) Find Splitters for Styling
         self.mainSplitter = self.running_mode_widget.findChild(QSplitter, "mainSplitter")
+        self.leftSplitter = self.running_mode_widget.findChild(QSplitter, "leftSplitter")
         self.runningEditorSplitter = self.running_mode_widget.findChild(QSplitter, "editorSplitter")
         self.rightSplitter = self.running_mode_widget.findChild(QSplitter, "rightSplitter")
 
@@ -804,17 +808,37 @@ class AICodingLab(QMainWindow):
             self.mainSplitter.setStretchFactor(2, 1)
             self.mainSplitter.setSizes([300, 600, 300])
 
+        # leftSplitter is a vertical splitter wrapping hubContainer only (1 child)
+        # Ensure it doesn't interfere with mainSplitter's horizontal dragging
+        if self.leftSplitter:
+            self.leftSplitter.setChildrenCollapsible(False)
+            from PyQt5.QtWidgets import QSizePolicy
+            self.leftSplitter.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+            self.leftSplitter.setMinimumWidth(80)
+
         # Middle Column: Editor (top) vs Console (bottom) -> Ratio 3:1
         if self.runningEditorSplitter:
+            self.runningEditorSplitter.setChildrenCollapsible(False)
             self.runningEditorSplitter.setStretchFactor(0, 3)
             self.runningEditorSplitter.setStretchFactor(1, 1)
             self.runningEditorSplitter.setSizes([600, 200])
+            # Reduce console minimum height so it doesn't fight the splitter
+            console = self.running_mode_widget.findChild(QFrame, "consoleContainer")
+            if console: console.setMinimumHeight(30)
 
         # Right Column: Camera (top) vs Results (bottom) -> Ratio 1:1
         if self.rightSplitter:
+            self.rightSplitter.setChildrenCollapsible(False)
             self.rightSplitter.setStretchFactor(0, 1)
             self.rightSplitter.setStretchFactor(1, 1)
             self.rightSplitter.setSizes([300, 300])
+
+        # Ensure all mainSplitter children have Ignored size policy so handles drag smoothly
+        if self.mainSplitter:
+            from PyQt5.QtWidgets import QSizePolicy
+            for i in range(self.mainSplitter.count()):
+                w = self.mainSplitter.widget(i)
+                if w: w.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
 
 
         # 8. Style all splitter handles — futuristic purple/violet theme
@@ -861,7 +885,7 @@ class AICodingLab(QMainWindow):
                 background: #c4b5fd;
             }
         """
-        for splitter in [self.mainSplitter, self.runningEditorSplitter, self.rightSplitter]:
+        for splitter in [self.mainSplitter, self.leftSplitter, self.runningEditorSplitter, self.rightSplitter]:
             if splitter:
                 splitter.setHandleWidth(3)
                 splitter.setStyleSheet(SPLITTER_STYLE)
@@ -994,10 +1018,82 @@ class AICodingLab(QMainWindow):
         """Update font sizes and dimensions across the application."""
         is_small = self.is_small_screen
         
-        # 1. Update Core Header/Footer font sizes via variables
-        title_font = 18 if is_small else 24
-        subtitle_font = 10 if is_small else 12
-        footer_font = 11 if is_small else 13
+        # 1. Update Core Header/Footer font sizes via Variables from CLEAN Template
+        style = getattr(self, "base_style", self.styleSheet())
+        
+        title_font = 14 if is_small else 22
+        subtitle_font = 9 if is_small else 12
+        footer_font = 10 if is_small else 13
+        
+        # Regex replacement for specific font sizes in stylesheet
+        import re
+        style = re.sub(r"(#appTitle\s*\{\s*color:\s*white;\s*font-size:\s*)\d+px", rf"\g<1>{title_font}px", style)
+        style = re.sub(r"(#appSubtitle\s*\{\s*color:\s*rgba\(255,255,255,0.8\);\s*font-size:\s*)\d+px", rf"\g<1>{subtitle_font}px", style)
+        style = re.sub(r"(#footerHints,\s*#footerCredit\s*\{\s*color:\s*white;\s*font-size:\s*)\d+px", rf"\g<1>{footer_font}px", style)
+
+        # Mode toggle buttons padding/font/radius
+        _mode_fs = 11 if is_small else 14
+        _mode_pad = '4px 8px' if is_small else '6px 16px'
+        _mode_br = 10 if is_small else 14
+        
+        # We ensure border is set and radius is correct to prevent "sharp corners"
+        style = re.sub(
+            r"(#btnRunMode,\s*#btnTrainMode\s*\{[^}]*?)padding:\s*[\d\w\s]+;",
+            rf"\g<1>padding: {_mode_pad};", style)
+        style = re.sub(
+            r"(#btnRunMode,\s*#btnTrainMode\s*\{[^}]*?)border-radius:\s*\d+px",
+            rf"\g<1>border-radius: {_mode_br}px", style)
+            
+        # Insert/Update font-size (Use more robust approach: replace if exists, else insert before })
+        if "font-size:" in re.search(r"#btnRunMode,\s*#btnTrainMode\s*\{([^}]*)\}", style).group(1):
+            style = re.sub(r"(#btnRunMode,\s*#btnTrainMode\s*\{[^}]*?)font-size:\s*\d+px", rf"\g<1>font-size: {_mode_fs}px", style)
+        else:
+            style = re.sub(r"(#btnRunMode,\s*#btnTrainMode\s*\{[^}]*?)(\s*\})", rf"\g<1>font-size: {_mode_fs}px;\g<2>", style)
+
+        # Language toggle font-size and padding
+        _lang_fs = 12 if is_small else 16
+        _lang_pad = '3px 7px' if is_small else '4px 10px'
+        _lang_br = 10 if is_small else 14
+        style = re.sub(
+            r"(#btnLangEN,\s*#btnLangVN\s*\{[^}]*?)font-size:\s*\d+px",
+            rf"\g<1>font-size: {_lang_fs}px", style)
+        style = re.sub(
+            r"(#btnLangEN,\s*#btnLangVN\s*\{[^}]*?)padding:\s*[\d\w\s]+;",
+            rf"\g<1>padding: {_lang_pad};", style)
+        style = re.sub(
+            r"(#btnLangEN,\s*#btnLangVN\s*\{[^}]*?)border-radius:\s*\d+px",
+            rf"\g<1>border-radius: {_lang_br}px", style)
+
+        # Toggle containers border-radius
+        _cont_br = 14 if is_small else 18
+        style = re.sub(r"(#toggleContainer\s*\{[^}]*?)border-radius:\s*\d+px", rf"\g<1>border-radius: {_cont_br}px", style)
+        style = re.sub(r"(#langToggleContainer\s*\{[^}]*?)border-radius:\s*\d+px", rf"\g<1>border-radius: {_cont_br}px", style)
+
+        # Resolution toggle button sizing
+        _res_sz = 26 if is_small else 34
+        _res_fs = 14 if is_small else 18
+        _res_br = 13 if is_small else 17
+        style = re.sub(r"(#btnResToggle\s*\{[^}]*?)border-radius:\s*\d+px", rf"\g<1>border-radius: {_res_br}px", style)
+        style = re.sub(r"(#btnResToggle\s*\{[^}]*?)font-size:\s*\d+px", rf"\g<1>font-size: {_res_fs}px", style)
+        style = re.sub(r"(#btnResToggle\s*\{[^}]*?)min-width:\s*\d+px", rf"\g<1>min-width: {_res_sz}px", style)
+        style = re.sub(r"(#btnResToggle\s*\{[^}]*?)min-height:\s*\d+px", rf"\g<1>min-height: {_res_sz}px", style)
+
+        try:
+            self.setStyleSheet(style)
+        except Exception as e:
+            print(f"Error applying stylesheet: {e}")
+
+        # Header and Footer frame height scaling - LOOSEN CONSTRAINTS to fix setGeometry errors
+        if hasattr(self, 'headerFrame') and self.headerFrame:
+            h_min = 48 if is_small else 70
+            h_max = 54 if is_small else 16777215
+            self.headerFrame.setMinimumHeight(h_min)
+            self.headerFrame.setMaximumHeight(h_max)
+        if hasattr(self, 'footerFrame') and self.footerFrame:
+            f_min = 24 if is_small else 30
+            f_max = 28 if is_small else 16777215
+            self.footerFrame.setMinimumHeight(f_min)
+            self.footerFrame.setMaximumHeight(f_max)
         
         # 2. Update Splitter Sizes (Only during transition)
         if is_transition:
@@ -1015,6 +1111,7 @@ class AICodingLab(QMainWindow):
         min_w = 100 if is_small else 200
         # Ensure splitters don't snap to zero
         if self.mainSplitter: self.mainSplitter.setChildrenCollapsible(False)
+        if hasattr(self, 'leftSplitter') and self.leftSplitter: self.leftSplitter.setChildrenCollapsible(False)
         if self.runningEditorSplitter: self.runningEditorSplitter.setChildrenCollapsible(False)
         if self.rightSplitter: self.rightSplitter.setChildrenCollapsible(False)
 
@@ -1026,20 +1123,23 @@ class AICodingLab(QMainWindow):
                 
         # Running Mode
         if hasattr(self, 'running_mode_widget') and self.running_mode_widget:
-            for p_name in ["hubContainer", "monacoPlaceholder", "rightSplitter", "camContainer", "resContainer"]:
+            for p_name in ["hubContainer", "middlePanel", "monacoPlaceholder", "rightSplitter", "camContainer", "resContainer"]:
                 p = self.running_mode_widget.findChild(QWidget, p_name)
                 if p: p.setMinimumWidth(min_w)
         
-        style = self.styleSheet()
-        # Regex replacement for specific font sizes in stylesheet
-        import re
-        style = re.sub(r"(#appTitle\s*\{\s*color:\s*white;\s*font-size:\s*)\d+px", rf"\g<1>{title_font}px", style)
-        style = re.sub(r"(#appSubtitle\s*\{\s*color:\s*rgba\(255,255,255,0.8\);\s*font-size:\s*)\d+px", rf"\g<1>{subtitle_font}px", style)
-        style = re.sub(r"(#footerHints,\s*#footerCredit\s*\{\s*color:\s*white;\s*font-size:\s*)\d+px", rf"\g<1>{footer_font}px", style)
+
         try:
             self.setStyleSheet(style)
         except Exception as e:
             print(f"Error applying stylesheet: {e}")
+
+        # Header and Footer frame height scaling
+        if hasattr(self, 'headerFrame') and self.headerFrame:
+            self.headerFrame.setMinimumHeight(46 if is_small else 70)
+            self.headerFrame.setMaximumHeight(50 if is_small else 16777215)
+        if hasattr(self, 'footerFrame') and self.footerFrame:
+            self.footerFrame.setMinimumHeight(22 if is_small else 30)
+            self.footerFrame.setMaximumHeight(26 if is_small else 16777215)
 
         # 3. Refresh Dynamic Components
         if hasattr(self, 'hubContentLayout') and self.hubContentLayout:
@@ -1056,57 +1156,173 @@ class AICodingLab(QMainWindow):
         if hasattr(self, 'training_mode_widget') and self.training_mode_widget:
             w = self.training_mode_widget
             
-            # Panel Titles
-            titles = w.findChildren(QLabel, "panelTitle")
-            t_size = 13 if is_small else 16
-            for t in titles:
-                t.setStyleSheet(f"font-weight: bold; font-size: {t_size}px; color: white;")
+            # Panel Titles — all headers uniform in small mode
+            t_size = 9 if is_small else 16
+            for header_name in ["leftHeader", "configHeader", "progressHeader", "rightHeader"]:
+                header = w.findChild(QFrame, header_name)
+                if header:
+                    lbl = header.findChild(QLabel, "panelTitle")
+                    if lbl:
+                        lbl.setStyleSheet(f"font-weight: bold; font-size: {t_size}px; color: white;")
             
+            # Webcam / Upload / Label buttons and capture size toggles in Data Collection
+            btn_font = 11 if is_small else 12  # Drop from 11/15
+            btn_pad = 2 if is_small else 5   # Drop from 2/6
+            btn_fw = "normal" if is_small else "600"
+            btn_h = 24 if is_small else 0    # Drop from 26
+            cap_font = 7 if is_small else 11  # Drop from 9/14
+            for btn in w.findChildren(QPushButton):
+                txt = btn.text()
+                if "Webcam" in txt or "Upload" in txt or "Label" in txt:
+                    import re as _re
+                    ss = _re.sub(r"font-size:\s*\d+px", f"font-size: {btn_font}px", btn.styleSheet())
+                    ss = _re.sub(r"padding:\s*\d+px", f"padding: {btn_pad}px", ss)
+                    ss = _re.sub(r"font-weight:\s*\w+", f"font-weight: {btn_fw}", ss)
+                    btn.setStyleSheet(ss)
+                    if btn_h: btn.setFixedHeight(btn_h)
+            _cap_pad = '1px 6px' if is_small else '3px 8px' # Drop from 2x8/4x10
+            for cap_name in ["btnCapSize320", "btnCapSize640"]:
+                cap_btn = w.findChild(QPushButton, cap_name)
+                if cap_btn:
+                    import re as _re
+                    _ss = cap_btn.styleSheet()
+                    _ss = _re.sub(r"font-size:\s*\d+px", f"font-size: {cap_font}px", _ss)
+                    _ss = _re.sub(r"padding:\s*\d+px\s+\d+px", f"padding: {_cap_pad}", _ss)
+                    cap_btn.setStyleSheet(_ss)
+
+            # Recognition / Detection toggle buttons - REDUCE SIZE BY 20%
+            _tog_fs = 7 if is_small else 12  # Drop from 8/15 to 7/12
+            _tog_pad = '1px 4px' if is_small else '5px 13px' # Drop from 2x6/6x16
+            for _tog_name in ["btnRecognition", "btnDetection"]:
+                _tog_btn = w.findChild(QPushButton, _tog_name)
+                if _tog_btn:
+                    import re as _re
+                    _ss = _tog_btn.styleSheet()
+                    _ss = _re.sub(r"font-size:\s*\d+px", f"font-size: {_tog_fs}px", _ss)
+                    _ss = _re.sub(r"padding:\s*\d+px\s*\d+px", f"padding: {_tog_pad}", _ss)
+                    _tog_btn.setStyleSheet(_ss)
+
+            # Detection mode class card scaling (scroll area, thumbnails, badges, hints)
+            if hasattr(self, '_class_data'):
+                _badge_w = 48 if is_small else 68
+                _badge_font = 10 if is_small else 14
+                _hint_font = 12 if is_small else 14
+                for info in self._class_data:
+                    if info is None: continue
+                    # Scroll area min height
+                    scroll = info.get("scroll")
+                    if scroll and scroll.minimumHeight() > 100:
+                        scroll.setMinimumHeight(180 if is_small else 300)
+                    # Hint label
+                    hint = info.get("hint_lbl")
+                    if hint:
+                        hint.setStyleSheet(f"color: #94a3b8; font-size: {_hint_font}px; font-weight: 50;")
+                        if hint.minimumHeight() > 100:
+                            hint.setMinimumHeight(140 if is_small else 240)
+                    # Count badge
+                    badge = info.get("count_badge")
+                    if badge:
+                        badge.setFixedWidth(_badge_w)
+                        badge.setStyleSheet(f"background: #e2e8f0; color: #64748b; border-radius: 10px; padding: 2px 2px; font-size: {_badge_font}px; font-weight: bold;")
+                    # Tag panel
+                    tag_panel = info.get("tag_panel")
+                    if tag_panel:
+                        tag_panel.set_small_mode(is_small)
+
             # Form Labels and Inputs
-            lbl_size = 13 if is_small else 17
-            input_size = 13 if is_small else 17
-            
+            lbl_size = 4 if is_small else 17
+            input_size = 4 if is_small else 17
+
             # Target specific label types via name or class
             all_labels = w.findChildren(QLabel)
-            target_labels = ["lblBackbone", "lblEpochs", "lblBatch", "lblLR", "lblOpt", "lblImgSize", "lblStaticBackbone", "lblStaticImgSize"]
+            target_labels = ["lblBackbone", "lblEpochs", "lblBatch", "lblLR", "lblOpt", "lblImgSize"]
+            static_labels = ["lblStaticBackbone", "lblStaticImgSize"]
             for lbl in all_labels:
                 if lbl.objectName() in target_labels:
                     lbl.setStyleSheet(f"font-weight: bold; font-size: {lbl_size}px; color: #1e293b; background: transparent;")
+                elif lbl.objectName() in static_labels:
+                    _sl_fs = 3 if is_small else 15
+                    _sl_pad = '1px' if is_small else '6px'
+                    lbl.setStyleSheet(f"QLabel {{ font-weight: bold; color: #16a34a; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 3px; padding: {_sl_pad}; font-size: {_sl_fs}px;}}")
                 elif lbl.objectName() == "lblValueAccuracy" or lbl.objectName() == "lblValueLoss" or lbl.objectName() == "metricValue":
-                    mv_size = 16 if is_small else 20
+                    mv_size = 5 if is_small else 20
                     lbl.setStyleSheet(f"color: #0f172a; font-size: {mv_size}px; font-weight: bold; background: transparent;")
                 elif lbl.objectName() == "metricTitle":
-                    mt_size = 10 if is_small else 14
+                    mt_size = 3 if is_small else 14
                     lbl.setStyleSheet(f"color: rgba(0,0,0,0.6); font-size: {mt_size}px; font-weight: bold; background: transparent;")
-            
+
+            # Epoch progress labels
+            _ep_fs = 3 if is_small else 14
+            _ep_prog = w.findChild(QLabel, "lblEpochProgTitle")
+            if _ep_prog: _ep_prog.setStyleSheet(f"font-weight: 600; color: #475569; font-size: {_ep_fs}px;")
+            _ep_cnt = w.findChild(QLabel, "lblEpochCounter")
+            if _ep_cnt: _ep_cnt.setStyleSheet(f"font-family: 'Consolas'; color: #475569; font-size: {_ep_fs}px;")
+
+            # Dataset card labels
+            _ds_title = w.findChild(QLabel, "dsTitle")
+            if _ds_title: _ds_title.setStyleSheet(f"font-weight: bold; color: #1e3a8a; font-size: {3 if is_small else 17}px;")
+            _ds_hint = w.findChild(QLabel, "lblDsHint")
+            if _ds_hint: _ds_hint.setStyleSheet(f"color: #3b82f6; font-size: {3 if is_small else 14}px; font-weight: normal;")
+            _ds_count = w.findChild(QLabel, "lblImageCountLarge")
+            if _ds_count: _ds_count.setStyleSheet(f"font-size: {9 if is_small else 28}px; font-weight: bold; color: #2563eb;")
+            _ds_icon = w.findChild(QLabel, "dsIcon")
+            if _ds_icon and is_small: _ds_icon.setStyleSheet(f"color: #1e40af; font-size: 3px;")
+
+            # Status icon scaling
+            _status_icon = w.findChild(QLabel, "statusIcon")
+            if _status_icon: _status_icon.setStyleSheet(f"font-size: {16 if is_small else 36}px; color: #cbd5e1;")
+
             # Input fields
             from PyQt5.QtWidgets import QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit
             for field in w.findChildren((QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit)):
-                field.setStyleSheet(f"border: 1px solid #e2e8f0; border-radius: 6px; padding: {'4px' if is_small else '10px'}; \n"
+                field.setStyleSheet(f"border: 1px solid #e2e8f0; border-radius: 3px; padding: {'1px' if is_small else '10px'}; \n"
                                   f"background-color: #f8fafc; font-size: {input_size}px; color: #0f172a;")
-            
+
+            # Config scroll area margins
+            config_scroll = w.findChild(QWidget, "configContent")
+            if config_scroll and config_scroll.layout():
+                _cm = 3 if is_small else 20
+                config_scroll.layout().setContentsMargins(_cm, _cm, _cm, 0)
+                config_scroll.layout().setSpacing(3 if is_small else 10)
+
             # Training Log
             if hasattr(self, 'txtTrainLog') and self.txtTrainLog:
-                log_font = 8 if is_small else 10
+                log_font = 3 if is_small else 10
                 self.txtTrainLog.setStyleSheet(f"background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; \n"
-                                             f"font-family: 'Consolas'; font-size: {log_font}px; padding: 5px; border-radius: 0 0 6px 6px;")
-            
+                                             f"font-family: 'Consolas'; font-size: {log_font}px; padding: 2px; border-radius: 0 0 3px 3px;")
+
             # Action Buttons
-            btn_add_size = 12 if is_small else 16
-            btn_start_size = 14 if is_small else 18
+            btn_add_size = 4 if is_small else 16
+            btn_start_size = 5 if is_small else 16
             btn_add = w.findChild(QPushButton, "btnAddClass")
             if btn_add:
                 btn_add.setStyleSheet(f"border: 2px dashed #cbd5e1; background: #f8fafc; color: #64748b; "
-                                     f"border-radius: 8px; padding: {'6px' if is_small else '12px'}; font-weight: bold; margin: 4px; font-size: {btn_add_size}px;")
+                                     f"border-radius: 4px; padding: {'1px' if is_small else '12px'}; font-weight: bold; margin: 1px; font-size: {btn_add_size}px;")
             btn_start = w.findChild(QPushButton, "btnStartTraining")
             if btn_start:
                 btn_start.setStyleSheet(f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #16a34a, stop:1 #059669); "
-                                       f"color: white; border-radius: 8px; font-weight: bold; border: none; "
-                                       f"min-height: {'36px' if is_small else '48px'}; font-size: {btn_start_size}px; margin: 6px;")
-            
+                                       f"color: white; border-radius: 4px; font-weight: bold; border: none; "
+                                       f"min-height: {'18px' if is_small else '36px'}; font-size: {btn_start_size}px; margin: {'1px' if is_small else '8px'};")
+
+            # Validation buttons
+            if hasattr(self, 'btnStopValidation') and self.btnStopValidation:
+                _vb_fs = 4 if is_small else 14
+                _vb_h = 16 if is_small else 36
+                self.btnStopValidation.setFixedHeight(_vb_h)
+                import re as _re
+                _ss = _re.sub(r"font-size:\s*\d+px", f"font-size: {_vb_fs}px", self.btnStopValidation.styleSheet())
+                self.btnStopValidation.setStyleSheet(_ss)
+            if hasattr(self, 'btnSaveModel') and self.btnSaveModel:
+                _vb_fs = 4 if is_small else 14
+                _vb_h = 16 if is_small else 36
+                self.btnSaveModel.setFixedHeight(_vb_h)
+                import re as _re
+                _ss = _re.sub(r"font-size:\s*\d+px", f"font-size: {_vb_fs}px", self.btnSaveModel.styleSheet())
+                self.btnSaveModel.setStyleSheet(_ss)
+
             # Status messages
-            msg_size = 14 if is_small else 18
-            hint_size = 11 if is_small else 14
+            msg_size = 5 if is_small else 15
+            hint_size = 3 if is_small else 14
             status_msg = w.findChild(QLabel, "statusMsg")
             if status_msg: status_msg.setStyleSheet(f"font-weight: bold; font-size: {msg_size}px; color: #94a3b8;")
             status_hint = w.findChild(QLabel, "statusHint")
@@ -1115,57 +1331,94 @@ class AICodingLab(QMainWindow):
         # 5. Handle Running Mode scaling if possible
         if hasattr(self, 'running_mode_widget') and self.running_mode_widget:
             rw = self.running_mode_widget
-            title_size = 14 if is_small else 18
-            
-            # Panel headers
-            for t_name in ["hubTitle", "editorTitle", "camTitle", "resTitle", "lblCT"]:
+            title_size = 6 if is_small else 18
+            _t_fw = "normal" if is_small else "bold"
+
+            # Panel headers — use #id selector to override .ui global stylesheet
+            for t_name in ["hubTitle", "editorTitle", "camTitle", "resTitle", "lblCT", "lblCCT"]:
                 t_lbl = rw.findChild(QLabel, t_name)
                 if t_lbl:
-                    t_lbl.setStyleSheet(f"font-weight: bold; font-size: {title_size}px; color: white; background: transparent;")
-            
+                    t_lbl.setStyleSheet(f"#{t_name} {{ font-weight: {_t_fw}; font-size: {title_size}px; color: white; background: transparent; padding: 1px 4px; }}")
+
+            # Hub tab buttons font size
+            tab_size = 10 if is_small else 15
+            tab_pad = '3px 6px' if is_small else '4px 8px'
+            for btn_name in ["tabExamples", "tabFunctions", "tabWorkspace"]:
+                tab_btn = rw.findChild(QPushButton, btn_name)
+                if tab_btn:
+                    tab_btn.setStyleSheet(tab_btn.styleSheet() + f" font-size: {tab_size}px; padding: {tab_pad};")
+
             # Console Body
             if hasattr(self, 'consoleBody') and self.consoleBody:
                 c_font = 9 if is_small else 14
                 self.consoleBody.setStyleSheet(f"background-color: transparent; color: #334155; font-family: 'Consolas', 'Courier New'; font-size: {c_font}px;")
-                
+
+            # Console Header and buttons scaling
+            console_header = rw.findChild(QFrame, "consoleHeader")
+            if console_header:
+                console_header.setMinimumHeight(28 if is_small else 40)
+            collapsed_bar = rw.findChild(QFrame, "collapsedConsoleBar")
+            if collapsed_bar:
+                collapsed_bar.setMinimumHeight(24 if is_small else 36)
+            btn_clear = rw.findChild(QPushButton, "btnClearConsole")
+            if btn_clear:
+                _cc_fs = 12 if is_small else 16
+                btn_clear.setStyleSheet(f"QPushButton {{ color: #d0d8e5; background: transparent; border: none; font-family: 'Consolas', monospace; font-size: {_cc_fs}px;}} QPushButton:hover {{ color: white; background: rgba(255,255,255,0.1); border-radius: 4px; }}")
+            btn_collapse = rw.findChild(QPushButton, "btnCollapseConsole")
+            if btn_collapse:
+                _bc_fs = 12 if is_small else 18
+                btn_collapse.setStyleSheet(f"QPushButton {{ color: #d0d8e5; background: transparent; border: none; font-family: 'Consolas', monospace; font-size: {_bc_fs}px;}} QPushButton:hover {{ color: white; background: rgba(255,255,255,0.1); border-radius: 4px; }}")
+
+            # Footer labels scaling
+            _ft_fs = 11 if is_small else 14
+            for _ft_name in ["lblStatus", "lblTimestamp"]:
+                _ft_lbl = rw.findChild(QLabel, _ft_name)
+                if _ft_lbl:
+                    _ft_lbl.setStyleSheet(f"color: #94a3b8; font-size: {_ft_fs}px;")
+            _var_lbl = rw.findChild(QLabel, "lblVarCount")
+            if _var_lbl:
+                _var_lbl.setStyleSheet(f"color: white; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 8px; font-size: {_ft_fs}px;")
+
             # Monaco Placeholder (for now it's a QTextEdit)
             if hasattr(self, 'monacoPlaceholder') and self.monacoPlaceholder:
-                e_font = 10 if is_small else 16
+                e_font = 11 if is_small else 17
                 self.monacoPlaceholder.setStyleSheet(f"background-color: white; border: none; font-family: 'Consolas', 'Courier New'; font-size: {e_font}px; color: #1e293b;")
-                
+
             # Footer Workspace Label
             if hasattr(self, 'lblCurrentFolder') and self.lblCurrentFolder:
                 wf_size = 11 if is_small else 15
                 self.lblCurrentFolder.setStyleSheet(f"font-weight: bold; color: #475569; font-size: {wf_size}px;")
-                
+
             # Refresh Function Library with scaling
             from src.modules.function_library import populate_functions_tab
             populate_functions_tab(self.running_mode_widget, is_small=is_small)
-            
+
             # Workspace Dashboard Scaling
             if hasattr(self, 'workspaceDashboard') and self.workspaceDashboard:
                 d = self.workspaceDashboard
-                card_title_font = 9 if is_small else 11
-                card_count_font = 14 if is_small else 20
+                card_title_font = 8 if is_small else 11
+                card_count_font = 12 if is_small else 20
                 for card_name, color in [("cardCode", "#2563eb"), ("cardData", "#16a34a"), ("cardModel", "#9333ea")]:
                     card = d.findChild(QFrame, card_name)
                     if card:
                         # Scale cards height
-                        card.setMinimumHeight(60 if is_small else 100)
-                        card.setMaximumHeight(80 if is_small else 130)
+                        card.setMinimumHeight(50 if is_small else 100)
+                        card.setMaximumHeight(70 if is_small else 130)
                         for lbl in card.findChildren(QLabel):
                             if lbl.objectName().startswith("count"):
                                 lbl.setStyleSheet(f"font-size: {card_count_font}px; font-weight: bold; color: {color}; background: transparent;")
                             else:
                                 lbl.setStyleSheet(f"font-size: {card_title_font}px; font-weight: bold; color: {color}; background: transparent;")
-                                
+
             # Editor Buttons
             if hasattr(self, 'btnRunCode') and self.btnRunCode:
-                r_size = 11 if is_small else 14
-                self.btnRunCode.setStyleSheet(f"background-color: #12b54d; color: white; border-radius: 4px; font-size: {r_size}px; font-weight: bold; padding: {'4px 8px' if is_small else '6px 15px'};")
+                r_size = 10 if is_small else 14
+                self.btnRunCode.setFixedHeight(30 if is_small else 40)
+                self.btnRunCode.setStyleSheet(f"background-color: #12b54d; color: white; border-radius: 4px; font-size: {r_size}px; font-weight: bold; padding: {'3px 6px' if is_small else '6px 15px'};")
             if hasattr(self, 'btnSaveFile') and self.btnSaveFile:
-                s_size = 11 if is_small else 14
-                self.btnSaveFile.setStyleSheet(f"background-color: rgba(255,255,255,0.15); color: white; border-radius: 4px; padding: {'4px 8px' if is_small else '4px 10px'}; font-weight: bold; font-size: {s_size}px;")
+                s_size = 10 if is_small else 14
+                self.btnSaveFile.setFixedHeight(30 if is_small else 40)
+                self.btnSaveFile.setStyleSheet(f"background-color: rgba(255,255,255,0.15); color: white; border-radius: 4px; padding: {'3px 6px' if is_small else '4px 10px'}; font-weight: bold; font-size: {s_size}px;")
 
     def retranslate_ui(self):
         """Update all core UI strings from the translation dictionary."""
@@ -1621,7 +1874,8 @@ class AICodingLab(QMainWindow):
                     icon=metadata.get("ICON", "📄"),
                     color=metadata.get("COLOR", "#7c3aed"),
                     desc=desc,
-                    on_load_click=self.load_curriculum_example
+                    on_load_click=self.load_curriculum_example,
+                    is_small=self.is_small_screen
                 )
                 self.hubContentLayout.insertWidget(self.hubContentLayout.count() - 1, card)
 
@@ -1969,7 +2223,7 @@ class AICodingLab(QMainWindow):
             {"name": k, "type": type(v).__name__, "value": v}
             for k, v in self._live_vars.items()
         ]
-        update_results_panel(self, var_list)
+        update_results_panel(self, var_list, is_small=self.is_small_screen)
         if self.lblVarCount:
             msg = STRINGS[self.current_lang]["VAR_COUNT"].format(len(var_list))
             self.lblVarCount.setText(msg)
@@ -2048,10 +2302,9 @@ class AICodingLab(QMainWindow):
             # If the targeted line has code, we insert BELOW it as a new line
             self.monacoPlaceholder.insertAt("\n" + snippet_formatted, line, len(self.monacoPlaceholder.text(line).rstrip()))
         else:
-            # If the line is empty, we replace it with the correctly indented snippet
-            # We clear the existing whitespace if any, then insert
+            # If the line is empty, replace it with the snippet and keep the newline
             self.monacoPlaceholder.setSelection(line, 0, line, len(self.monacoPlaceholder.text(line)))
-            self.monacoPlaceholder.replaceSelectedText(snippet_formatted)
+            self.monacoPlaceholder.replaceSelectedText(snippet_formatted + "\n")
             
         self.log_to_console(STRINGS[self.current_lang]["HINT_INJECTED"].format(function_id))
             
@@ -2069,7 +2322,7 @@ class AICodingLab(QMainWindow):
         if hasattr(self, '_training_init_done'): return
         
         # Mode state
-        self._training_task = "recognition"  # 'recognition' or 'detection'
+        self._training_task = "detection"  # 'recognition' or 'detection'
         self._class_data = []  # list of class info dicts
         self._bbox_panel_visible = False
         self._active_camera_class = None
@@ -2101,10 +2354,11 @@ class AICodingLab(QMainWindow):
             self.task_group.addButton(btnRec)
             self.task_group.addButton(btnDet)
             self.task_group.setExclusive(True)
-            
-            btnRec.setChecked(self._training_task == "recognition")
-            btnDet.setChecked(self._training_task == "detection")
-            
+
+            # Hide Recognition button — only Detection mode is available
+            btnRec.setVisible(False)
+            btnDet.setChecked(True)
+
             btnRec.clicked.connect(lambda: self._set_task_type("recognition"))
             btnDet.clicked.connect(lambda: self._set_task_type("detection"))
 
@@ -2127,7 +2381,7 @@ class AICodingLab(QMainWindow):
             self.editProjName.setStyleSheet("""
                 QLineEdit { 
                     background: rgba(255, 255, 255, 0.9); border: 2px solid #ef4444; 
-                    border-radius: 6px; padding: 2px 8px; font-size: 14px;
+                    border-radius: 6px; padding: 2px 2px; font-size: 10px;
                 }
             """)
             
@@ -2195,7 +2449,11 @@ class AICodingLab(QMainWindow):
         
         # Wire Add Class
         self.btnAddClass = self.training_mode_widget.findChild(QPushButton, "btnAddClass")
-        if self.btnAddClass: self.btnAddClass.clicked.connect(self.add_training_class)
+        if self.btnAddClass:
+            self.btnAddClass.clicked.connect(self.add_training_class)
+            # Hide Add Class button in detection mode (classes defined via tag panel)
+            if hasattr(self, '_training_task') and self._training_task == "detection":
+                self.btnAddClass.setVisible(False)
 
 
         
@@ -2315,9 +2573,10 @@ class AICodingLab(QMainWindow):
         # Build BBox collapsible panel (hidden by default)
         self._build_bbox_panel()
         
-        # Add 2 default classes
+        # Add default classes based on mode
         self.add_training_class("Class 1")
-        self.add_training_class("Class 2")
+        if self._training_task != "detection":
+            self.add_training_class("Class 2")
         
         self._training_init_done = True
         
@@ -2365,18 +2624,58 @@ class AICodingLab(QMainWindow):
             self._current_project_name = name
             self._project_initialized = True
             
-            # Disable project entry
+            # Lock project entry and transform Reload -> New
             self.editProjName.setDisabled(True)
             self.btnProjCheck.setDisabled(True)
             if hasattr(self, 'btnProjReload'):
-                self.btnProjReload.setDisabled(True)
-            self.editProjName.setStyleSheet("QLineEdit { background: #f1f5f9; border: 1px solid #cbd5e1; color: #64748b; border-radius: 6px; padding: 2px 8px; }")
+                self.btnProjReload.setText("New")
+                self.btnProjReload.setStyleSheet("QPushButton { background: #64748b; color: white; border-radius: 6px; font-weight: bold; font-size: 11px; } QPushButton:hover { background: #475569; }")
+                self.btnProjReload.setToolTip("Discard current and start a new project")
+                try: self.btnProjReload.clicked.disconnect()
+                except: pass
+                self.btnProjReload.clicked.connect(self._reset_project_state)
+
+            self.editProjName.setStyleSheet("QLineEdit { background: #f1f5f9; border: 1px solid #cbd5e1; color: #64748b; border-radius: 6px; padding: 2px 10px; font-size: 14px; }")
 
             self.log_to_console(f"Project '{name}' initialized. Data will be saved in: /projects/data/{name}/")
             self._update_project_ui_lock()
             
         except Exception as e:
             self.log_to_console(f"Error creating project folder: {str(e)}")
+
+    def _reset_project_state(self):
+        """Wipe current project session and allow starting over."""
+        reply = QMessageBox.question(
+            self, "Start New Project?",
+            "This will clear the current session. Images on disk will NOT be deleted.\n\nContinue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        self._project_initialized = False
+        self._current_project_name = ""
+        
+        # Restore Project UI
+        self.editProjName.setDisabled(False)
+        self.editProjName.setText("")
+        self.btnProjCheck.setDisabled(False)
+        self._validate_project_name_visual("")
+        
+        # Restore Reload Button
+        if hasattr(self, 'btnProjReload'):
+            self.btnProjReload.setText("📂")
+            self.btnProjReload.setStyleSheet("QPushButton { background: #f59e0b; color: white; border-radius: 6px; font-size: 14px; } QPushButton:hover { background: #d97706; }")
+            self.btnProjReload.setToolTip("Reload existing project")
+            try: self.btnProjReload.clicked.disconnect()
+            except: pass
+            self.btnProjReload.clicked.connect(self._show_reload_dialog)
+
+        # Wipe Data Collection
+        self._reset_training_classes()
+        self.log_to_console("Project reset. Ready for new input.")
+        self._update_project_ui_lock()
 
     def _show_reload_dialog(self):
         """Show a dialog to select an existing detection project to reload."""
@@ -2415,13 +2714,21 @@ class AICodingLab(QMainWindow):
         self._current_project_name = project_name
         self._project_initialized = True
 
-        # Lock project name UI
+        # Lock project name UI and transform Reload -> New
         self.editProjName.setText(project_name)
         self.editProjName.setDisabled(True)
         self.btnProjCheck.setDisabled(True)
-        self.btnProjReload.setDisabled(True)
+        
+        if hasattr(self, 'btnProjReload'):
+            self.btnProjReload.setText("New")
+            self.btnProjReload.setStyleSheet("QPushButton { background: #64748b; color: white; border-radius: 6px; font-weight: bold; font-size: 11px; } QPushButton:hover { background: #475569; }")
+            self.btnProjReload.setToolTip("Discard current and start a new project")
+            try: self.btnProjReload.clicked.disconnect()
+            except: pass
+            self.btnProjReload.clicked.connect(self._reset_project_state)
+
         self.editProjName.setStyleSheet(
-            "QLineEdit { background: #f1f5f9; border: 1px solid #cbd5e1; color: #64748b; border-radius: 6px; padding: 2px 8px; }"
+            "QLineEdit { background: #f1f5f9; border: 1px solid #cbd5e1; color: #64748b; border-radius: 6px; padding: 2px 10px; font-size: 14px; }"
         )
 
         # Load class names from classes.txt or fall back to scanning annotations
@@ -2600,7 +2907,7 @@ class AICodingLab(QMainWindow):
         self._bbox_panel = QFrame(left_panel)
         self._bbox_panel.setObjectName("bboxPanel")
         self._bbox_panel.setVisible(False)
-        self._bbox_panel.setFixedHeight(350) # Stable default
+        self._bbox_panel.setFixedHeight(200 if self.is_small_screen else 350)
         self._bbox_panel.setStyleSheet("""
             QFrame#bboxPanel { 
                 background: #0f172a; 
@@ -2615,7 +2922,7 @@ class AICodingLab(QMainWindow):
         # Drag handle
         drag_handle = QFrame()
         drag_handle.setObjectName("bboxHandle")
-        drag_handle.setFixedHeight(20)
+        drag_handle.setFixedHeight(12 if self.is_small_screen else 20)
         drag_handle.setCursor(Qt.CursorShape.SizeVerCursor)
         drag_handle.setStyleSheet("background: rgba(139,92,246,0.3); hover { background: rgba(139,92,246,0.6); }")
         handle_layout = QHBoxLayout(drag_handle)
@@ -2631,21 +2938,27 @@ class AICodingLab(QMainWindow):
         header = QFrame()
         header.setStyleSheet("background: #1e293b; border-bottom: 1px solid #334155;")
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 4, 12, 4)
-        
+        _hm = 6 if self.is_small_screen else 12
+        header_layout.setContentsMargins(_hm, 2 if self.is_small_screen else 4, _hm, 2 if self.is_small_screen else 4)
+
         title_layout = QVBoxLayout()
+        title_layout.setSpacing(0)
         lbl_title = QLabel()
         lbl_title.setObjectName("bboxTitle")
-        lbl_title.setStyleSheet("color: white; font-weight: bold; font-size: 15px;")
+        _bbox_title_fs = 8 if self.is_small_screen else 30 # Double (15 -> 30)
+        _bbox_hint_fs = 7 if self.is_small_screen else 26  # Double (13 -> 26)
+        lbl_title.setStyleSheet(f"color: white; font-weight: bold; font-size: {_bbox_title_fs}px;")
         self._bbox_hint = QLabel("Click an image above to annotate it.")
-        self._bbox_hint.setStyleSheet("color: #94a3b8; font-size: 13px;")
+        self._bbox_hint.setStyleSheet(f"color: #94a3b8; font-size: {_bbox_hint_fs}px;")
         title_layout.addWidget(lbl_title)
         title_layout.addWidget(self._bbox_hint)
         
         btn_close_bbox = QPushButton("✕")
-        btn_close_bbox.setFixedSize(28, 28)
+        _cls_sz = 20 if self.is_small_screen else 48 # Increased to fit font
+        btn_close_bbox.setFixedSize(_cls_sz, _cls_sz)
         btn_close_bbox.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_close_bbox.setStyleSheet("QPushButton { background: transparent; color: #94a3b8; border: none; font-size: 16px; } QPushButton:hover { color: white; }")
+        _cls_fs = 11 if self.is_small_screen else 32 # Double (16 -> 32)
+        btn_close_bbox.setStyleSheet(f"QPushButton {{ background: transparent; color: #94a3b8; border: none; font-size: {_cls_fs}px; }} QPushButton:hover {{ color: white; }}")
         btn_close_bbox.clicked.connect(self._close_bbox_panel)
         
         header_layout.addLayout(title_layout)
@@ -2665,15 +2978,18 @@ class AICodingLab(QMainWindow):
         # Floating Shutter Button for the right-panel webcam (visible when cam active)
         self._tr_shutter_btn = QPushButton("📸 Capture Frame")
         self._tr_shutter_btn.setParent(self) # Floating
-        self._tr_shutter_btn.setFixedSize(160, 48)
+        _shutter_w = 90 if self.is_small_screen else 160
+        _shutter_h = 24 if self.is_small_screen else 48
+        _shutter_fs = 8 if self.is_small_screen else 14
+        self._tr_shutter_btn.setFixedSize(_shutter_w, _shutter_h)
         self._tr_shutter_btn.setVisible(False)
         self._tr_shutter_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._tr_shutter_btn.setStyleSheet("""
-            QPushButton { 
+        self._tr_shutter_btn.setStyleSheet(f"""
+            QPushButton {{
                 background: #3b82f6; color: white; border: 2px solid white;
-                border-radius: 24px; font-weight: bold; font-size: 14px;
-            }
-            QPushButton:hover { background: #2563eb; }
+                border-radius: {_shutter_h // 2}px; font-weight: bold; font-size: {_shutter_fs}px;
+            }}
+            QPushButton:hover {{ background: #2563eb; }}
         """)
         self._tr_shutter_btn.clicked.connect(self._capture_image)
         
@@ -2681,16 +2997,19 @@ class AICodingLab(QMainWindow):
         bottom_bar = QFrame()
         bottom_bar.setStyleSheet("background: #0f172a; border-top: 1px solid #1e293b;")
         bottom_bar_layout = QVBoxLayout(bottom_bar)
-        bottom_bar_layout.setContentsMargins(16, 4, 16, 6)
-        bottom_bar_layout.setSpacing(4)
-        
+        _bb_m = 6 if self.is_small_screen else 16
+        bottom_bar_layout.setContentsMargins(_bb_m, 2 if self.is_small_screen else 4, _bb_m, 2 if self.is_small_screen else 6)
+        bottom_bar_layout.setSpacing(2 if self.is_small_screen else 4)
+
         # Row 1: Status and Navigation Info
         info_row = QHBoxLayout()
+        _prog_fs = 7 if self.is_small_screen else 22 # Double (11 -> 22)
         self._lbl_batch_progress = QLabel("Image 0 of 0")
-        self._lbl_batch_progress.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: bold;")
-        
+        self._lbl_batch_progress.setStyleSheet(f"color: #94a3b8; font-size: {_prog_fs}px; font-weight: bold;")
+
+        _sc_fs = 6 if self.is_small_screen else 20 # Double (10 -> 20)
         shortcut_hint = QLabel("[Enter] Save  [Del] Clear  [Esc] Close")
-        shortcut_hint.setStyleSheet("color: #475569; font-size: 10px;")
+        shortcut_hint.setStyleSheet(f"color: #475569; font-size: {_sc_fs}px;")
         
         info_row.addWidget(self._lbl_batch_progress)
         info_row.addStretch()
@@ -2700,47 +3019,55 @@ class AICodingLab(QMainWindow):
         # Row 2: Navigation and Action Buttons
         action_row = QHBoxLayout()
         
+        _nav_sz = 18 if self.is_small_screen else 48 # Increased
         btn_prev = QPushButton("◀")
-        btn_prev.setFixedSize(36, 36)
+        btn_prev.setFixedSize(_nav_sz, _nav_sz)
         btn_prev.setToolTip("Previous Image")
-        btn_prev.setStyleSheet("""
-            QPushButton { background: #1e293b; color: white; border: 1px solid #334155; border-radius: 18px; font-weight: bold; }
-            QPushButton:hover { background: #334155; }
-            QPushButton:disabled { color: #334155; }
+        btn_prev.setStyleSheet(f"""
+            QPushButton {{ background: #1e293b; color: white; border: 1px solid #334155; border-radius: {_nav_sz // 2}px; font-weight: bold; font-size: {8 if self.is_small_screen else 28}px; }}
+            QPushButton:hover {{ background: #334155; }}
+            QPushButton:disabled {{ color: #334155; }}
         """)
         btn_prev.clicked.connect(lambda: self._navigate_annotation(-1))
         self._btn_prev_annotation = btn_prev
 
         btn_next = QPushButton("▶")
-        btn_next.setFixedSize(36, 36)
+        btn_next.setFixedSize(_nav_sz, _nav_sz)
         btn_next.setToolTip("Next Image / Skip")
-        btn_next.setStyleSheet("""
-            QPushButton { background: #1e293b; color: white; border: 1px solid #334155; border-radius: 18px; font-weight: bold; }
-            QPushButton:hover { background: #334155; }
-            QPushButton:disabled { color: #334155; }
+        btn_next.setStyleSheet(f"""
+            QPushButton {{ background: #1e293b; color: white; border: 1px solid #334155; border-radius: {_nav_sz // 2}px; font-weight: bold; font-size: {8 if self.is_small_screen else 28}px; }}
+            QPushButton:hover {{ background: #334155; }}
+            QPushButton:disabled {{ color: #334155; }}
         """)
         btn_next.clicked.connect(lambda: self._navigate_annotation(1))
         self._btn_next_annotation = btn_next
 
         # BBox Save button
+        _save_fs = 8 if self.is_small_screen else 30 # Double (15 -> 30)
+        _save_pad = "3px 8px" if self.is_small_screen else "12px 32px" # Adjusted
+        _save_min = 60 if self.is_small_screen else 180 # Increased
         self._bbox_save_btn = QPushButton("Save & Continue ▶")
-        self._bbox_save_btn.setStyleSheet("""
-            QPushButton { background: #7c3aed; color: white; border: none; border-radius: 6px;
-                         font-weight: bold; font-size: 15px; padding: 10px 24px; min-width: 140px; }
-            QPushButton:hover { background: #6d28d9; }
+        _save_br = 4 if self.is_small_screen else 6
+        self._bbox_save_btn.setStyleSheet(f"""
+            QPushButton {{ background: #7c3aed; color: white; border: none; border-radius: {_save_br}px;
+                         font-weight: bold; font-size: {_save_fs}px; padding: {_save_pad}; min-width: {_save_min}px; }}
+            QPushButton:hover {{ background: #6d28d9; }}
         """)
         self._bbox_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._bbox_save_btn.clicked.connect(self._save_bbox_annotation)
         
         # Camera shutter button
+        _cam_fs = 7 if self.is_small_screen else 14
+        _cam_pad = "3px 8px" if self.is_small_screen else "10px 32px"
+        _cam_min = 50 if self.is_small_screen else 120
         self._cam_shutter_btn = QPushButton("⬤  Capture")
-        self._cam_shutter_btn.setStyleSheet("""
-            QPushButton { 
+        self._cam_shutter_btn.setStyleSheet(f"""
+            QPushButton {{
                 background: white; color: #1e293b; border: 4px solid #94a3b8;
-                border-radius: 20px; font-weight: bold; font-size: 14px; 
-                padding: 10px 32px; min-width: 120px;
-            }
-            QPushButton:hover { background: #f0f9ff; border-color: #3b82f6; color: #1d4ed8; }
+                border-radius: 20px; font-weight: bold; font-size: {_cam_fs}px;
+                padding: {_cam_pad}; min-width: {_cam_min}px;
+            }}
+            QPushButton:hover {{ background: #f0f9ff; border-color: #3b82f6; color: #1d4ed8; }}
         """)
         self._cam_shutter_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._cam_shutter_btn.setVisible(False)
@@ -2758,8 +3085,9 @@ class AICodingLab(QMainWindow):
         self._bbox_class_selector = QFrame()
         self._bbox_class_selector.setStyleSheet("background: #0f172a; border-top: 1px solid #1e293b;")
         self._class_selector_layout = QHBoxLayout(self._bbox_class_selector)
-        self._class_selector_layout.setContentsMargins(12, 4, 12, 4)
-        self._class_selector_layout.setSpacing(6)
+        _cs_m = 4 if self.is_small_screen else 12
+        self._class_selector_layout.setContentsMargins(_cs_m, 2 if self.is_small_screen else 4, _cs_m, 2 if self.is_small_screen else 4)
+        self._class_selector_layout.setSpacing(3 if self.is_small_screen else 6)
         self._class_btn_group = [] # List of buttons
         self._active_label_class_idx = 0
         panel_layout.addWidget(self._bbox_class_selector)
@@ -2786,8 +3114,15 @@ class AICodingLab(QMainWindow):
 
     def _bbox_handle_move(self, event):
         delta = int(self._bbox_drag_start_y - event.globalPos().y())
-        # Tight cap (500px) to ensure we don't push the window beyond display limits (991px high)
-        new_h = max(120, min(500, self._bbox_drag_start_h + delta))
+        # Dynamically cap to leftPanel height so bottom bar never clips off screen
+        left_panel = self.training_mode_widget.findChild(QFrame, "leftPanel")
+        if left_panel:
+            # Reserve space for the header above the bbox panel (~80px for small, ~120px normal)
+            _reserve = 60 if self.is_small_screen else 100
+            _max_h = left_panel.height() - _reserve
+        else:
+            _max_h = 350 if self.is_small_screen else 500
+        new_h = max(100, min(_max_h, self._bbox_drag_start_h + delta))
         self._bbox_panel.setFixedHeight(new_h)
 
     def add_training_class(self, default_name=None):
@@ -2819,8 +3154,9 @@ class AICodingLab(QMainWindow):
         header_frame = QFrame()
         header_frame.setStyleSheet("background: #f8fafc; border-bottom: 1px solid #f1f5f9; border-radius: 0;")
         header_layout = QHBoxLayout(header_frame)
-        header_layout.setContentsMargins(12, 6, 12, 6)
-        header_layout.setSpacing(6)
+        h_margin = 5 if self.is_small_screen else 12
+        header_layout.setContentsMargins(h_margin, 3 if self.is_small_screen else 6, h_margin, 3 if self.is_small_screen else 6)
+        header_layout.setSpacing(3 if self.is_small_screen else 6)
         
         # Editable class name
         name_edit = QLineEdit(label)
@@ -2828,38 +3164,41 @@ class AICodingLab(QMainWindow):
         if hasattr(self, '_training_task') and self._training_task == "detection":
             name_edit.setVisible(False)
             
-        name_edit.setStyleSheet("""
+        _name_font = 12 if self.is_small_screen else 20
+        name_edit.setStyleSheet(f"""
 
-            QLineEdit { 
-                font-weight: bold; font-size: 20px; color: #1e293b;
+            QLineEdit {{
+                font-weight: bold; font-size: {_name_font}px; color: #1e293b;
                 border: 1px solid transparent; border-radius: 4px;
                 background: transparent; padding: 2px 6px;
-            }
-            QLineEdit:focus {
+            }}
+            QLineEdit:focus {{
                 border: 1px solid #3b82f6; background: white;
-            }
-            QLineEdit:hover { border: 1px solid #cbd5e1; }
+            }}
+            QLineEdit:hover {{ border: 1px solid #cbd5e1; }}
         """)
         
         count_badge = QLabel("0 imgs")
-        count_badge.setFixedWidth(68)
+        _badge_font = 8 if self.is_small_screen else 14
+        count_badge.setFixedWidth(38 if self.is_small_screen else 68)
         count_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        count_badge.setStyleSheet("""
-            background: #e2e8f0; color: #64748b; 
-            border-radius: 10px; padding: 2px 2px; 
-            font-size: 14px; font-weight: bold;
+        count_badge.setStyleSheet(f"""
+            background: #e2e8f0; color: #64748b;
+            border-radius: 10px; padding: 2px 2px;
+            font-size: {_badge_font}px; font-weight: bold;
         """)
         
         status_check = QLabel("")
-        status_check.setFixedWidth(20)
-        status_check.setStyleSheet("color: #10b981; font-weight: bold; font-size: 16px;")
+        status_check.setFixedWidth(14 if self.is_small_screen else 20)
+        status_check.setStyleSheet(f"color: #10b981; font-weight: bold; font-size: {11 if self.is_small_screen else 16}px;")
         
         btn_del = QPushButton("🗑")
-        btn_del.setFixedSize(26, 26)
+        _del_sz = 18 if self.is_small_screen else 26
+        btn_del.setFixedSize(_del_sz, _del_sz)
         btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_del.setStyleSheet("""
-            QPushButton { background: transparent; border: none; color: #94a3b8; font-size: 16px; }
-            QPushButton:hover { color: #ef4444; }
+        btn_del.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: none; color: #94a3b8; font-size: {11 if self.is_small_screen else 16}px; }}
+            QPushButton:hover {{ color: #ef4444; }}
         """)
         
         header_layout.addWidget(name_edit)
@@ -2874,8 +3213,9 @@ class AICodingLab(QMainWindow):
         body = QFrame()
         body.setStyleSheet("background: white;")
         body_layout = QVBoxLayout(body)
-        body_layout.setContentsMargins(12, 12, 12, 12)
-        body_layout.setSpacing(8)
+        _b_margin = 4 if self.is_small_screen else 12
+        body_layout.setContentsMargins(_b_margin, _b_margin, _b_margin, _b_margin)
+        body_layout.setSpacing(3 if self.is_small_screen else 8)
         
         # Image thumbnail area (Scroll Area)
         scroll = QScrollArea()
@@ -2883,7 +3223,7 @@ class AICodingLab(QMainWindow):
         is_detection = (hasattr(self, '_training_task') and self._training_task == "detection")
         
         if is_detection:
-            scroll.setMinimumHeight(300)
+            scroll.setMinimumHeight(180 if self.is_small_screen else 300)
             scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         else:
@@ -2912,11 +3252,11 @@ class AICodingLab(QMainWindow):
         # Placeholder hint label (shown when no images)
         hint_lbl = QLabel("No images collected yet.")
         hint_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint_lbl.setStyleSheet("color: #94a3b8; font-size: 14px; font-weight: 50;")
+        _hint_font = 10 if self.is_small_screen else 14
+        hint_lbl.setStyleSheet(f"color: #94a3b8; font-size: {_hint_font}px; font-weight: 50;")
         if is_detection:
-            # Allow hint to stretch and fill the expansive 300px+ height
             hint_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            hint_lbl.setMinimumHeight(240)
+            hint_lbl.setMinimumHeight(100 if self.is_small_screen else 240)
         
         body_layout.addWidget(hint_lbl)
         body_layout.addWidget(scroll)
@@ -2924,43 +3264,58 @@ class AICodingLab(QMainWindow):
         
         # ── Action Buttons
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
-        
-        btn_cam = QPushButton("🎥  Webcam")
+        btn_row.setSpacing(4 if self.is_small_screen else 8)
+
+        _btn_fs = 10 if self.is_small_screen else 15
+        _btn_pad = 2 if self.is_small_screen else 6
+        _btn_br = 4 if self.is_small_screen else 6
+        _btn_h = 26 if self.is_small_screen else 0
+        _btn_fw = "normal" if self.is_small_screen else "600"
+        _cam_txt = "Webcam" if self.is_small_screen else "🎥 Webcam"
+        _upl_txt = "Upload" if self.is_small_screen else "📁 Upload"
+        _lbl_txt = "Label" if self.is_small_screen else "⬚ Label"
+        btn_cam = QPushButton(_cam_txt)
         btn_cam.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_cam.setStyleSheet("""
-            QPushButton { 
+        btn_cam.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        if _btn_h: btn_cam.setFixedHeight(_btn_h)
+        btn_cam.setStyleSheet(f"""
+            QPushButton {{
                 background: white; border: 1px solid #e2e8f0; color: #475569;
-                border-radius: 6px; padding: 6px; font-weight: 600; font-size: 15px;
-            }
-            QPushButton:hover { background: #f8fafc; border-color: #3b82f6; color: #3b82f6; }
-            QPushButton[active="true"] { background: #eff6ff; border-color: #3b82f6; color: #2563eb; }
+                border-radius: {_btn_br}px; padding: {_btn_pad}px; font-weight: {_btn_fw}; font-size: {_btn_fs}px;
+            }}
+            QPushButton:hover {{ background: #f8fafc; border-color: #3b82f6; color: #3b82f6; }}
+            QPushButton[active="true"] {{ background: #eff6ff; border-color: #3b82f6; color: #2563eb; }}
         """)
-        
-        btn_upload = QPushButton("📁  Upload")
+
+        btn_upload = QPushButton(_upl_txt)
         btn_upload.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_upload.setStyleSheet("""
-            QPushButton { 
+        btn_upload.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        if _btn_h: btn_upload.setFixedHeight(_btn_h)
+        btn_upload.setStyleSheet(f"""
+            QPushButton {{
                 background: white; border: 1px solid #e2e8f0; color: #475569;
-                border-radius: 6px; padding: 6px; font-weight: 600; font-size: 15px;
-            }
-            QPushButton:hover { background: #f8fafc; border-color: #10b981; color: #059669; }
+                border-radius: {_btn_br}px; padding: {_btn_pad}px; font-weight: {_btn_fw}; font-size: {_btn_fs}px;
+            }}
+            QPushButton:hover {{ background: #f8fafc; border-color: #10b981; color: #059669; }}
         """)
-        
-        btn_row.addWidget(btn_cam)
-        btn_row.addWidget(btn_upload)
-        
-        btn_label = QPushButton("⬚  Label")
+
+        btn_label = QPushButton(_lbl_txt)
         btn_label.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_label.setVisible(self._training_task == "detection")
-        btn_label.setStyleSheet("""
-            QPushButton { 
+        btn_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        if _btn_h: btn_label.setFixedHeight(_btn_h)
+        btn_label.setStyleSheet(f"""
+            QPushButton {{
                 background: white; border: 1px solid #f87171; color: #ef4444;
-                border-radius: 6px; padding: 6px; font-weight: 600; font-size: 15px;
-            }
-            QPushButton:hover { background: #fef2f2; border-color: #ef4444; }
+                border-radius: {_btn_br}px; padding: {_btn_pad}px; font-weight: {_btn_fw}; font-size: {_btn_fs}px;
+            }}
+            QPushButton:hover {{ background: #fef2f2; border-color: #ef4444; }}
+            QPushButton:disabled {{ background: #fff5f5; color: #fca5a5; border: 1px solid #fecaca; }}
         """)
-        btn_row.addWidget(btn_label)
+
+        btn_row.addWidget(btn_cam, 1)
+        btn_row.addWidget(btn_upload, 1)
+        btn_row.addWidget(btn_label, 1)
         
         # ── Tag Panel (Detection Mode Only)
         tag_panel = None
@@ -3052,19 +3407,21 @@ class AICodingLab(QMainWindow):
         info["scroll"].setVisible(True)
         
         # Create thumbnail tile
+        _tile_sz = 56 if self.is_small_screen else 80
+        _pix_sz = _tile_sz - 4
         tile = QFrame()
-        tile.setFixedSize(80, 80)
+        tile.setFixedSize(_tile_sz, _tile_sz)
         tile.setStyleSheet("QFrame { border-radius: 6px; border: 2px solid #e2e8f0; }")
         tile_layout = QVBoxLayout(tile)
         tile_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         img_lbl = QLabel()
         img_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         img_lbl.setStyleSheet("border-radius: 4px;")
-        
+
         pix = QPixmap(image_path)
         if not pix.isNull():
-            img_lbl.setPixmap(pix.scaled(76, 76, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
+            img_lbl.setPixmap(pix.scaled(_pix_sz, _pix_sz, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
         
         # If detection mode, make tile clickable to annotate via double click
         if self._training_task == "detection":
@@ -3077,7 +3434,7 @@ class AICodingLab(QMainWindow):
         # Insert into grid (wrap if Detection) or layout
         grid = info["img_grid"]
         if isinstance(grid, QGridLayout):
-            cols = 4
+            cols = 5 if self.is_small_screen else 4
             grid_pos = len(info["images"]) - 1
             row, col = divmod(grid_pos, cols)
             grid.addWidget(tile, row, col)
@@ -3189,15 +3546,18 @@ class AICodingLab(QMainWindow):
             names = info["tag_panel"].get_class_names()
             colors = ["#a855f7", "#fb7185", "#3b82f6", "#10b981"] # Match MultiClassTagPanel
             
+            _cs_h = 16 if self.is_small_screen else 24
+            _cs_fs = 7 if self.is_small_screen else 10
+            _cs_pad = "1px 4px" if self.is_small_screen else "2px 8px"
             for i, name in enumerate(names):
                 btn = QPushButton(name)
                 btn.setCheckable(True)
-                btn.setFixedHeight(24)
+                btn.setFixedHeight(_cs_h)
                 color = colors[i % len(colors)]
                 btn.setStyleSheet(f"""
-                    QPushButton {{ 
-                        background: transparent; color: {color}; border: 1px solid {color}; 
-                        border-radius: 4px; font-weight: bold; font-size: 10px; padding: 2px 8px;
+                    QPushButton {{
+                        background: transparent; color: {color}; border: 1px solid {color};
+                        border-radius: 3px; font-weight: bold; font-size: {_cs_fs}px; padding: {_cs_pad};
                     }}
                     QPushButton:checked {{ background: {color}; color: white; }}
                 """)
@@ -3286,23 +3646,30 @@ class AICodingLab(QMainWindow):
                     break
         
         # Update button look
+        _ls = self.is_small_screen
+        _lfs = 10 if _ls else 15
+        _lpad = 2 if _ls else 10
+        _lbr = 4 if _ls else 6
+        _lfw = "normal" if _ls else "800"
+        _lfw2 = "normal" if _ls else "600"
         if all_labeled:
-            info["btn_label"].setStyleSheet("""
-                QPushButton { 
+            info["btn_label"].setStyleSheet(f"""
+                QPushButton {{
                     background: #10b981; border: 1px solid #059669; color: white;
-                    border-radius: 6px; padding: 10px; font-weight: 800; font-size: 15px;
-                }
-                QPushButton:hover { background: #059669; }
+                    border-radius: {_lbr}px; padding: {_lpad}px; font-weight: {_lfw}; font-size: {_lfs}px;
+                }}
+                QPushButton:hover {{ background: #059669; }}
             """)
             info["status_check"].setText("✔")
         else:
             # Revert to standard red variant
-            info["btn_label"].setStyleSheet("""
-                QPushButton { 
+            info["btn_label"].setStyleSheet(f"""
+                QPushButton {{
                     background: white; border: 1px solid #f87171; color: #ef4444;
-                    border-radius: 6px; padding: 10px; font-weight: 600; font-size: 17px;
-                }
-                QPushButton:hover { background: #fef2f2; border-color: #ef4444; }
+                    border-radius: {_lbr}px; padding: {_lpad}px; font-weight: {_lfw2}; font-size: {_lfs}px;
+                }}
+                QPushButton:hover {{ background: #fef2f2; border-color: #ef4444; }}
+                QPushButton:disabled {{ background: #fff5f5; color: #fca5a5; border: 1px solid #fecaca; }}
             """)
             info["status_check"].setText("")
 
@@ -3581,12 +3948,16 @@ class AICodingLab(QMainWindow):
             self._training_is_running = False
             self.btnStartTraining.setText("🚀 Resume Training")
             self.btnStartTraining.setEnabled(True)
+            spin_epochs = self.training_mode_widget.findChild(QSpinBox, "spinEpochs")
+            if spin_epochs: spin_epochs.setEnabled(True)
             self.txtTrainLog.appendPlainText("> Training Stopped by User.")
             return
 
-        # 0. Kill any running validation camera to free GPU memory
+        # 0. Kill any running processes and free shared memory on Jetson
         self._stop_fast_validation()
         self._stop_webcam()
+        import gc
+        gc.collect()
 
         # 1. Validation Logic
         if not self._project_initialized:
@@ -3619,6 +3990,7 @@ class AICodingLab(QMainWindow):
 
         # 3. UI Feedback - Prepare Dashboard
         self.btnStartTraining.setText("⏸️ Stop Training")
+        if spin_epochs: spin_epochs.setEnabled(False)
         if hasattr(self, 'statusPlaceholder') and self.statusPlaceholder: 
             self.statusPlaceholder.setVisible(False)
         if self.metricsPanel: self.metricsPanel.setVisible(True)
@@ -3640,6 +4012,18 @@ class AICodingLab(QMainWindow):
 
         # Persist class names before training
         self._save_classes_txt()
+
+        # Clean stale model files from previous runs to prevent false success detection
+        self._local_model_path = None
+        self._last_exported_engine = None
+        model_dir = os.path.join(project_root, "src", "modules", "training")
+        for stale in ["best.pt", "best.onnx", "best.engine"]:
+            stale_path = os.path.join(model_dir, stale)
+            if os.path.exists(stale_path):
+                try:
+                    os.remove(stale_path)
+                except OSError:
+                    pass
 
         # 4. Launch QProcess
         self._train_process = QProcess(self)
@@ -3674,6 +4058,7 @@ class AICodingLab(QMainWindow):
         self._train_process.finished.connect(self._on_train_finished)
 
         self._training_is_running = True
+        self._early_stopped = False
         self._train_dot_count = 0
         self._train_dot_timer.start()
         self._train_process.start()
@@ -3710,6 +4095,10 @@ class AICodingLab(QMainWindow):
                 if self.canvasAcc:
                     epoch = getattr(self, '_current_train_epoch', len(self.canvasAcc.x_data) + 1)
                     self.canvasAcc.update_data(epoch, acc, acc * 0.9)
+
+            elif "EarlyStopping" in line and "stopped early" in line:
+                self._early_stopped = True
+                self.txtTrainLog.appendPlainText(f"  [INFO] {line}")
 
             elif line.startswith("RESULT_MODEL_ENGINE:"):
                 self._last_exported_engine = line[20:].strip()
@@ -3753,13 +4142,34 @@ class AICodingLab(QMainWindow):
         local_pt = os.path.join(project_root, "src", "modules", "training", "best.pt")
         has_model = (self._local_model_path and os.path.exists(self._local_model_path)) or os.path.exists(local_pt)
 
+        # Re-enable epoch config
+        spin_epochs = self.training_mode_widget.findChild(QSpinBox, "spinEpochs")
+        if spin_epochs: spin_epochs.setEnabled(True)
+
         if exit_code == 0 or has_model:
-            self.btnStartTraining.setText("✅ Training Complete")
+            if getattr(self, '_early_stopped', False):
+                self.btnStartTraining.setText("✅ Best weight achieved")
+                self.btnStartTraining.setToolTip("Training stopped early — no improvement for 20 epochs")
+                # Show small hint below button
+                btn_parent = self.btnStartTraining.parentWidget()
+                if btn_parent and btn_parent.layout():
+                    hint = QLabel("Stopped early — best model saved")
+                    hint.setObjectName("earlyStopHint")
+                    hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    hint.setStyleSheet("color: #64748b; font-size: 10px; font-style: italic; background: transparent; margin: 0; padding: 0;")
+                    idx = btn_parent.layout().indexOf(self.btnStartTraining)
+                    btn_parent.layout().insertWidget(idx + 1, hint)
+            else:
+                self.btnStartTraining.setText("✅ Training Complete")
+                self.btnStartTraining.setToolTip("")
             self.btnStartTraining.setEnabled(False)
             if exit_code != 0:
                 self.txtTrainLog.appendPlainText("> TRT export crashed but model is available. Starting validation with .pt...")
             else:
-                self.txtTrainLog.appendPlainText("> Success! Starting fast validation...")
+                if getattr(self, '_early_stopped', False):
+                    self.txtTrainLog.appendPlainText("> Best weight saved. Starting fast validation...")
+                else:
+                    self.txtTrainLog.appendPlainText("> Success! Starting fast validation...")
             self.log_to_console("Training complete. Starting live validation camera...")
             self._start_fast_validation()
         else:
@@ -3887,6 +4297,10 @@ class AICodingLab(QMainWindow):
         if hasattr(self, 'btnStartTraining') and self.btnStartTraining:
             self.btnStartTraining.setText("🚀 Start Training")
             self.btnStartTraining.setEnabled(True)
+            self.btnStartTraining.setToolTip("")
+            # Remove early stop hint label if present
+            hint = self.btnStartTraining.parentWidget().findChild(QLabel, "earlyStopHint") if self.btnStartTraining.parentWidget() else None
+            if hint: hint.deleteLater()
 
     def _save_trained_model(self):
         """Copy the trained model from local training folder to projects/model/."""
@@ -3936,7 +4350,16 @@ if __name__ == '__main__':
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
     
     app = QApplication(sys.argv)
-    
+
+    # Suppress noisy Qt/X11 clipboard warnings on Jetson Linux
+    from PyQt5.QtCore import qInstallMessageHandler, QtMsgType
+    def _qt_msg_handler(msg_type, context, msg):
+        if "SelectionRequest" in msg or "XcbClipboard" in msg:
+            return
+        if msg_type == QtMsgType.QtWarningMsg:
+            print(f"[Qt] {msg}")
+    qInstallMessageHandler(_qt_msg_handler)
+
     # Global Font Correction for PyQt5
     # Bump the base font size to match the visual scale of PyQt6
     base_font = app.font()

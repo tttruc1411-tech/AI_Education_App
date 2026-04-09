@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLineEdit, QLabel
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QLineEdit, QLabel
 from PyQt5.QtCore import pyqtSignal, Qt, QRegularExpression
 from PyQt5.QtGui import QRegularExpressionValidator
 import re
@@ -23,12 +23,14 @@ class MultiClassTagPanel(QWidget):
         layout.setSpacing(4)
 
         # Title / Hint
-        self.lbl_hint = QLabel("🏷️ Define Project Classes (Min 2, Single-word, No Spaces)")
+        self.lbl_hint = QLabel("🏷️ Define Classes (Min 2, Single-word)")
         self.lbl_hint.setStyleSheet("color: #64748b; font-size: 11px; font-weight: bold;")
+        self.lbl_hint.setWordWrap(True)
         layout.addWidget(self.lbl_hint)
 
-        tag_layout = QHBoxLayout()
-        tag_layout.setSpacing(8)
+        # 2x2 grid layout instead of 1x4 row — fits narrow columns
+        tag_grid = QGridLayout()
+        tag_grid.setSpacing(4)
 
         self.tags = []
         colors = [
@@ -42,28 +44,26 @@ class MultiClassTagPanel(QWidget):
             bg, border = colors[i]
             edit = QLineEdit()
             edit.setPlaceholderText(f"Class {i+1}")
-            edit.setFixedWidth(85)
             edit.setStyleSheet(f"""
                 QLineEdit {{
-                    background: {bg}; border: 1px solid {border}; 
-                    border-radius: 6px; padding: 6px; 
-                    font-size: 12px; font-weight: 600; color: #1e293b;
+                    background: {bg}; border: 1px solid {border};
+                    border-radius: 6px; padding: 4px;
+                    font-size: 11px; font-weight: 600; color: #1e293b;
                 }}
                 QLineEdit:focus {{ border: 2px solid {border}; }}
-                # Maintain colors even when disabled (e.g. once collection starts)
-                QLineEdit:disabled {{ 
-                    background: {bg}; border-color: {border}; color: #334155; 
+                QLineEdit:disabled {{
+                    background: {bg}; border-color: {border}; color: #334155;
                 }}
             """)
-            # 🔡 Hard restriction: Letters only (A-Z, a-z)
             valid_regex = QRegularExpression("[a-zA-Z]+")
             edit.setValidator(QRegularExpressionValidator(valid_regex))
-            
+
             edit.textChanged.connect(self._validate)
-            tag_layout.addWidget(edit)
+            row, col = divmod(i, 2)
+            tag_grid.addWidget(edit, row, col)
             self.tags.append(edit)
 
-        layout.addLayout(tag_layout)
+        layout.addLayout(tag_grid)
 
     def _validate(self):
         valid_names = []
@@ -104,6 +104,17 @@ class MultiClassTagPanel(QWidget):
         for i, edit in enumerate(self.tags):
             edit.setText(names[i] if i < len(names) else "")
         self._validate()
+
+    def set_small_mode(self, is_small):
+        """Resize tag inputs for 16:9 small screen mode."""
+        _fs = 8 if is_small else 11
+        _pad = "2px" if is_small else "4px"
+        _hint_fs = 8 if is_small else 11
+        for edit in self.tags:
+            ss = re.sub(r"padding:\s*\d+px", f"padding: {_pad}", edit.styleSheet())
+            ss = re.sub(r"font-size:\s*\d+px", f"font-size: {_fs}px", ss)
+            edit.setStyleSheet(ss)
+        self.lbl_hint.setStyleSheet(re.sub(r"font-size:\s*\d+px", f"font-size: {_hint_fs}px", self.lbl_hint.styleSheet()))
 
     def lock_classes(self):
         """Permanent lock for tag inputs once collection/labeling begins."""

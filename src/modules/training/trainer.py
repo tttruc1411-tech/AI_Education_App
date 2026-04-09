@@ -104,47 +104,69 @@ def main():
 
     # Free GPU memory before loading model (PyQt app + thumbnails consume shared memory)
     torch.cuda.empty_cache()
+    import gc
+    gc.collect()
+
+    # Detect GPU memory and choose device/imgsz accordingly.
+    # On Orin Nano (7.6GB shared), the PyQt5 app + OS consume most memory.
+    # CUDA OOM crashes at C level (uncatchable), so we must prevent it upfront.
+    imgsz = args.imgsz
+    use_device = 0 if torch.cuda.is_available() else "cpu"
+
+    if torch.cuda.is_available():
+        free_mb = torch.cuda.mem_get_info()[0] / (1024 * 1024)
+        total_mb = torch.cuda.get_device_properties(0).total_memory / (1024 * 1024)
+        print(f"STATUS: GPU memory — {free_mb:.0f}MB free / {total_mb:.0f}MB total")
+
+        if free_mb < 2000:
+            # Not enough GPU memory even for 320x320 — fall back to CPU
+            print(f"STATUS: GPU memory critically low ({free_mb:.0f}MB). Using CPU for training.")
+            use_device = "cpu"
+            imgsz = min(imgsz, 320)
+        elif free_mb < 4000 and imgsz > 320:
+            print(f"STATUS: Low GPU memory ({free_mb:.0f}MB free). Reducing imgsz from {imgsz} to 320.")
+            imgsz = 320
 
     print(f"STATUS: loading backbone {args.model}...")
     model = YOLO(args.model)
 
-    # 🔧 UI Reporting Callbacks
+    # UI Reporting Callbacks
     def on_train_epoch_end(trainer):
-        # We extract relevant metrics from the trainer object
-        epoch = trainer.epoch + 1 # 1-indexed
+        epoch = trainer.epoch + 1
         total = trainer.epochs
         metrics = trainer.label_loss_items(trainer.tloss, prefix='train')
         loss = float(metrics.get('train/box_loss', 0)) + float(metrics.get('train/cls_loss', 0)) + float(metrics.get('train/dfl_loss', 0))
-        
-        # Format: EPOCH:1:50:0.543
-        # Which is EPOCH:Current:Total:Loss
         print(f"EPOCH:{epoch}:{total}:{loss:.4f}")
-        
-        # Validation metrics (available after the validation step in each epoch)
         if hasattr(trainer, 'metrics'):
-            map50 = trainer.metrics.get('metrics/mAP50(B)', 0) # mAP 50
-            # Format: METRIC:acc:85.2
+            map50 = trainer.metrics.get('metrics/mAP50(B)', 0)
             print(f"METRIC:acc:{map50*100:.2f}")
 
     model.add_callback("on_train_epoch_end", on_train_epoch_end)
 
-    # Optimized config for Jetson Orin Nano (7.6GB shared CPU/GPU memory)
+    # Config matching proven train_code.py settings for Jetson Orin Nano
     train_config = {
-        "batch": 1,        # Minimal batch — 640x640 with batch=2 OOMs on Orin Nano
-        "workers": 0,      # In-process loading — worker subprocesses eat shared memory
-        "freeze": 5,
-        "cache": "disk",   # Disk cache instead of RAM — RAM competes with GPU on unified memory
+        "batch": 2,         # Proven safe on Orin Nano (train_code.py uses batch=2)
+        "workers": 2,       # 2 CPU cores for data loading (train_code.py default)
+        "freeze": 5,        # Freeze low-level features — faster convergence, less memory
+        "cache": True,       # RAM cache (train_code.py uses True — more stable than "disk")
         "patience": 20,
         "plots": False,
-        "amp": True,       # FP16 training — saves memory (AMP check is monkey-patched above)
-        "device": 0 if torch.cuda.is_available() else "cpu",
+        "exist_ok": True,   # Reuse run directory — prevents accumulating train dirs
+        "amp": True,        # FP16 training — saves memory
+        "device": use_device,
     }
 
-    print(f"STATUS: Starting training for {args.epochs} epochs...")
+    # Lower batch size when using CPU (slower, don't want to also OOM on RAM)
+    if use_device == "cpu":
+        train_config["batch"] = 1
+        train_config["workers"] = 0
+        train_config["cache"] = False
+
+    print(f"STATUS: Starting training for {args.epochs} epochs at imgsz={imgsz} on {use_device}...")
     results = model.train(
         data=str(data_yaml.resolve()),
         epochs=args.epochs,
-        imgsz=args.imgsz,
+        imgsz=imgsz,
         **train_config
     )
 

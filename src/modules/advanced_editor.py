@@ -469,7 +469,16 @@ class AdvancedPythonEditor(QsciScintilla):
                                             var_type_actual = var_info["type"].split("(")[0].strip().lower()
                                             target_type_simple = target_type.split("(")[0].strip().lower()
                                             
-                                            if var_type_actual != target_type_simple and target_type_simple != "any" and var_type_actual != "any":
+                                            # Check for mismatch, allowing 'number' flexibility
+                                            is_mismatch = True
+                                            if (var_type_actual == target_type_simple) or (target_type_simple == "any") or (var_type_actual == "any"):
+                                                is_mismatch = False
+                                            elif (target_type_simple == "number" or var_type_actual == "number"):
+                                                is_mismatch = False
+                                            elif (target_type_simple == "list" or var_type_actual == "list"):
+                                                is_mismatch = False
+                                            
+                                            if is_mismatch:
                                                 # Valid variable but WRONG logical type!
                                                 should_highlight = True
 
@@ -643,21 +652,41 @@ class AdvancedPythonEditor(QsciScintilla):
         """Analyzes the current script to find what variables represent what data types."""
         registry = {}
         content = self.text()
-        content_bytes = content.encode('utf-8')
         
-        # Regex to find: var_name = FunctionName(args)
-        # We also capture the byte positions
+        # Pass 1: Library Function Outputs (e.g. model_session = Load_ONNX_Model(...))
         for category, data in LIBRARY_FUNCTIONS.items():
             for f_name, f_info in data["functions"].items():
                 pattern = rf"\b([a-zA-Z_]\w*)\s*=\s*{f_name}\b"
                 for match in re.finditer(pattern, content):
                     var_name = match.group(1)
-                    # We store type + actual byte positions for highlighting
                     registry[var_name] = {
                         "type": f_info["returns"]["type"],
                         "start": len(content[:match.start(1)].encode('utf-8')),
                         "end": len(content[:match.end(1)].encode('utf-8'))
                     }
+        
+        # Pass 2: List Literals (e.g. CLASSES = ["a", "b"]) 
+        # Supports multi-line with re.DOTALL
+        list_pattern = r"\b([a-zA-Z_]\w*)\s*=\s*\[.*?\]"
+        for match in re.finditer(list_pattern, content, re.DOTALL):
+            var_name = match.group(1)
+            registry[var_name] = {
+                "type": "List",
+                "start": len(content[:match.start(1)].encode('utf-8')),
+                "end": len(content[:match.end(1)].encode('utf-8'))
+            }
+
+        # Pass 3: String/Numeric Literals (e.g. NAME = "AI", GAIN = 0.5)
+        lit_pattern = r"\b([a-zA-Z_]\w*)\s*=\s*('[^']*'|\"[^\"]*\"|-?\d+(?:\.\d+)?)\b"
+        for match in re.finditer(lit_pattern, content):
+            var_name = match.group(1)
+            val = match.group(2)
+            var_type = "Text (str)" if (val.startswith("'") or val.startswith('"')) else "Number"
+            registry[var_name] = {
+                "type": var_type,
+                "start": len(content[:match.start(1)].encode('utf-8')),
+                "end": len(content[:match.end(1)].encode('utf-8'))
+            }
         
         return registry
         

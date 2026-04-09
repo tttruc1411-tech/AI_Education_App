@@ -75,7 +75,7 @@ class FunctionInfoPanel(QFrame):
                               f" – {desc}")
                 line.setWordWrap(True)
                 line.setTextFormat(Qt.RichText)
-                f_size = 12 if is_small else 16
+                f_size = 10 if is_small else 16
                 line.setStyleSheet(
                     f"color: #334155; font-size: {f_size}px; background: transparent;"
                 )
@@ -91,7 +91,7 @@ class FunctionInfoPanel(QFrame):
             )
             ret_line.setWordWrap(True)
             ret_line.setTextFormat(Qt.RichText)
-            f_size = 12 if is_small else 16
+            f_size = 10 if is_small else 16
             ret_line.setStyleSheet(
                 f"color: #334155; font-size: {f_size}px; background: transparent;"
             )
@@ -112,7 +112,7 @@ class FunctionInfoPanel(QFrame):
     def _bold_label(self, text, is_small=False):
         lbl = QLabel(text)
         lbl.setWordWrap(True)  # CRITICAL: Prevent long bold strings from locking layout widths
-        f_size = 11 if is_small else 14
+        f_size = 10 if is_small else 14
         lbl.setStyleSheet(
             f"color: #1e293b; font-size: {f_size}px; font-weight: 700; background: transparent;"
         )
@@ -247,8 +247,10 @@ class DraggableFunctionBlock(QFrame):
         self._header.setCursor(Qt.PointingHandCursor)
 
         row = QHBoxLayout(self._header)
-        row.setContentsMargins(10, 12, 10, 12)
-        row.setSpacing(8)
+        _rm = 6 if is_small else 10
+        _rv = 6 if is_small else 12
+        row.setContentsMargins(_rm, _rv, _rm, _rv)
+        row.setSpacing(6 if is_small else 8)
         row.setAlignment(Qt.AlignTop)
 
         # Icon badge
@@ -272,13 +274,13 @@ class DraggableFunctionBlock(QFrame):
         text_box.setSpacing(1)
         name_lbl = QLabel(func_id)
         name_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
-        n_size = 13 if is_small else 16
+        n_size = 11 if is_small else 16
         name_lbl.setStyleSheet(
             f"font-weight: 700; color: #1e293b; font-size: {n_size}px; background: transparent;"
         )
         short_desc = QLabel(info.get("desc", ""))
         short_desc.setAttribute(Qt.WA_TransparentForMouseEvents)
-        d_size = 11 if is_small else 14
+        d_size = 9 if is_small else 14
         short_desc.setStyleSheet(
             f"color: #94a3b8; font-size: {d_size}px; background: transparent;"
         )
@@ -378,7 +380,7 @@ class CategoryHeader(QPushButton):
         super().__init__()
         self.setCheckable(True)
         self.setChecked(False)
-        self.setFixedHeight(36 if is_small else 52)
+        self.setFixedHeight(30 if is_small else 52)
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet(f"""
             QPushButton {{
@@ -398,9 +400,9 @@ class CategoryHeader(QPushButton):
 
         # 🚀 Icon Block (Left Side Tab)
         icon_box = QLabel(icon)
-        i_h = 36 if is_small else 52
-        i_font = 18 if is_small else 24
-        icon_box.setFixedSize(40 if is_small else 50, i_h)
+        i_h = 30 if is_small else 52
+        i_font = 14 if is_small else 24
+        icon_box.setFixedSize(34 if is_small else 50, i_h)
         icon_box.setAlignment(Qt.AlignCenter)
         icon_box.setStyleSheet(f"""
             background: rgba(0, 0, 0, 0); 
@@ -413,7 +415,7 @@ class CategoryHeader(QPushButton):
         # 🏞️ Title Label
         title_lbl = QLabel(title)
         title_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
-        t_font = 14 if is_small else 18
+        t_font = 12 if is_small else 18
         title_lbl.setStyleSheet(
             f"color: white; background: transparent; font-weight: 900; font-size: {t_font}px; letter-spacing: 1px;"
         )

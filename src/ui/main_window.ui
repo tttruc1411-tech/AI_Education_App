@@ -122,7 +122,7 @@
     
     <item>
      <widget class="QFrame" name="headerFrame">
-      <property name="minimumSize"><size><width>0</width><height>70</height></size></property>
+      <property name="minimumSize"><size><width>0</width><height>46</height></size></property>
       <layout class="QHBoxLayout">
        <property name="leftMargin"><number>20</number></property>
        <property name="rightMargin"><number>12</number></property>
