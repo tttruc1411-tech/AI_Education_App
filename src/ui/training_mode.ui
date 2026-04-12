@@ -71,11 +71,14 @@
     QPushButton#btnStartTraining:disabled { background: #94a3b8; }
 
     /* ================= Forms and Misc ================= */
-    QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { 
-        border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 10px; 
+    QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+        border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 10px;
         background-color: #f8fafc; font-size: 14px; color: #0f172a; min-height: 28px;
     }
     QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid #3b82f6; background-color: white; }
+
+    /* Override for compact project name input in header */
+    QLineEdit#editProjName { min-height: 0px; max-height: 26px; padding: 0px 4px; font-size: 11px; }
     
     QLabel#lblBackbone, QLabel#lblEpochs, QLabel#lblBatch, QLabel#lblLR, QLabel#lblOpt, QLabel#lblImgSize { font-weight: bold; font-size: 15px; color: #1e293b; background: transparent; }
 
@@ -473,7 +476,7 @@
           <item>
            <widget class="QLabel" name="panelTitle">
             <property name="font"><font><pointsize>12</pointsize><bold>true</bold></font></property>
-            <property name="text"><string>⚡ Fast Check/Validation</string></property>
+            <property name="text"><string>⚡ Validation</string></property>
             <property name="alignment"><set>Qt::AlignCenter</set></property>
            </widget>
           </item>

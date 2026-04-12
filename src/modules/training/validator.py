@@ -72,8 +72,8 @@ def main():
             if not ret:
                 continue
 
-            # Run inference
-            results = model(frame, imgsz=args.imgsz, verbose=False)
+            # Run inference (only keep detections with confidence > 20%)
+            results = model(frame, imgsz=args.imgsz, conf=0.2, verbose=False)
             detections = []
             if len(results) > 0 and len(results[0].boxes) > 0:
                 detections = results[0].boxes.data.tolist()

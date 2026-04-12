@@ -20,7 +20,7 @@ class AdvancedPythonEditor(QsciScintilla):
         
         # 1. Setup Python Lexer with beautiful fonts
         self.lexer = QsciLexerPython()
-        base_font = QFont("Consolas", 10) # Compact font for better visibility of long scripts
+        base_font = QFont("Consolas", 11) # Compact font for better visibility of long scripts
         
         # Professional Light Theme Backgrounds (Beige match)
         bg_color = QColor("#faf7f2")

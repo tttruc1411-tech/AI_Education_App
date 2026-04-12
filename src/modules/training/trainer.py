@@ -77,7 +77,8 @@ def main():
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--names", type=str, required=True, help="Comma separated class names")
-    
+    parser.add_argument("--project_name", type=str, default="", help="Project name for saving model")
+
     args = parser.parse_args()
     class_names = [n.strip() for n in args.names.split(",")]
 
@@ -103,8 +104,12 @@ def main():
         sys.exit(1)
 
     # Free GPU memory before loading model (PyQt app + thumbnails consume shared memory)
-    torch.cuda.empty_cache()
+    # On Jetson Orin Nano, RAM and GPU memory are shared — aggressively free both
     import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
     gc.collect()
 
     # Detect GPU memory and choose device/imgsz accordingly.
@@ -118,17 +123,20 @@ def main():
         total_mb = torch.cuda.get_device_properties(0).total_memory / (1024 * 1024)
         print(f"STATUS: GPU memory — {free_mb:.0f}MB free / {total_mb:.0f}MB total")
 
-        if free_mb < 2000:
+        if free_mb < 1500:
             # Not enough GPU memory even for 320x320 — fall back to CPU
             print(f"STATUS: GPU memory critically low ({free_mb:.0f}MB). Using CPU for training.")
             use_device = "cpu"
             imgsz = min(imgsz, 320)
-        elif free_mb < 4000 and imgsz > 320:
+        elif free_mb < 4500 and imgsz > 320:
             print(f"STATUS: Low GPU memory ({free_mb:.0f}MB free). Reducing imgsz from {imgsz} to 320.")
             imgsz = 320
 
     print(f"STATUS: loading backbone {args.model}...")
     model = YOLO(args.model)
+    # Free memory consumed by model loading before training starts
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     # UI Reporting Callbacks
     def on_train_epoch_end(trainer):
@@ -144,11 +152,27 @@ def main():
     model.add_callback("on_train_epoch_end", on_train_epoch_end)
 
     # Config matching proven train_code.py settings for Jetson Orin Nano
+    # On Jetson, RAM = GPU memory (unified). cache=True eats GPU memory.
+    # Dynamically choose batch/cache/workers based on available memory.
+    _batch = 2
+    _cache = "disk"  # Default to disk cache — safe on shared-memory Jetson
+    _workers = 2
+
+    if torch.cuda.is_available():
+        free_mb = torch.cuda.mem_get_info()[0] / (1024 * 1024)
+        if free_mb < 4500:
+            _batch = 1
+            _workers = 1
+            print(f"STATUS: Tight GPU memory ({free_mb:.0f}MB free). Using batch=1, disk cache.")
+        if free_mb >= 5000:
+            _cache = True  # Only use RAM cache when memory is comfortable
+            print(f"STATUS: Sufficient GPU memory ({free_mb:.0f}MB free). Using RAM cache.")
+
     train_config = {
-        "batch": 2,         # Proven safe on Orin Nano (train_code.py uses batch=2)
-        "workers": 2,       # 2 CPU cores for data loading (train_code.py default)
+        "batch": _batch,
+        "workers": _workers,
         "freeze": 5,        # Freeze low-level features — faster convergence, less memory
-        "cache": True,       # RAM cache (train_code.py uses True — more stable than "disk")
+        "cache": _cache,    # disk cache by default on Jetson (shared memory)
         "patience": 20,
         "plots": False,
         "exist_ok": True,   # Reuse run directory — prevents accumulating train dirs
@@ -172,10 +196,11 @@ def main():
 
     print("STATUS: Training complete.")
 
-    # 3. Copy best.pt to local path immediately (always available for validation)
+    # 3. Copy best.pt to local path
     local_dir = Path(__file__).parent
     best_pt = Path(f"{results.save_dir}/weights/best.pt")
     local_pt = local_dir / "best.pt"
+    local_onnx = local_dir / "best.onnx"
     local_engine = local_dir / "best.engine"
 
     if best_pt.exists():
@@ -183,16 +208,115 @@ def main():
         print(f"RESULT_MODEL_PT:{best_pt}")
         print(f"RESULT_MODEL_LOCAL:{local_pt}")
 
-    # Free training memory before TRT export
+    # Free ALL training memory before conversion
     del model
-    torch.cuda.empty_cache()
+    del results
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+    gc.collect()
 
-    # 4. TensorRT export — SKIPPED on Orin Nano
-    # The TRT engine builder OOMs on 7.6GB shared memory (needs ~12MB GPU alloc that
-    # fails after training consumed most of it).  The C++ OOM crashes the subprocess
-    # before Python's try/except can catch it, causing _on_train_finished to see a
-    # non-zero exit code and skip validation.  Validation works fine with .pt.
-    print("STATUS: TensorRT export skipped (Orin Nano memory). Using .pt for validation.")
+    # ── 4. Convert PT → ONNX → TensorRT Engine (FP16) ───────────────
+    # Done in-process so CUDA context stays alive (separate QProcess can't see GPU on Jetson)
+    import time as _time
+
+    print("STATUS: Converting to TensorRT Engine...")
+    sys.stdout.flush()
+
+    # Step 1: PT → ONNX
+    print("CONVERT:[1/2] Exporting PT to ONNX...")
+    sys.stdout.flush()
+    try:
+        export_model = YOLO(str(local_pt))
+        export_model.export(format="onnx", imgsz=imgsz, half=False, opset=17)
+        del export_model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        # Find the onnx file (ultralytics may place it alongside the .pt)
+        if not local_onnx.exists():
+            for p in local_dir.glob("*.onnx"):
+                shutil.move(str(p), str(local_onnx))
+                break
+        if not local_onnx.exists():
+            onnx_candidate = best_pt.with_suffix(".onnx")
+            if onnx_candidate.exists():
+                shutil.copy2(onnx_candidate, local_onnx)
+
+        onnx_size = local_onnx.stat().st_size / (1024 * 1024)
+        print(f"CONVERT:  ONNX exported ({onnx_size:.1f} MB)")
+    except Exception as e:
+        print(f"CONVERT:  ONNX export failed: {e}")
+        print("STATUS: Finished!")
+        sys.exit(0)
+
+    sys.stdout.flush()
+
+    # Step 2: ONNX → TensorRT Engine (raw TRT API — proven on Jetson)
+    print("CONVERT:[2/2] Building TensorRT engine (FP16, ~30-40s)...")
+    sys.stdout.flush()
+    try:
+        import tensorrt as trt
+
+        TRT_WORKSPACE_GB = 2
+        TRT_OPT_LEVEL = 0
+
+        logger = trt.Logger(trt.Logger.WARNING)
+        builder = trt.Builder(logger)
+        network = builder.create_network(
+            1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+        )
+        parser = trt.OnnxParser(network, logger)
+
+        with open(str(local_onnx), "rb") as f:
+            if not parser.parse(f.read()):
+                for i in range(parser.num_errors):
+                    print(f"CONVERT:  Parse error: {parser.get_error(i)}")
+                print("STATUS: Finished!")
+                sys.exit(0)
+
+        config = builder.create_builder_config()
+        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, TRT_WORKSPACE_GB << 30)
+        config.set_flag(trt.BuilderFlag.FP16)
+        config.builder_optimization_level = TRT_OPT_LEVEL
+
+        # Timing cache
+        project_root = Path(__file__).resolve().parents[3]
+        cache_file = project_root / "timing.cache"
+        if cache_file.exists():
+            with open(str(cache_file), "rb") as f:
+                cache_data = f.read()
+            cache = config.create_timing_cache(cache_data)
+            config.set_timing_cache(cache, ignore_mismatch=True)
+
+        t0 = _time.time()
+        engine = builder.build_serialized_network(network, config)
+        elapsed = _time.time() - t0
+
+        if engine is None:
+            print("CONVERT:  Engine build failed!")
+            print("STATUS: Finished!")
+            sys.exit(0)
+
+        with open(str(local_engine), "wb") as f:
+            f.write(engine)
+
+        # Save timing cache for next time
+        try:
+            cache = config.get_timing_cache()
+            with open(str(cache_file), "wb") as f:
+                f.write(cache.serialize())
+        except Exception:
+            pass
+
+        engine_size = local_engine.stat().st_size / (1024 * 1024)
+        print(f"CONVERT:  Engine built ({engine_size:.1f} MB) [{elapsed:.1f}s]")
+        print(f"RESULT_MODEL_ENGINE:{local_engine}")
+
+    except Exception as e:
+        print(f"CONVERT:  TensorRT build failed: {e}")
 
     print("STATUS: Finished!")
 

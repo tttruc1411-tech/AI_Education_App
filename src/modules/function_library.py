@@ -70,9 +70,17 @@ class FunctionInfoPanel(QFrame):
                 name = p.get("name", "")
                 ptype = p.get("type", "")
                 desc  = p.get("desc", "")
+                choices = p.get("choices")
+                choices_html = ""
+                if choices:
+                    chips = " ".join(
+                        f"<span style='background:#dbeafe; color:#1e40af; border-radius:4px; padding:1px 6px; font-weight:bold;'>{c}</span>"
+                        for c in choices
+                    )
+                    choices_html = f" &nbsp;{chips}"
                 line = QLabel(f"  <b style='color:#7c3aed;'>{name}</b>"
                               f" <span style='color:#64748b;'>({ptype})</span>"
-                              f" – {desc}")
+                              f" – {desc}{choices_html}")
                 line.setWordWrap(True)
                 line.setTextFormat(Qt.RichText)
                 f_size = 10 if is_small else 16

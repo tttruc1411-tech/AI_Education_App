@@ -272,15 +272,22 @@ def Load_Engine_Model(model_path):
     model = YOLO(model_path, task='detect')
     return model
 
-def Run_Engine_Model(engine_model, camera_frame):
+def Run_Engine_Model(engine_model, camera_frame, img_size=640):
     """
     Runs high-speed inference on a camera frame using the loaded engine model.
+    img_size must match the size the engine was built with (320 or 640).
     Returns a list of detections: [x1, y1, x2, y2, confidence, class_id]
     """
     if engine_model is None or camera_frame is None:
         return []
-        
-    results = engine_model(camera_frame, verbose=False)
+
+    img_size = int(img_size)
+    if img_size not in (320, 640):
+        print(f"ERROR: img_size must be 320 or 640, got {img_size}")
+        print("TIP: Use the same size your model was trained with (check Training Configuration).")
+        return []
+
+    results = engine_model(camera_frame, imgsz=img_size, verbose=False)
     
     # Process the first result from the list
     if len(results) > 0 and len(results[0].boxes) > 0:
@@ -289,10 +296,13 @@ def Run_Engine_Model(engine_model, camera_frame):
         
     return []
 
-def Draw_Engine_Detections(camera_frame, results, classes=None):
+def Draw_Engine_Detections(camera_frame, results, classes=None, conf_threshold=0.25):
     """
     High-fidelity drawing block for .engine model results.
+    Filters detections below conf_threshold before drawing.
     Returns the number of objects detected.
     """
-    # Simply reuse the robust multi-format Draw_Detections block
+    if results:
+        conf_threshold = float(conf_threshold)
+        results = [r for r in results if len(r) >= 5 and r[4] >= conf_threshold]
     return Draw_Detections(camera_frame, results, label=classes if classes else "Object")

@@ -454,7 +454,8 @@ import numpy as np
 
 # Step 2: Load your trained AI model (Load_Engine_Model)
 
-# Step 3: Define the detection class name
+
+# Step 3: Define the detection class name (CLASSES = ["class1", "class2", "class3"])
 
 
 print("[OK] Ready! Starting detection loop...")
@@ -462,22 +463,23 @@ while True:
     # ========================================================
     # Main Loop (runs every frame)
     # ========================================================
-    # Step 3: Get a camera frame (Get_Camera_Frame)
+    # Step 4: Get a camera frame (Get_Camera_Frame)
 
 
-    # Step 4: Run AI detection on frame (Run_Engine_Model)
+    # Step 5: Run AI detection on frame (Run_Engine_Model)
 
 
-    # Step 5: Draw boxes on detected objects (Draw_Engine_Detections)
+    # Step 6: Draw boxes on detected objects (Draw_Engine_Detections)
 
 
-    # Step 6: Show results on Dashboard (Update_Dashboard)
+    # Step 7: Show results on Dashboard (Update_Dashboard)
 
 
     # [ENDLOOP]
 
 
 # Shut down camera and close windows (Close_Camera)
+
 '''
         
         return template

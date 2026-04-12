@@ -6,10 +6,10 @@ import re
 class MultiClassTagPanel(QWidget):
     """
     A modular component for Detection Mode that allows defining up to 4 classes
-    via colored tags. Validates that at least 2 classes are defined and follow
+    via colored tags. Validates that at least 1 class is defined and follows
     single-word naming conventions.
     """
-    validation_changed = pyqtSignal(bool) # Emits True if at least 2 classes are valid
+    validation_changed = pyqtSignal(bool) # Emits True if at least 1 class is valid
     classes_updated = pyqtSignal(list)   # Emits list of valid class names
 
     def __init__(self, parent=None):
@@ -23,7 +23,7 @@ class MultiClassTagPanel(QWidget):
         layout.setSpacing(4)
 
         # Title / Hint
-        self.lbl_hint = QLabel("🏷️ Define Classes (Min 2, Single-word)")
+        self.lbl_hint = QLabel("🏷️ Define Classes (Min 1, Single-word)")
         self.lbl_hint.setStyleSheet("color: #64748b; font-size: 11px; font-weight: bold;")
         self.lbl_hint.setWordWrap(True)
         layout.addWidget(self.lbl_hint)
@@ -84,13 +84,13 @@ class MultiClassTagPanel(QWidget):
                 # but for simplicity we keep the original style above.
                 pass
 
-        is_valid = len(valid_names) >= 2
+        is_valid = len(valid_names) >= 1
         self.validation_changed.emit(is_valid)
         self.classes_updated.emit(valid_names)
 
         # Update hint text if invalid
-        if len(valid_names) < 2:
-            self.lbl_hint.setText("⚠️ Please insert at least 2 class names (Single-word)")
+        if len(valid_names) < 1:
+            self.lbl_hint.setText("⚠️ Please insert at least 1 class name (Single-word)")
             self.lbl_hint.setStyleSheet("color: #ef4444; font-size: 11px; font-weight: bold;")
         else:
             self.lbl_hint.setText("✅ Multi-class configuration valid!")

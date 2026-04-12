@@ -228,7 +228,7 @@ class AnnotationLabel(QLabel):
         # Draw Crosshair
         if self.underMouse() and rect.isValid() and rect.contains(self.current_mouse_pos):
             if not self.is_resizing and not self.is_drawing:
-                painter.setPen(QPen(QColor(255, 255, 255, 60), 1, Qt.DashLine))
+                painter.setPen(QPen(QColor(255, 255, 255, 80), 1, Qt.DashDotLine))
                 painter.drawLine(rect.left(), self.current_mouse_pos.y(), rect.right(), self.current_mouse_pos.y())
                 painter.drawLine(self.current_mouse_pos.x(), rect.top(), self.current_mouse_pos.x(), rect.bottom())
 
@@ -244,40 +244,50 @@ class AnnotationLabel(QLabel):
             color_hex = palette[box_data["class_id"] % len(palette)]
             color = QColor(color_hex)
             
+            # Selected box glow
+            if is_selected:
+                glow = QColor(color.red(), color.green(), color.blue(), 25)
+                painter.setPen(QPen(glow, 6))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRect(pixel_box.adjusted(-2, -2, 2, 2))
+
             # Box Body
-            pen_width = 3 if is_selected else 1
+            pen_width = 2 if is_selected else 1
             painter.setPen(QPen(color, pen_width))
-            painter.setBrush(QColor(color.red(), color.green(), color.blue(), 40 if is_selected else 20))
+            painter.setBrush(QColor(color.red(), color.green(), color.blue(), 35 if is_selected else 15))
             painter.drawRect(pixel_box)
-            
-            # Label
+
+            # Label tag
             name = box_data["class_name"] or f"Tag {box_data['class_id']}"
-            painter.setBrush(color)
-            painter.setPen(Qt.PenStyle.NoPen)
-            lbl_w = painter.fontMetrics().horizontalAdvance(name) + 12
-            label_rect = QRect(pixel_box.left(), pixel_box.top() - 18, lbl_w, 18)
-            if label_rect.top() < rect.top(): label_rect.moveTop(pixel_box.top())
-            painter.drawRoundedRect(label_rect, 3, 3)
-            
-            painter.setPen(Qt.white)
             font = painter.font()
-            font.setPixelSize(10)
+            font.setPixelSize(11)
             font.setBold(True)
             painter.setFont(font)
+            lbl_w = painter.fontMetrics().horizontalAdvance(name) + 16
+            lbl_h = 20
+            label_rect = QRect(pixel_box.left(), pixel_box.top() - lbl_h, lbl_w, lbl_h)
+            if label_rect.top() < rect.top(): label_rect.moveTop(pixel_box.top())
+            painter.setBrush(color)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(label_rect, 4, 4)
+
+            painter.setPen(Qt.white)
             painter.drawText(label_rect, Qt.AlignCenter, name)
 
-            # handles for selection
+            # Handles for selected box
             if is_selected:
-                painter.setBrush(color)
-                painter.setPen(QPen(Qt.white, 1))
+                hs = self.handle_size // 2 + 1
                 for h_pos in self._get_handles(pixel_box).values():
-                    painter.drawEllipse(h_pos, self.handle_size//2, self.handle_size//2)
+                    painter.setBrush(Qt.white)
+                    painter.setPen(QPen(color, 2))
+                    painter.drawEllipse(h_pos, hs, hs)
 
         # 5. Draw currently drawing box
         if self.is_drawing:
             color = QColor(palette[self.active_class_id % len(palette)])
             draw_box = QRect(self.start_point, self.end_point).normalized()
             if rect.isValid(): draw_box = draw_box.intersected(rect)
+            painter.setBrush(QColor(color.red(), color.green(), color.blue(), 18))
             painter.setPen(QPen(color, 2, Qt.DashLine))
             painter.drawRect(draw_box)
 
@@ -565,6 +575,36 @@ class DarkTooltipFilter(QWidget):
 
 
 class AICodingLab(QMainWindow):
+    _spin_arrow_cache = None  # class-level cache for arrow image paths
+
+    @staticmethod
+    def _get_spin_arrow_paths():
+        """Generate tiny triangle arrow PNGs for QSpinBox buttons (once, cached)."""
+        if AICodingLab._spin_arrow_cache:
+            return AICodingLab._spin_arrow_cache
+        import tempfile
+        from PyQt5.QtGui import QPixmap, QPainter, QColor, QPolygonF
+        from PyQt5.QtCore import QPointF, Qt as _Qt
+        _dir = tempfile.mkdtemp(prefix="ailab_arrows_")
+        paths = {}
+        for name, points in [
+            ("up",   [QPointF(2, 8), QPointF(8, 2), QPointF(14, 8)]),
+            ("down", [QPointF(2, 2), QPointF(8, 8), QPointF(14, 2)]),
+        ]:
+            px = QPixmap(16, 10)
+            px.fill(_Qt.transparent)
+            p = QPainter(px)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setBrush(QColor("#475569"))
+            p.setPen(_Qt.NoPen)
+            p.drawPolygon(QPolygonF(points))
+            p.end()
+            path = os.path.join(_dir, f"arrow_{name}.png")
+            px.save(path, "PNG")
+            paths[name] = path
+        AICodingLab._spin_arrow_cache = (paths["up"], paths["down"])
+        return AICodingLab._spin_arrow_cache
+
     def __init__(self):
         super().__init__()
         self.setMinimumSize(800, 480) # Ensure it CAN shrink to fit small Jetson screens
@@ -606,7 +646,7 @@ class AICodingLab(QMainWindow):
             v_splitter = self.training_mode_widget.findChild(QSplitter, "midSplitter")
             if v_splitter:
                 # 1:1.6 ratio — config compact, progress (graph) gets more space
-                v_splitter.setSizes([240, 320])
+                v_splitter.setSizes([220, 340])
 
 
             # Connect Core Navigation
@@ -1156,24 +1196,29 @@ class AICodingLab(QMainWindow):
         if hasattr(self, 'training_mode_widget') and self.training_mode_widget:
             w = self.training_mode_widget
             
-            # Panel Titles — all headers uniform in small mode
-            t_size = 9 if is_small else 16
+            # Panel Titles — all headers uniform
+            t_size = 9 if is_small else 18
+            t_pad = '2px 6px' if is_small else '6px 16px'
+            _title_ss = f"font-weight: bold; font-size: {t_size}px; color: white; padding: {t_pad}; background: transparent;"
             for header_name in ["leftHeader", "configHeader", "progressHeader", "rightHeader"]:
                 header = w.findChild(QFrame, header_name)
                 if header:
-                    lbl = header.findChild(QLabel, "panelTitle")
-                    if lbl:
-                        lbl.setStyleSheet(f"font-weight: bold; font-size: {t_size}px; color: white;")
+                    # Use layout to get the direct first label — avoids duplicate objectName issues
+                    lay = header.layout()
+                    if lay and lay.count() > 0:
+                        item = lay.itemAt(0)
+                        if item and item.widget() and isinstance(item.widget(), QLabel):
+                            item.widget().setStyleSheet(_title_ss)
             
             # Webcam / Upload / Label buttons and capture size toggles in Data Collection
-            btn_font = 11 if is_small else 12  # Drop from 11/15
-            btn_pad = 2 if is_small else 5   # Drop from 2/6
+            btn_font = 11 if is_small else 15
+            btn_pad = 2 if is_small else 6
             btn_fw = "normal" if is_small else "600"
             btn_h = 24 if is_small else 0    # Drop from 26
             cap_font = 7 if is_small else 11  # Drop from 9/14
             for btn in w.findChildren(QPushButton):
                 txt = btn.text()
-                if "Webcam" in txt or "Upload" in txt or "Label" in txt:
+                if "Webcam" in txt or "Upload" in txt or ("Label" in txt and "Save" not in txt and "Continue" not in txt):
                     import re as _re
                     ss = _re.sub(r"font-size:\s*\d+px", f"font-size: {btn_font}px", btn.styleSheet())
                     ss = _re.sub(r"padding:\s*\d+px", f"padding: {btn_pad}px", ss)
@@ -1201,6 +1246,48 @@ class AICodingLab(QMainWindow):
                     _ss = _re.sub(r"font-size:\s*\d+px", f"font-size: {_tog_fs}px", _ss)
                     _ss = _re.sub(r"padding:\s*\d+px\s*\d+px", f"padding: {_tog_pad}", _ss)
                     _tog_btn.setStyleSheet(_ss)
+
+            # Project name row — bigger for normal resolution
+            _proj_h = 20 if is_small else 26
+            _proj_fs = 12 if is_small else 15
+            _proj_btn_fs = 10 if is_small else 12
+            if hasattr(self, 'lblProjName') and self.lblProjName:
+                self.lblProjName.setFixedHeight(_proj_h)
+                self.lblProjName.setStyleSheet(f"#lblProjName {{ color: white; font-weight: bold; font-size: {_proj_fs}px; padding: 0; margin: 0; min-height: 0; max-height: {_proj_h}px; }}")
+            if hasattr(self, 'editProjName') and self.editProjName and self.editProjName.isEnabled():
+                self.editProjName.setFixedHeight(_proj_h)
+                self.editProjName.setStyleSheet(f"""
+                    #editProjName {{
+                        background: rgba(255, 255, 255, 0.9); border: 1px solid #ef4444;
+                        border-radius: 4px; padding: 0px 4px; font-size: {_proj_fs - 1}px;
+                        min-height: 0px; max-height: {_proj_h}px;
+                    }}
+                """)
+            if hasattr(self, 'btnProjCheck') and self.btnProjCheck:
+                self.btnProjCheck.setFixedSize(_proj_h, _proj_h)
+                self.btnProjCheck.setStyleSheet(f"""
+                    #btnProjCheck {{
+                        background: #10b981; color: white; border-radius: 4px; font-weight: bold; font-size: {_proj_btn_fs}px;
+                        min-height: 0px; max-height: {_proj_h}px; padding: 0;
+                    }}
+                    #btnProjCheck:hover {{ background: #059669; }}
+                    #btnProjCheck:disabled {{ background: #94a3b8; }}
+                """)
+            if hasattr(self, 'btnProjReload') and self.btnProjReload:
+                _is_new = self.btnProjReload.text() == "New"
+                _reload_w = (32 if is_small else 50) if _is_new else _proj_h
+                self.btnProjReload.setFixedSize(_reload_w, _proj_h)
+                if not self.btnProjReload.isEnabled() or _is_new:
+                    self.btnProjReload.setStyleSheet(f"QPushButton {{ background: #64748b; color: white; border-radius: 6px; font-weight: bold; font-size: {_proj_btn_fs - 1}px; }} QPushButton:hover {{ background: #475569; }}")
+                else:
+                    self.btnProjReload.setStyleSheet(f"""
+                        #btnProjReload {{
+                            background: #f59e0b; color: white; border-radius: 4px; font-size: {_proj_btn_fs}px;
+                            min-height: 0px; max-height: {_proj_h}px; padding: 0;
+                        }}
+                        #btnProjReload:hover {{ background: #d97706; }}
+                        #btnProjReload:disabled {{ background: #94a3b8; }}
+                    """)
 
             # Detection mode class card scaling (scroll area, thumbnails, badges, hints)
             if hasattr(self, '_class_data'):
@@ -1272,11 +1359,39 @@ class AICodingLab(QMainWindow):
             _status_icon = w.findChild(QLabel, "statusIcon")
             if _status_icon: _status_icon.setStyleSheet(f"font-size: {16 if is_small else 36}px; color: #cbd5e1;")
 
-            # Input fields
+            # Input fields (skip widgets with their own custom styling)
             from PyQt5.QtWidgets import QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit
-            for field in w.findChildren((QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit)):
-                field.setStyleSheet(f"border: 1px solid #e2e8f0; border-radius: 3px; padding: {'1px' if is_small else '10px'}; \n"
+            _skip_inputs = {"editProjName", "classNameEdit"}
+            for field in w.findChildren((QComboBox, QLineEdit)):
+                if field.objectName() in _skip_inputs:
+                    continue
+                # Skip tag panel colored inputs (MultiClassTagPanel)
+                _parent = field.parent()
+                if _parent and _parent.objectName() == "MultiClassTagPanel":
+                    continue
+                _inp_pad = '1px' if is_small else '2px 10px'
+                field.setStyleSheet(f"border: 1px solid #e2e8f0; border-radius: 3px; padding: {_inp_pad}; "
                                   f"background-color: #f8fafc; font-size: {input_size}px; color: #0f172a;")
+            # SpinBoxes — fancy arrows for normal, .ui default for small
+            for field in w.findChildren((QSpinBox, QDoubleSpinBox)):
+                if is_small:
+                    # Clear inline style, let .ui stylesheet handle it
+                    field.setStyleSheet("")
+                    _font = field.font()
+                    _font.setPixelSize(4)
+                    field.setFont(_font)
+                else:
+                    _arrow_up, _arrow_down = self._get_spin_arrow_paths()
+                    field.setStyleSheet(
+                        f"QSpinBox, QDoubleSpinBox {{ border: 1px solid #e2e8f0; border-radius: 6px; padding: 0px 10px; "
+                        f"background-color: #f8fafc; font-size: 17px; color: #0f172a; }}\n"
+                        f"QSpinBox::up-button, QDoubleSpinBox::up-button {{ subcontrol-origin: border; subcontrol-position: top right; width: 20px; background: #e2e8f0; border-left: 1px solid #cbd5e1; border-top-right-radius: 6px; }}\n"
+                        f"QSpinBox::down-button, QDoubleSpinBox::down-button {{ subcontrol-origin: border; subcontrol-position: bottom right; width: 20px; background: #e2e8f0; border-left: 1px solid #cbd5e1; border-bottom-right-radius: 6px; }}\n"
+                        f"QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover {{ background: #cbd5e1; }}\n"
+                        f"QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{ background: #cbd5e1; }}\n"
+                        f"QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url({_arrow_up}); width: 8px; height: 8px; }}\n"
+                        f"QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url({_arrow_down}); width: 8px; height: 8px; }}"
+                    )
 
             # Config scroll area margins
             config_scroll = w.findChild(QWidget, "configContent")
@@ -1327,6 +1442,95 @@ class AICodingLab(QMainWindow):
             if status_msg: status_msg.setStyleSheet(f"font-weight: bold; font-size: {msg_size}px; color: #94a3b8;")
             status_hint = w.findChild(QLabel, "statusHint")
             if status_hint: status_hint.setStyleSheet(f"color: #94a3b8; font-size: {hint_size}px; padding: 0 10px;")
+
+            # BBox editor panel elements — built with is_small_screen=True default, must rescale
+            if hasattr(self, '_bbox_panel'):
+                _bt_fs = 8 if is_small else 16
+                _bh_fs = 7 if is_small else 13
+                _bcls_sz = 20 if is_small else 32
+                _bcls_fs = 11 if is_small else 18
+                _bnav_sz = 18 if is_small else 34
+                _bnav_fs = 8 if is_small else 16
+                _bsave_fs = 8 if is_small else 14
+                _bsave_pad = '3px 8px' if is_small else '8px 20px'
+                _bsave_min = 60 if is_small else 140
+                _bsave_br = 4 if is_small else 6
+                _bprog_fs = 7 if is_small else 13
+                _bsc_fs = 6 if is_small else 10
+                _bcam_fs = 7 if is_small else 14
+
+                # Title
+                _bt = self._bbox_panel.findChild(QLabel, "bboxTitle")
+                if _bt:
+                    _bt.setStyleSheet(f"color: white; font-weight: bold; font-size: {_bt_fs}px;")
+                # Hint
+                if hasattr(self, '_bbox_hint'):
+                    self._bbox_hint.setStyleSheet(f"color: #94a3b8; font-size: {_bh_fs}px;")
+                # Close button
+                for btn in self._bbox_panel.findChildren(QPushButton):
+                    if btn.text() == "✕":
+                        btn.setFixedSize(_bcls_sz, _bcls_sz)
+                        btn.setStyleSheet(f"QPushButton {{ background: transparent; color: #64748b; border: none; font-size: {_bcls_fs}px; border-radius: {_bcls_sz // 2}px; }} QPushButton:hover {{ color: #f87171; background: rgba(248,113,113,0.1); }}")
+                # Nav buttons
+                if hasattr(self, '_btn_prev_annotation'):
+                    self._btn_prev_annotation.setFixedSize(_bnav_sz, _bnav_sz)
+                    self._btn_prev_annotation.setStyleSheet(f"""
+                        QPushButton {{ background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: {_bnav_sz // 2}px; font-weight: bold; font-size: {_bnav_fs}px; }}
+                        QPushButton:hover {{ background: #334155; border-color: #8b5cf6; color: white; }}
+                        QPushButton:disabled {{ color: #334155; border-color: #1e293b; }}
+                    """)
+                if hasattr(self, '_btn_next_annotation'):
+                    self._btn_next_annotation.setFixedSize(_bnav_sz, _bnav_sz)
+                    self._btn_next_annotation.setStyleSheet(f"""
+                        QPushButton {{ background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: {_bnav_sz // 2}px; font-weight: bold; font-size: {_bnav_fs}px; }}
+                        QPushButton:hover {{ background: #334155; border-color: #8b5cf6; color: white; }}
+                        QPushButton:disabled {{ color: #334155; border-color: #1e293b; }}
+                    """)
+                # Save button
+                if hasattr(self, '_bbox_save_btn'):
+                    self._bbox_save_btn.setStyleSheet(f"""
+                        QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #7c3aed, stop:1 #8b5cf6);
+                                     color: white; border: none; border-radius: {_bsave_br}px;
+                                     font-weight: bold; font-size: {_bsave_fs}px; padding: {_bsave_pad}; min-width: {_bsave_min}px; }}
+                        QPushButton:hover {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6d28d9, stop:1 #7c3aed); }}
+                    """)
+                # Camera shutter
+                if hasattr(self, '_cam_shutter_btn'):
+                    _cam_pad = '3px 8px' if is_small else '10px 32px'
+                    _cam_min = 50 if is_small else 120
+                    self._cam_shutter_btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background: white; color: #1e293b; border: 4px solid #94a3b8;
+                            border-radius: 20px; font-weight: bold; font-size: {_bcam_fs}px;
+                            padding: {_cam_pad}; min-width: {_cam_min}px;
+                        }}
+                        QPushButton:hover {{ background: #f0f9ff; border-color: #3b82f6; color: #1d4ed8; }}
+                    """)
+                # Progress label
+                if hasattr(self, '_lbl_batch_progress'):
+                    self._lbl_batch_progress.setStyleSheet(f"color: #94a3b8; font-size: {_bprog_fs}px; font-weight: bold;")
+                # Floating capture frame button
+                if hasattr(self, '_tr_shutter_btn'):
+                    _sh_w = 90 if is_small else 135
+                    _sh_h = 24 if is_small else 36
+                    _sh_fs = 8 if is_small else 12
+                    self._tr_shutter_btn.setFixedSize(_sh_w, _sh_h)
+                    self._tr_shutter_btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background: #3b82f6; color: white; border: 2px solid white;
+                            border-radius: {_sh_h // 2}px; font-weight: bold; font-size: {_sh_fs}px;
+                        }}
+                        QPushButton:hover {{ background: #2563eb; }}
+                    """)
+                # Drag handle
+                if hasattr(self, '_bbox_drag_handle'):
+                    self._bbox_drag_handle.setFixedHeight(12 if is_small else 20)
+                # Panel min height
+                if is_small:
+                    self._bbox_panel.setFixedHeight(200)
+                else:
+                    self._bbox_panel.setMinimumHeight(450)
+                    self._bbox_panel.setMaximumHeight(16777215)
 
         # 5. Handle Running Mode scaling if possible
         if hasattr(self, 'running_mode_widget') and self.running_mode_widget:
@@ -1811,8 +2015,8 @@ class AICodingLab(QMainWindow):
         # Format: projects/model/file.onnx
         # folder_type is "Model", "Code", etc.
         folder_name = folder_type.lower()
-        rel_path = f"projects/{folder_name}/{path.name}"
-        
+        rel_path = f"'projects/{folder_name}/{path.name}'"
+
         from PyQt5.QtWidgets import QApplication
         QApplication.clipboard().setText(rel_path)
         self.log_to_console(f"📋 Copied path: {rel_path}")
@@ -2336,12 +2540,17 @@ class AICodingLab(QMainWindow):
         self._current_project_name = ""
         self._project_initialized = False
         self._train_process = None
+        self._convert_process = None
         self._training_is_running = False
         self._last_exported_engine = None
         self._train_dot_count = 0
         self._train_dot_timer = QTimer(self)
         self._train_dot_timer.setInterval(500)
         self._train_dot_timer.timeout.connect(self._animate_training_dots)
+        self._convert_dot_count = 0
+        self._convert_dot_timer = QTimer(self)
+        self._convert_dot_timer.setInterval(400)
+        self._convert_dot_timer.timeout.connect(self._animate_convert_dots)
 
         
         # Wire Recognition / Detection toggle (Group 1 - Task)
@@ -2365,47 +2574,54 @@ class AICodingLab(QMainWindow):
         # ─── 🏗️ PROJECT NAME SECTION (New) ───
         lhLayout = self.training_mode_widget.findChild(QVBoxLayout, "lhLayout")
         if lhLayout:
-            # Create Project Name Row
-            self.projRow = QFrame()
-            self.projRow.setObjectName("projectRow")
-            self.projLayout = QHBoxLayout(self.projRow)
+            # Create Project Name Row (bare layout, same as tLayout/sizeLayout in .ui)
+            self.projLayout = QHBoxLayout()
             self.projLayout.setContentsMargins(0, 0, 0, 0)
-            self.projLayout.setSpacing(6)
-            
-            lblProj = QLabel("Project name:")
-            lblProj.setStyleSheet("color: white; font-weight: bold; font-size: 13px;")
-            
+            self.projLayout.setSpacing(4)
+
+            self.lblProjName = QLabel("Project name:")
+            self.lblProjName.setObjectName("lblProjName")
+            self.lblProjName.setStyleSheet("#lblProjName { color: white; font-weight: bold; font-size: 12px; padding: 0; margin: 0; min-height: 0; max-height: 20px; }")
+            self.lblProjName.setFixedHeight(20)
+            lblProj = self.lblProjName
+
             self.editProjName = QLineEdit()
+            self.editProjName.setObjectName("editProjName")
             self.editProjName.setPlaceholderText("Enter name...")
-            self.editProjName.setFixedHeight(28)
+            self.editProjName.setFixedHeight(20)
             self.editProjName.setStyleSheet("""
-                QLineEdit { 
-                    background: rgba(255, 255, 255, 0.9); border: 2px solid #ef4444; 
-                    border-radius: 6px; padding: 2px 2px; font-size: 10px;
+                #editProjName {
+                    background: rgba(255, 255, 255, 0.9); border: 1px solid #ef4444;
+                    border-radius: 4px; padding: 0px 4px; font-size: 11px;
+                    min-height: 0px; max-height: 20px;
                 }
             """)
-            
-            self.btnProjCheck = QPushButton("✓") # V-check button
-            self.btnProjCheck.setFixedSize(28, 28)
+
+            self.btnProjCheck = QPushButton("✓")
+            self.btnProjCheck.setObjectName("btnProjCheck")
+            self.btnProjCheck.setFixedSize(20, 20)
             self.btnProjCheck.setCursor(Qt.CursorShape.PointingHandCursor)
             self.btnProjCheck.setStyleSheet("""
-                QPushButton { 
-                    background: #10b981; color: white; border-radius: 6px; font-weight: bold; font-size: 14px;
+                #btnProjCheck {
+                    background: #10b981; color: white; border-radius: 4px; font-weight: bold; font-size: 12px;
+                    min-height: 0px; max-height: 20px; padding: 0;
                 }
-                QPushButton:hover { background: #059669; }
-                QPushButton:disabled { background: #94a3b8; }
+                #btnProjCheck:hover { background: #059669; }
+                #btnProjCheck:disabled { background: #94a3b8; }
             """)
-            
+
             self.btnProjReload = QPushButton("📂")
-            self.btnProjReload.setFixedSize(28, 28)
+            self.btnProjReload.setObjectName("btnProjReload")
+            self.btnProjReload.setFixedSize(20, 20)
             self.btnProjReload.setCursor(Qt.CursorShape.PointingHandCursor)
             self.btnProjReload.setToolTip("Reload existing project")
             self.btnProjReload.setStyleSheet("""
-                QPushButton {
-                    background: #f59e0b; color: white; border-radius: 6px; font-size: 14px;
+                #btnProjReload {
+                    background: #f59e0b; color: white; border-radius: 4px; font-size: 12px;
+                    min-height: 0px; max-height: 20px; padding: 0;
                 }
-                QPushButton:hover { background: #d97706; }
-                QPushButton:disabled { background: #94a3b8; }
+                #btnProjReload:hover { background: #d97706; }
+                #btnProjReload:disabled { background: #94a3b8; }
             """)
 
             self.projLayout.addWidget(lblProj)
@@ -2413,8 +2629,8 @@ class AICodingLab(QMainWindow):
             self.projLayout.addWidget(self.btnProjCheck)
             self.projLayout.addWidget(self.btnProjReload)
 
-            # Insert between Task Toggle and Size Toggle
-            lhLayout.insertWidget(2, self.projRow)
+            # Insert as layout (not widget) — same as tLayout/sizeLayout in .ui
+            lhLayout.insertLayout(2, self.projLayout)
 
             # Connect Logic
             self.btnProjCheck.clicked.connect(self._init_project_folder)
@@ -2588,12 +2804,22 @@ class AICodingLab(QMainWindow):
         # Initially lock features until project is named
         QTimer.singleShot(100, self._update_project_ui_lock)
 
+    def _proj_h(self):
+        """Return project row height based on current resolution."""
+        return 20 if getattr(self, 'is_small_screen', False) else 26
+
+    def _proj_fs(self):
+        """Return project row font size based on current resolution."""
+        return 11 if getattr(self, 'is_small_screen', False) else 14
+
     def _validate_project_name_visual(self, text):
         """Highlight red if empty, normal if has text."""
+        h = self._proj_h()
+        fs = self._proj_fs()
         if not text.strip():
-            self.editProjName.setStyleSheet("QLineEdit { background: rgba(255, 255, 255, 0.9); border: 2px solid #ef4444; border-radius: 6px; padding: 2px 8px; }")
+            self.editProjName.setStyleSheet(f"#editProjName {{ background: rgba(255, 255, 255, 0.9); border: 1px solid #ef4444; border-radius: 4px; padding: 0px 4px; font-size: {fs}px; min-height: 0px; max-height: {h}px; }}")
         else:
-            self.editProjName.setStyleSheet("QLineEdit { background: white; border: 2px solid #3b82f6; border-radius: 6px; padding: 2px 8px; }")
+            self.editProjName.setStyleSheet(f"#editProjName {{ background: white; border: 1px solid #3b82f6; border-radius: 4px; padding: 0px 4px; font-size: {fs}px; min-height: 0px; max-height: {h}px; }}")
 
     def _init_project_folder(self):
         """Create the project directory and unlock features."""
@@ -2629,13 +2855,19 @@ class AICodingLab(QMainWindow):
             self.btnProjCheck.setDisabled(True)
             if hasattr(self, 'btnProjReload'):
                 self.btnProjReload.setText("New")
-                self.btnProjReload.setStyleSheet("QPushButton { background: #64748b; color: white; border-radius: 6px; font-weight: bold; font-size: 11px; } QPushButton:hover { background: #475569; }")
+                h = self._proj_h()
+                fs = self._proj_fs()
+                _new_w = 32 if self.is_small_screen else 50
+                self.btnProjReload.setFixedSize(_new_w, h)
+                self.btnProjReload.setStyleSheet(f"QPushButton {{ background: #64748b; color: white; border-radius: 6px; font-weight: bold; font-size: {fs}px; }} QPushButton:hover {{ background: #475569; }}")
                 self.btnProjReload.setToolTip("Discard current and start a new project")
                 try: self.btnProjReload.clicked.disconnect()
                 except: pass
                 self.btnProjReload.clicked.connect(self._reset_project_state)
 
-            self.editProjName.setStyleSheet("QLineEdit { background: #f1f5f9; border: 1px solid #cbd5e1; color: #64748b; border-radius: 6px; padding: 2px 10px; font-size: 14px; }")
+            h = self._proj_h()
+            fs = self._proj_fs()
+            self.editProjName.setStyleSheet(f"#editProjName {{ background: #f1f5f9; border: 1px solid #cbd5e1; color: #64748b; border-radius: 4px; padding: 0px 4px; font-size: {fs}px; min-height: 0px; max-height: {h}px; }}")
 
             self.log_to_console(f"Project '{name}' initialized. Data will be saved in: /projects/data/{name}/")
             self._update_project_ui_lock()
@@ -2666,7 +2898,17 @@ class AICodingLab(QMainWindow):
         # Restore Reload Button
         if hasattr(self, 'btnProjReload'):
             self.btnProjReload.setText("📂")
-            self.btnProjReload.setStyleSheet("QPushButton { background: #f59e0b; color: white; border-radius: 6px; font-size: 14px; } QPushButton:hover { background: #d97706; }")
+            h = self._proj_h()
+            fs = self._proj_fs()
+            self.btnProjReload.setFixedSize(h, h)
+            self.btnProjReload.setStyleSheet(f"""
+                #btnProjReload {{
+                    background: #f59e0b; color: white; border-radius: 4px; font-size: {fs + 1}px;
+                    min-height: 0px; max-height: {h}px; padding: 0;
+                }}
+                #btnProjReload:hover {{ background: #d97706; }}
+                #btnProjReload:disabled {{ background: #94a3b8; }}
+            """)
             self.btnProjReload.setToolTip("Reload existing project")
             try: self.btnProjReload.clicked.disconnect()
             except: pass
@@ -2721,14 +2963,20 @@ class AICodingLab(QMainWindow):
         
         if hasattr(self, 'btnProjReload'):
             self.btnProjReload.setText("New")
-            self.btnProjReload.setStyleSheet("QPushButton { background: #64748b; color: white; border-radius: 6px; font-weight: bold; font-size: 11px; } QPushButton:hover { background: #475569; }")
+            h = self._proj_h()
+            fs = self._proj_fs()
+            _new_w = 32 if self.is_small_screen else 50
+            self.btnProjReload.setFixedSize(_new_w, h)
+            self.btnProjReload.setStyleSheet(f"QPushButton {{ background: #64748b; color: white; border-radius: 6px; font-weight: bold; font-size: {fs}px; }} QPushButton:hover {{ background: #475569; }}")
             self.btnProjReload.setToolTip("Discard current and start a new project")
             try: self.btnProjReload.clicked.disconnect()
             except: pass
             self.btnProjReload.clicked.connect(self._reset_project_state)
 
+        h = self._proj_h()
+        fs = self._proj_fs()
         self.editProjName.setStyleSheet(
-            "QLineEdit { background: #f1f5f9; border: 1px solid #cbd5e1; color: #64748b; border-radius: 6px; padding: 2px 10px; font-size: 14px; }"
+            f"#editProjName {{ background: #f1f5f9; border: 1px solid #cbd5e1; color: #64748b; border-radius: 4px; padding: 0px 4px; font-size: {fs}px; min-height: 0px; max-height: {h}px; }}"
         )
 
         # Load class names from classes.txt or fall back to scanning annotations
@@ -2907,11 +3155,16 @@ class AICodingLab(QMainWindow):
         self._bbox_panel = QFrame(left_panel)
         self._bbox_panel.setObjectName("bboxPanel")
         self._bbox_panel.setVisible(False)
-        self._bbox_panel.setFixedHeight(200 if self.is_small_screen else 350)
+        if self.is_small_screen:
+            self._bbox_panel.setFixedHeight(200)
+        else:
+            self._bbox_panel.setMinimumHeight(450)
+            self._bbox_panel.setMaximumHeight(16777215)
         self._bbox_panel.setStyleSheet("""
-            QFrame#bboxPanel { 
-                background: #0f172a; 
+            QFrame#bboxPanel {
+                background: #0f172a;
                 border-top: 3px solid #8b5cf6;
+                border-radius: 8px 8px 0px 0px;
             }
         """)
         
@@ -2924,11 +3177,14 @@ class AICodingLab(QMainWindow):
         drag_handle.setObjectName("bboxHandle")
         drag_handle.setFixedHeight(12 if self.is_small_screen else 20)
         drag_handle.setCursor(Qt.CursorShape.SizeVerCursor)
-        drag_handle.setStyleSheet("background: rgba(139,92,246,0.3); hover { background: rgba(139,92,246,0.6); }")
+        drag_handle.setStyleSheet("""
+            QFrame#bboxHandle { background: rgba(139,92,246,0.25); }
+            QFrame#bboxHandle:hover { background: rgba(139,92,246,0.5); }
+        """)
         handle_layout = QHBoxLayout(drag_handle)
         pip = QLabel()
-        pip.setFixedSize(48, 4)
-        pip.setStyleSheet("background: white; border-radius: 2px;")
+        pip.setFixedSize(40, 4)
+        pip.setStyleSheet("background: rgba(255,255,255,0.6); border-radius: 2px;")
         handle_layout.addStretch()
         handle_layout.addWidget(pip)
         handle_layout.addStretch()
@@ -2936,7 +3192,7 @@ class AICodingLab(QMainWindow):
         
         # Header
         header = QFrame()
-        header.setStyleSheet("background: #1e293b; border-bottom: 1px solid #334155;")
+        header.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1e293b, stop:1 #1a2332); border-bottom: 1px solid #334155;")
         header_layout = QHBoxLayout(header)
         _hm = 6 if self.is_small_screen else 12
         header_layout.setContentsMargins(_hm, 2 if self.is_small_screen else 4, _hm, 2 if self.is_small_screen else 4)
@@ -2945,8 +3201,8 @@ class AICodingLab(QMainWindow):
         title_layout.setSpacing(0)
         lbl_title = QLabel()
         lbl_title.setObjectName("bboxTitle")
-        _bbox_title_fs = 8 if self.is_small_screen else 30 # Double (15 -> 30)
-        _bbox_hint_fs = 7 if self.is_small_screen else 26  # Double (13 -> 26)
+        _bbox_title_fs = 8 if self.is_small_screen else 16
+        _bbox_hint_fs = 7 if self.is_small_screen else 13
         lbl_title.setStyleSheet(f"color: white; font-weight: bold; font-size: {_bbox_title_fs}px;")
         self._bbox_hint = QLabel("Click an image above to annotate it.")
         self._bbox_hint.setStyleSheet(f"color: #94a3b8; font-size: {_bbox_hint_fs}px;")
@@ -2954,11 +3210,11 @@ class AICodingLab(QMainWindow):
         title_layout.addWidget(self._bbox_hint)
         
         btn_close_bbox = QPushButton("✕")
-        _cls_sz = 20 if self.is_small_screen else 48 # Increased to fit font
+        _cls_sz = 20 if self.is_small_screen else 32
         btn_close_bbox.setFixedSize(_cls_sz, _cls_sz)
         btn_close_bbox.setCursor(Qt.CursorShape.PointingHandCursor)
-        _cls_fs = 11 if self.is_small_screen else 32 # Double (16 -> 32)
-        btn_close_bbox.setStyleSheet(f"QPushButton {{ background: transparent; color: #94a3b8; border: none; font-size: {_cls_fs}px; }} QPushButton:hover {{ color: white; }}")
+        _cls_fs = 11 if self.is_small_screen else 18
+        btn_close_bbox.setStyleSheet(f"QPushButton {{ background: transparent; color: #64748b; border: none; font-size: {_cls_fs}px; border-radius: {_cls_sz // 2}px; }} QPushButton:hover {{ color: #f87171; background: rgba(248,113,113,0.1); }}")
         btn_close_bbox.clicked.connect(self._close_bbox_panel)
         
         header_layout.addLayout(title_layout)
@@ -2969,7 +3225,7 @@ class AICodingLab(QMainWindow):
         # Canvas area
         self._bbox_canvas = AnnotationLabel()
         self._bbox_canvas.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._bbox_canvas.setStyleSheet("background: #000; color: #64748b;")
+        self._bbox_canvas.setStyleSheet("background: #000; color: #475569; font-size: 13px;")
         self._bbox_canvas.setText("Select an image to annotate")
         self._bbox_canvas.save_requested.connect(self._save_bbox_annotation)
         self._bbox_canvas.close_requested.connect(self._close_bbox_panel)
@@ -2978,9 +3234,9 @@ class AICodingLab(QMainWindow):
         # Floating Shutter Button for the right-panel webcam (visible when cam active)
         self._tr_shutter_btn = QPushButton("📸 Capture Frame")
         self._tr_shutter_btn.setParent(self) # Floating
-        _shutter_w = 90 if self.is_small_screen else 160
-        _shutter_h = 24 if self.is_small_screen else 48
-        _shutter_fs = 8 if self.is_small_screen else 14
+        _shutter_w = 90 if self.is_small_screen else 135
+        _shutter_h = 24 if self.is_small_screen else 36
+        _shutter_fs = 8 if self.is_small_screen else 12
         self._tr_shutter_btn.setFixedSize(_shutter_w, _shutter_h)
         self._tr_shutter_btn.setVisible(False)
         self._tr_shutter_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -2995,7 +3251,7 @@ class AICodingLab(QMainWindow):
         
         # Bottom action area — enhanced with navigation and info
         bottom_bar = QFrame()
-        bottom_bar.setStyleSheet("background: #0f172a; border-top: 1px solid #1e293b;")
+        bottom_bar.setStyleSheet("background: #0f172a; border-top: 1px solid #1e293b; padding-top: 2px;")
         bottom_bar_layout = QVBoxLayout(bottom_bar)
         _bb_m = 6 if self.is_small_screen else 16
         bottom_bar_layout.setContentsMargins(_bb_m, 2 if self.is_small_screen else 4, _bb_m, 2 if self.is_small_screen else 6)
@@ -3003,13 +3259,13 @@ class AICodingLab(QMainWindow):
 
         # Row 1: Status and Navigation Info
         info_row = QHBoxLayout()
-        _prog_fs = 7 if self.is_small_screen else 22 # Double (11 -> 22)
+        _prog_fs = 7 if self.is_small_screen else 13
         self._lbl_batch_progress = QLabel("Image 0 of 0")
         self._lbl_batch_progress.setStyleSheet(f"color: #94a3b8; font-size: {_prog_fs}px; font-weight: bold;")
 
-        _sc_fs = 6 if self.is_small_screen else 20 # Double (10 -> 20)
+        _sc_fs = 6 if self.is_small_screen else 10
         shortcut_hint = QLabel("[Enter] Save  [Del] Clear  [Esc] Close")
-        shortcut_hint.setStyleSheet(f"color: #475569; font-size: {_sc_fs}px;")
+        shortcut_hint.setStyleSheet(f"color: #64748b; font-size: {_sc_fs}px;")
         
         info_row.addWidget(self._lbl_batch_progress)
         info_row.addStretch()
@@ -3019,14 +3275,14 @@ class AICodingLab(QMainWindow):
         # Row 2: Navigation and Action Buttons
         action_row = QHBoxLayout()
         
-        _nav_sz = 18 if self.is_small_screen else 48 # Increased
+        _nav_sz = 18 if self.is_small_screen else 34
         btn_prev = QPushButton("◀")
         btn_prev.setFixedSize(_nav_sz, _nav_sz)
         btn_prev.setToolTip("Previous Image")
         btn_prev.setStyleSheet(f"""
-            QPushButton {{ background: #1e293b; color: white; border: 1px solid #334155; border-radius: {_nav_sz // 2}px; font-weight: bold; font-size: {8 if self.is_small_screen else 28}px; }}
-            QPushButton:hover {{ background: #334155; }}
-            QPushButton:disabled {{ color: #334155; }}
+            QPushButton {{ background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: {_nav_sz // 2}px; font-weight: bold; font-size: {8 if self.is_small_screen else 16}px; }}
+            QPushButton:hover {{ background: #334155; border-color: #8b5cf6; color: white; }}
+            QPushButton:disabled {{ color: #334155; border-color: #1e293b; }}
         """)
         btn_prev.clicked.connect(lambda: self._navigate_annotation(-1))
         self._btn_prev_annotation = btn_prev
@@ -3035,23 +3291,24 @@ class AICodingLab(QMainWindow):
         btn_next.setFixedSize(_nav_sz, _nav_sz)
         btn_next.setToolTip("Next Image / Skip")
         btn_next.setStyleSheet(f"""
-            QPushButton {{ background: #1e293b; color: white; border: 1px solid #334155; border-radius: {_nav_sz // 2}px; font-weight: bold; font-size: {8 if self.is_small_screen else 28}px; }}
-            QPushButton:hover {{ background: #334155; }}
-            QPushButton:disabled {{ color: #334155; }}
+            QPushButton {{ background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: {_nav_sz // 2}px; font-weight: bold; font-size: {8 if self.is_small_screen else 16}px; }}
+            QPushButton:hover {{ background: #334155; border-color: #8b5cf6; color: white; }}
+            QPushButton:disabled {{ color: #334155; border-color: #1e293b; }}
         """)
         btn_next.clicked.connect(lambda: self._navigate_annotation(1))
         self._btn_next_annotation = btn_next
 
         # BBox Save button
-        _save_fs = 8 if self.is_small_screen else 30 # Double (15 -> 30)
-        _save_pad = "3px 8px" if self.is_small_screen else "12px 32px" # Adjusted
-        _save_min = 60 if self.is_small_screen else 180 # Increased
+        _save_fs = 8 if self.is_small_screen else 14
+        _save_pad = "3px 8px" if self.is_small_screen else "8px 20px"
+        _save_min = 60 if self.is_small_screen else 140
         self._bbox_save_btn = QPushButton("Save & Continue ▶")
         _save_br = 4 if self.is_small_screen else 6
         self._bbox_save_btn.setStyleSheet(f"""
-            QPushButton {{ background: #7c3aed; color: white; border: none; border-radius: {_save_br}px;
+            QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #7c3aed, stop:1 #8b5cf6);
+                         color: white; border: none; border-radius: {_save_br}px;
                          font-weight: bold; font-size: {_save_fs}px; padding: {_save_pad}; min-width: {_save_min}px; }}
-            QPushButton:hover {{ background: #6d28d9; }}
+            QPushButton:hover {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6d28d9, stop:1 #7c3aed); }}
         """)
         self._bbox_save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._bbox_save_btn.clicked.connect(self._save_bbox_annotation)
@@ -3083,7 +3340,7 @@ class AICodingLab(QMainWindow):
         
         # Class Selection Bar (Detection Mode)
         self._bbox_class_selector = QFrame()
-        self._bbox_class_selector.setStyleSheet("background: #0f172a; border-top: 1px solid #1e293b;")
+        self._bbox_class_selector.setStyleSheet("background: #0f172a; border-top: 1px solid rgba(139,92,246,0.2);")
         self._class_selector_layout = QHBoxLayout(self._bbox_class_selector)
         _cs_m = 4 if self.is_small_screen else 12
         self._class_selector_layout.setContentsMargins(_cs_m, 2 if self.is_small_screen else 4, _cs_m, 2 if self.is_small_screen else 4)
@@ -3107,10 +3364,20 @@ class AICodingLab(QMainWindow):
         if hasattr(self, '_bbox_panel'):
             self._bbox_panel.setVisible(False)
             self._bbox_panel_visible = False
+            # Restore scroll area max height so it reclaims full space
+            if not self.is_small_screen:
+                scroll = self.training_mode_widget.findChild(QWidget, "classScrollArea")
+                if scroll:
+                    scroll.setMaximumHeight(16777215)
 
     def _bbox_handle_press(self, event):
         self._bbox_drag_start_y = event.globalPos().y()
         self._bbox_drag_start_h = self._bbox_panel.height()
+        # When user starts dragging, uncap scroll area so both can resize freely
+        if not self.is_small_screen:
+            scroll = self.training_mode_widget.findChild(QWidget, "classScrollArea")
+            if scroll:
+                scroll.setMaximumHeight(16777215)
 
     def _bbox_handle_move(self, event):
         delta = int(self._bbox_drag_start_y - event.globalPos().y())
@@ -3123,7 +3390,11 @@ class AICodingLab(QMainWindow):
         else:
             _max_h = 350 if self.is_small_screen else 500
         new_h = max(100, min(_max_h, self._bbox_drag_start_h + delta))
-        self._bbox_panel.setFixedHeight(new_h)
+        if self.is_small_screen:
+            self._bbox_panel.setFixedHeight(new_h)
+        else:
+            self._bbox_panel.setMinimumHeight(new_h)
+            self._bbox_panel.setMaximumHeight(new_h)
 
     def add_training_class(self, default_name=None):
         """Add a new class card with editable name, image grid, and webcam/upload actions."""
@@ -3325,7 +3596,7 @@ class AICodingLab(QMainWindow):
             # Validation logic: disable Label button until classes are defined
             tag_panel.validation_changed.connect(btn_label.setEnabled)
             btn_label.setEnabled(False) # Initial state
-            btn_label.setToolTip("Please define at least 2 classes to start labeling.")
+            btn_label.setToolTip("Please define at least 1 class name to start labeling.")
         
         body_layout.addLayout(btn_row)
         
@@ -3399,13 +3670,13 @@ class AICodingLab(QMainWindow):
         """Add a thumbnail tile to the image grid for a class."""
         info = self._class_data[idx]
         if info is None: return
-        
+
         info["images"].append(image_path)
         count = len(info["images"])
         info["count_badge"].setText(f"{count} imgs")
         info["hint_lbl"].setVisible(False)
         info["scroll"].setVisible(True)
-        
+
         # Create thumbnail tile
         _tile_sz = 56 if self.is_small_screen else 80
         _pix_sz = _tile_sz - 4
@@ -3422,15 +3693,32 @@ class AICodingLab(QMainWindow):
         pix = QPixmap(image_path)
         if not pix.isNull():
             img_lbl.setPixmap(pix.scaled(_pix_sz, _pix_sz, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
-        
+
         # If detection mode, make tile clickable to annotate via double click
         if self._training_task == "detection":
             tile.setStyleSheet("QFrame { border-radius: 6px; border: 2px solid #f87171; }")
             tile.setCursor(Qt.CursorShape.PointingHandCursor)
             tile.mouseDoubleClickEvent = lambda e, p=image_path, ci=idx: self._open_bbox_editor(p, ci)
-        
+
         tile_layout.addWidget(img_lbl)
-        
+
+        # Delete button (top-right corner overlay)
+        _del_sz = 14 if self.is_small_screen else 18
+        btn_del_img = QPushButton("×", tile)
+        btn_del_img.setFixedSize(_del_sz, _del_sz)
+        btn_del_img.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_del_img.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(239,68,68,0.85); color: white; border: none;
+                border-radius: {_del_sz // 2}px; font-size: {_del_sz - 4}px; font-weight: bold;
+                padding: 0; margin: 0;
+            }}
+            QPushButton:hover {{ background: rgba(220,38,38,1.0); }}
+        """)
+        btn_del_img.move(_tile_sz - _del_sz - 2, 2)
+        btn_del_img.raise_()
+        btn_del_img.clicked.connect(lambda _, p=image_path, ci=idx, t=tile: self._delete_image_tile(ci, p, t))
+
         # Insert into grid (wrap if Detection) or layout
         grid = info["img_grid"]
         if isinstance(grid, QGridLayout):
@@ -3440,9 +3728,48 @@ class AICodingLab(QMainWindow):
             grid.addWidget(tile, row, col)
         else:
             grid.insertWidget(grid.count() - 1, tile)
-        
+
         self._update_dataset_summary()
         self._update_label_status(idx)
+
+    def _delete_image_tile(self, class_idx, image_path, tile_widget):
+        """Delete an image from disk (+ annotation) and remove its tile."""
+        info = self._class_data[class_idx]
+        if info is None:
+            return
+
+        # Remove image file
+        if os.path.exists(image_path):
+            os.remove(image_path)
+
+        # Remove annotation file (.txt) if exists
+        annotation_path = os.path.splitext(image_path)[0] + ".txt"
+        if os.path.exists(annotation_path):
+            os.remove(annotation_path)
+
+        # Remove .npy cache if exists
+        npy_path = os.path.splitext(image_path)[0] + ".npy"
+        if os.path.exists(npy_path):
+            os.remove(npy_path)
+
+        # Remove from in-memory list
+        if image_path in info["images"]:
+            info["images"].remove(image_path)
+
+        # Update badge count
+        count = len(info["images"])
+        info["count_badge"].setText(f"{count} imgs")
+        if count == 0:
+            info["hint_lbl"].setVisible(True)
+            info["scroll"].setVisible(False)
+
+        # Remove tile widget from UI
+        tile_widget.setParent(None)
+        tile_widget.deleteLater()
+
+        self._update_dataset_summary()
+        self._update_label_status(class_idx)
+        self.log_to_console(f"Deleted: {os.path.basename(image_path)}")
 
     def _save_bbox_annotation(self):
         """Persist the bounding box to a YOLO format text file."""
@@ -3546,9 +3873,9 @@ class AICodingLab(QMainWindow):
             names = info["tag_panel"].get_class_names()
             colors = ["#a855f7", "#fb7185", "#3b82f6", "#10b981"] # Match MultiClassTagPanel
             
-            _cs_h = 16 if self.is_small_screen else 24
-            _cs_fs = 7 if self.is_small_screen else 10
-            _cs_pad = "1px 4px" if self.is_small_screen else "2px 8px"
+            _cs_h = 16 if self.is_small_screen else 30
+            _cs_fs = 7 if self.is_small_screen else 13
+            _cs_pad = "1px 4px" if self.is_small_screen else "4px 12px"
             for i, name in enumerate(names):
                 btn = QPushButton(name)
                 btn.setCheckable(True)
@@ -3556,10 +3883,11 @@ class AICodingLab(QMainWindow):
                 color = colors[i % len(colors)]
                 btn.setStyleSheet(f"""
                     QPushButton {{
-                        background: transparent; color: {color}; border: 1px solid {color};
-                        border-radius: 3px; font-weight: bold; font-size: {_cs_fs}px; padding: {_cs_pad};
+                        background: transparent; color: {color}; border: 1.5px solid {color};
+                        border-radius: {_cs_h // 2}px; font-weight: bold; font-size: {_cs_fs}px; padding: {_cs_pad};
                     }}
-                    QPushButton:checked {{ background: {color}; color: white; }}
+                    QPushButton:hover {{ background: rgba({QColor(color).red()},{QColor(color).green()},{QColor(color).blue()},25); }}
+                    QPushButton:checked {{ background: {color}; color: white; border-color: {color}; }}
                 """)
                 btn.clicked.connect(lambda _, idx=i: self._set_active_label_class(idx))
                 self._class_selector_layout.addWidget(btn)
@@ -3585,10 +3913,29 @@ class AICodingLab(QMainWindow):
             self._bbox_save_btn.setVisible(True)
             self._cam_shutter_btn.setVisible(False)
             
+        was_visible = self._bbox_panel.isVisible()
         self._bbox_panel.setVisible(True)
         self._bbox_panel_visible = True
         self._bbox_canvas.setFocus()
         self._bbox_canvas.update()
+
+        # Expand panel to 2/3 of column on first open only (not during navigation)
+        if not self.is_small_screen and not was_visible:
+            def _expand():
+                parent = self._bbox_panel.parentWidget()
+                if not parent: return
+                avail_h = parent.height()
+                if avail_h < 200: return
+                target_h = max(400, int(avail_h * 2 / 3))
+                # Lock the panel to the target height
+                self._bbox_panel.setMinimumHeight(target_h)
+                self._bbox_panel.setMaximumHeight(target_h)
+                # Shrink scroll area so layout has room
+                scroll = self.training_mode_widget.findChild(QWidget, "classScrollArea")
+                if scroll:
+                    remaining = avail_h - target_h - 80  # reserve for header + add-class btn
+                    scroll.setMaximumHeight(max(60, remaining))
+            QTimer.singleShot(100, _expand)
 
     def _annotate_next_in_class(self, idx):
         """Find the next unannotated image in a class and open it."""
@@ -3645,12 +3992,12 @@ class AICodingLab(QMainWindow):
                     all_labeled = False
                     break
         
-        # Update button look
+        # Update button look — match creation sizes from _add_class_card
         _ls = self.is_small_screen
         _lfs = 10 if _ls else 15
-        _lpad = 2 if _ls else 10
+        _lpad = 2 if _ls else 6
         _lbr = 4 if _ls else 6
-        _lfw = "normal" if _ls else "800"
+        _lfw = "normal" if _ls else "600"
         _lfw2 = "normal" if _ls else "600"
         if all_labeled:
             info["btn_label"].setStyleSheet(f"""
@@ -3788,10 +4135,10 @@ class AICodingLab(QMainWindow):
             if hasattr(self, 'statusPlaceholder'):
                 self.statusPlaceholder.setVisible(False)
             if hasattr(self, '_tr_shutter_btn'):
-                self._tr_shutter_btn.setVisible(True)
-                self._tr_shutter_btn.raise_()
+                # Don't show yet — _update_cam_frame will position and reveal it
+                self._tr_shutter_btn_pending = True
         
-        self._bbox_panel.setVisible(False) # Hide annotation panel during live capture
+        self._close_bbox_panel()  # Hide annotation panel during live capture
 
     def _update_cam_frame(self):
         """Timer callback: grab frame from cv2, display in trCamDisplay."""
@@ -3813,15 +4160,17 @@ class AICodingLab(QMainWindow):
         self._last_cam_frame = frame  # Store raw BGR for saving
         
         # Position floating shutter over the camera
-        if self._tr_shutter_btn.isVisible():
-            # Get global position of camera preview and center the button at the bottom
+        if self._tr_shutter_btn.isVisible() or getattr(self, '_tr_shutter_btn_pending', False):
             try:
                 cam_rect = self.trCamDisplay.geometry()
                 global_pos = self.trCamDisplay.mapToGlobal(QPoint(0,0))
-                # Target the bottom center of the camera view
                 btn_x = global_pos.x() + (cam_rect.width() - self._tr_shutter_btn.width()) // 2
                 btn_y = global_pos.y() + cam_rect.height() - 70
                 self._tr_shutter_btn.move(self.mapFromGlobal(QPoint(btn_x, btn_y)))
+                # Show only after positioned to prevent top-left flash
+                if getattr(self, '_tr_shutter_btn_pending', False):
+                    self._tr_shutter_btn.setVisible(True)
+                    self._tr_shutter_btn_pending = False
                 self._tr_shutter_btn.raise_()
             except: pass
 
@@ -3956,7 +4305,23 @@ class AICodingLab(QMainWindow):
         # 0. Kill any running processes and free shared memory on Jetson
         self._stop_fast_validation()
         self._stop_webcam()
-        import gc
+        import gc, subprocess
+        gc.collect()
+        # Drop Linux page caches to free unified memory on Jetson
+        # Use sudo -n (non-interactive) so it silently skips if no passwordless sudo
+        try:
+            subprocess.run(["sudo", "-n", "sh", "-c", "echo 3 > /proc/sys/vm/drop_caches"],
+                           timeout=5, capture_output=True)
+        except Exception:
+            pass
+        # Free any PyTorch CUDA memory held by the main app
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+        except Exception:
+            pass
         gc.collect()
 
         # 1. Validation Logic
@@ -4046,7 +4411,8 @@ class AICodingLab(QMainWindow):
             "--project_path", str(Path(data_path).resolve()),
             "--epochs", str(epochs),
             "--imgsz", str(imgsz),
-            "--names", names
+            "--names", names,
+            "--project_name", self._current_project_name
         ]
         
         self._train_process.setProgram(sys.executable)
@@ -4100,6 +4466,25 @@ class AICodingLab(QMainWindow):
                 self._early_stopped = True
                 self.txtTrainLog.appendPlainText(f"  [INFO] {line}")
 
+            elif line.startswith("CONVERT:"):
+                # Engine conversion progress from trainer.py
+                msg = line[8:].strip()
+                self.txtTrainLog.appendPlainText(f"  [CONVERT] {msg}")
+                # Start converting animation on first CONVERT message
+                if not self._convert_dot_timer.isActive():
+                    if hasattr(self, 'btnSaveModel') and self.btnSaveModel:
+                        self.btnSaveModel.setVisible(True)
+                        self.btnSaveModel.setText("Converting...")
+                        self.btnSaveModel.setEnabled(False)
+                        self.btnSaveModel.setStyleSheet("""
+                            QPushButton {
+                                background: #6366f1; color: white; border-radius: 8px;
+                                font-weight: bold; font-size: 14px; padding: 6px 12px;
+                            }
+                        """)
+                        self._convert_dot_count = 0
+                        self._convert_dot_timer.start()
+
             elif line.startswith("RESULT_MODEL_ENGINE:"):
                 self._last_exported_engine = line[20:].strip()
 
@@ -4115,6 +4500,13 @@ class AICodingLab(QMainWindow):
         self._train_dot_count = (self._train_dot_count % 3) + 1
         dots = "." * self._train_dot_count
         self.lblEpochCounter.setText(f"Training{dots}")
+
+    def _animate_convert_dots(self):
+        """Cycle dots on Save Model button to show conversion is active."""
+        self._convert_dot_count = (self._convert_dot_count % 3) + 1
+        dots = "." * self._convert_dot_count
+        if hasattr(self, 'btnSaveModel') and self.btnSaveModel:
+            self.btnSaveModel.setText(f"Converting{dots}")
 
     def _toggle_train_console(self):
         """Toggle the training console visibility."""
@@ -4163,14 +4555,34 @@ class AICodingLab(QMainWindow):
                 self.btnStartTraining.setText("✅ Training Complete")
                 self.btnStartTraining.setToolTip("")
             self.btnStartTraining.setEnabled(False)
-            if exit_code != 0:
-                self.txtTrainLog.appendPlainText("> TRT export crashed but model is available. Starting validation with .pt...")
+
+            # Stop convert animation
+            self._convert_dot_timer.stop()
+
+            # Check if engine was produced
+            project_root = os.path.dirname(os.path.abspath(__file__))
+            local_engine = os.path.join(project_root, "src", "modules", "training", "best.engine")
+            has_engine = (self._last_exported_engine and os.path.exists(self._last_exported_engine)) or os.path.exists(local_engine)
+
+            if has_engine:
+                self.txtTrainLog.appendPlainText("> Engine model ready. Starting validation...")
+                self.log_to_console("Engine ready. Starting live validation...")
             else:
-                if getattr(self, '_early_stopped', False):
-                    self.txtTrainLog.appendPlainText("> Best weight saved. Starting fast validation...")
-                else:
-                    self.txtTrainLog.appendPlainText("> Success! Starting fast validation...")
-            self.log_to_console("Training complete. Starting live validation camera...")
+                self.txtTrainLog.appendPlainText("> Engine conversion failed. Validating with .pt...")
+                self.log_to_console("Engine conversion failed. Validating with .pt...")
+
+            # Restore Save button for user to choose name and save
+            if hasattr(self, 'btnSaveModel') and self.btnSaveModel:
+                self.btnSaveModel.setText("💾  Save Model")
+                self.btnSaveModel.setEnabled(True)
+                self.btnSaveModel.setStyleSheet("""
+                    QPushButton {
+                        background: #10b981; color: white; border-radius: 8px;
+                        font-weight: bold; font-size: 14px; padding: 6px 12px;
+                    }
+                    QPushButton:hover { background: #059669; }
+                """)
+
             self._start_fast_validation()
         else:
             self.btnStartTraining.setText("❌ Training Failed")
@@ -4303,20 +4715,19 @@ class AICodingLab(QMainWindow):
             if hint: hint.deleteLater()
 
     def _save_trained_model(self):
-        """Copy the trained model from local training folder to projects/model/."""
+        """Copy the trained .engine model to projects/model/."""
+        from PyQt5.QtWidgets import QMessageBox
+
+        # Only save engine — conversion is still running, wait for it
+        if self._convert_process and self._convert_process.state() != QProcess.ProcessState.NotRunning:
+            QMessageBox.information(self, "Please Wait", "Engine conversion is still running.\nThe model will be saved automatically when done.")
+            return
+
         project_root = os.path.dirname(os.path.abspath(__file__))
         local_engine = os.path.join(project_root, "src", "modules", "training", "best.engine")
-        local_pt = os.path.join(project_root, "src", "modules", "training", "best.pt")
 
-        # Pick the best available model file
-        if os.path.exists(local_engine):
-            src_path = local_engine
-            ext = ".engine"
-        elif os.path.exists(local_pt):
-            src_path = local_pt
-            ext = ".pt"
-        else:
-            self.log_to_console("No trained model found to save.", is_error=True)
+        if not os.path.exists(local_engine):
+            QMessageBox.warning(self, "No Engine Model", "No .engine model found.\nConversion may have failed — check the console log.")
             return
 
         new_name, ok = QInputDialog.getText(
@@ -4324,15 +4735,15 @@ class AICodingLab(QMainWindow):
         )
         if not ok or not new_name:
             return
-        if not new_name.endswith(ext):
-            new_name += ext
+        if not new_name.endswith(".engine"):
+            new_name += ".engine"
 
         dest_path = os.path.join("projects", "model", new_name)
         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
 
         try:
             import shutil
-            shutil.copy2(src_path, dest_path)
+            shutil.copy2(local_engine, dest_path)
             self.log_to_console(f"Model saved to: projects/model/{new_name}")
             self.txtTrainLog.appendPlainText(f"✨ Saved to projects/model/{new_name}")
             self.update_workspace_counts()

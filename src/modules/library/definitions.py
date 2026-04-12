@@ -305,12 +305,19 @@ LIBRARY_FUNCTIONS = {
                         "type": "Image",
                         "desc": "The camera frame to process",
                     },
+                    {
+                        "name": "img_size",
+                        "type": "Number",
+                        "desc": "Must match the training size: 320 or 640 only",
+                        "default": 640,
+                        "choices": [320, 640],
+                    },
                 ],
                 "returns": {
                     "type": "Array",
                     "desc": "List of detections [x1, y1, x2, y2, conf, cls]",
                 },
-                "usage": "engine_results = Run_Engine_Model(engine_model = None, camera_frame = None)",
+                "usage": "engine_results = Run_Engine_Model(engine_model = None, camera_frame = None, img_size = 640)",
                 "import_statement": "from src.modules.library.functions.ai_blocks import Run_Engine_Model",
                 "source_func": "Run_Engine_Model",
                 "source_module": "src.modules.library.functions.ai_blocks",
@@ -400,12 +407,17 @@ LIBRARY_FUNCTIONS = {
                         "type": "List",
                         "desc": "Optional list of class names (default: None)",
                     },
+                    {
+                        "name": "conf_threshold",
+                        "type": "Number (float)",
+                        "desc": "Minimum confidence to draw (default: 0.25)",
+                    },
                 ],
                 "returns": {
                     "type": "Number (int)",
                     "desc": "Total count of objects detected",
                 },
-                "usage": "obj_count = Draw_Engine_Detections(camera_frame = None, results = None, classes = None)",
+                "usage": "obj_count = Draw_Engine_Detections(camera_frame = None, results = None, classes = None, conf_threshold = 0.25)",
                 "import_statement": "from src.modules.library.functions.ai_blocks import Draw_Engine_Detections",
                 "source_func": "Draw_Engine_Detections",
                 "source_module": "src.modules.library.functions.ai_blocks",
@@ -478,7 +490,7 @@ LIBRARY_FUNCTIONS = {
             }
         }
     },
-    "Robotics (ORC Hub)": {
+    "Robotics": {
         "color": "#f43f5e",  # Vibrant Rose (Swapped from Logic)
         "icon": "🤖",
         "functions": {
