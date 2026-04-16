@@ -18,7 +18,7 @@ import numpy as np
 capture_camera = Init_Camera()
 
 # Step 2: Load your trained AI model (Load_Engine_Model)
-engine_model = Load_Engine_Model(model_path = 'projects/model/mymouse_320.engine')
+	engine_model = Load_Engine_Model(model_path = 'projects/model/mymouse_320.engine')
 
 # Step 3: Define the detection class name (CLASSES = ["class1", "class2", "class3"])
 classes = ['purple mouse']

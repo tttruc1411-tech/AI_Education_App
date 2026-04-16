@@ -6,3 +6,5 @@ run_engine_code.py
 .claude/ 
 *.engine 
 *.pt 
+*.gguf
+src/modules/LLM/llm_model/

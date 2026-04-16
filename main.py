@@ -757,6 +757,9 @@ class AICodingLab(QMainWindow):
         self.runningEditorSplitter = self.running_mode_widget.findChild(QSplitter, "editorSplitter")
         self.rightSplitter = self.running_mode_widget.findChild(QSplitter, "rightSplitter")
 
+        # 2b) Create Floating Assistant Bot Button
+        self._setup_assistant_bot_button()
+
         # B) HUB TABS & STACKED WIDGET
         # FIX: We must find these child widgets inside running_mode_widget first!
         self.hubStackedWidget = self.running_mode_widget.findChild(QStackedWidget, "hubStackedWidget")
@@ -1025,7 +1028,399 @@ class AICodingLab(QMainWindow):
             self.lblOrcDot.setStyleSheet("color: #6b7280; font-size: 10px; background: transparent;")
             tip = s.get("ORC_DISCONNECTED", "ORC Hub: Not Connected")
         self.lblOrcDot.setToolTip(tip)
-        self.lblOrcText.setToolTip(tip)
+
+    # --- Assistant Bot Button ---
+    def _setup_assistant_bot_button(self):
+        """Create a floating circular assistant bot button inside the code editor."""
+        if not hasattr(self, 'monacoPlaceholder') or not self.monacoPlaceholder:
+            return
+
+        btn_size = 48 if self.is_small_screen else 56
+        padding = 14
+
+        self.btnAssistantBot = QPushButton(self.monacoPlaceholder)
+        self.btnAssistantBot.setObjectName("btnAssistantBot")
+        self.btnAssistantBot.setFixedSize(btn_size, btn_size)
+        self.btnAssistantBot.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btnAssistantBot.setText("🤖")
+        self.btnAssistantBot.setToolTip("AI Assistant — Ask for help with your code")
+
+        self._apply_assistant_bot_style(btn_size)
+        self.btnAssistantBot.clicked.connect(self._on_assistant_bot_clicked)
+
+        # Position inside the editor: bottom-right corner
+        self._reposition_assistant_bot()
+        self.btnAssistantBot.show()
+        self.btnAssistantBot.raise_()
+
+        # Install event filter on editor so button repositions when editor is resized
+        self.monacoPlaceholder.installEventFilter(self)
+
+    def _apply_assistant_bot_style(self, btn_size):
+        """Apply the purple/navy/blue gradient style to the assistant bot button."""
+        fs = 20 if self.is_small_screen else 24
+        self.btnAssistantBot.setStyleSheet(f"""
+            QPushButton#btnAssistantBot {{
+                background: qlineargradient(
+                    spread:pad, x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #7c3aed, stop:0.5 #6d28d9, stop:1 #3b82f6
+                );
+                color: white;
+                border: 2px solid rgba(139, 92, 246, 0.6);
+                border-radius: {btn_size // 2}px;
+                font-size: {fs}px;
+                padding: 0px;
+            }}
+            QPushButton#btnAssistantBot:hover {{
+                background: qlineargradient(
+                    spread:pad, x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #8b5cf6, stop:0.5 #7c3aed, stop:1 #2563eb
+                );
+                border: 2px solid rgba(139, 92, 246, 0.9);
+            }}
+            QPushButton#btnAssistantBot:pressed {{
+                background: qlineargradient(
+                    spread:pad, x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #6d28d9, stop:0.5 #5b21b6, stop:1 #1e40af
+                );
+            }}
+        """)
+
+    def _reposition_assistant_bot(self):
+        """Position the button at the bottom-right corner inside the editor widget."""
+        if not hasattr(self, 'btnAssistantBot') or not hasattr(self, 'monacoPlaceholder'):
+            return
+        if not self.monacoPlaceholder or not self.btnAssistantBot:
+            return
+        btn_size = self.btnAssistantBot.width()
+        padding = 26  # Extra padding to clear the scrollbar (~10px wide)
+        editor_w = self.monacoPlaceholder.width()
+        editor_h = self.monacoPlaceholder.height()
+        x = editor_w - btn_size - padding
+        y = int(editor_h * 0.68) - btn_size // 2  # ~2/3 down the editor
+        self.btnAssistantBot.move(x, y)
+        self.btnAssistantBot.raise_()
+        # Keep chat panel aligned too
+        if hasattr(self, '_chat_panel') and self._chat_panel.isVisible():
+            self._reposition_chat_panel()
+
+    def _on_assistant_bot_clicked(self):
+        """Toggle the assistant chat panel open/closed."""
+        if not hasattr(self, '_chat_panel'):
+            self._init_assistant_panel()
+            return
+        if self._chat_panel.isVisible():
+            self._chat_panel.hide()
+        else:
+            self._reposition_chat_panel()
+            target_pos = self._chat_panel.pos()
+            self._chat_panel.show_animated(target_pos)
+
+    def _init_assistant_panel(self):
+        """Create the chat panel, load the LLM, and show the panel."""
+        from src.modules.LLM.chat_panel import AssistantChatPanel
+        from src.modules.LLM.assistant import LLMAssistant
+        from src.modules.LLM import model_config as _mcfg
+
+        # Build panel parented to the editor
+        self._chat_panel = AssistantChatPanel(
+            parent=self.monacoPlaceholder,
+            is_small=self.is_small_screen,
+        )
+
+        # Populate model selector combobox
+        models = _mcfg.get_available_models()
+        active_key = next(
+            (k for k, cfg in _mcfg.MODEL_REGISTRY.items()
+             if cfg is _mcfg.ACTIVE_MODEL), "qwen"
+        )
+        self._chat_panel.populate_models(models, active_key)
+
+        self._chat_panel.set_status("loading")
+        self._chat_panel.show_loading_message(STRINGS[self.current_lang]["BOT_LOADING"].format(_mcfg.ACTIVE_MODEL['name']))
+        self._reposition_chat_panel()
+        target_pos = self._chat_panel.pos()
+        self._chat_panel.show_animated(target_pos)
+
+        # Connect signals
+        self._chat_panel.ask_requested.connect(self._bot_ask)
+        self._chat_panel.fix_requested.connect(self._bot_fix)
+        self._chat_panel.explain_requested.connect(self._bot_explain)
+        self._chat_panel.close_requested.connect(self._chat_panel.hide)
+        self._chat_panel.model_changed.connect(self._bot_switch_model)
+
+        # Load LLM in background
+        self._llm_first_load = True
+        self._llm_assistant = LLMAssistant()
+        self._llm_assistant.load(
+            on_ready=self._on_llm_ready,
+            on_error=self._on_llm_error,
+        )
+
+    def _on_llm_ready(self):
+        """Called from background thread — use signal for thread-safe delivery."""
+        if hasattr(self, '_chat_panel'):
+            self._chat_panel._streaming_done.emit()
+        QTimer.singleShot(0, self._llm_ready_ui)
+
+    def _llm_ready_ui(self):
+        if not hasattr(self, '_chat_panel'):
+            return
+        from src.modules.LLM import model_config as _mcfg
+        if getattr(self, '_llm_first_load', False):
+            # First launch — no warmup needed, show ready immediately
+            self._llm_first_load = False
+            self._chat_panel.set_status("ready")
+            bubble = self._chat_panel.start_assistant_message()
+            bubble.set_text(STRINGS[self.current_lang]["BOT_READY"].format(_mcfg.ACTIVE_MODEL['name']))
+            self._chat_panel.finish_streaming()
+        else:
+            # Model switch — silent 3s delay while previous model cleans up
+            QTimer.singleShot(3000, self._llm_stabilized_ui)
+
+    def _llm_stabilized_ui(self):
+        if not hasattr(self, '_chat_panel'):
+            return
+        from src.modules.LLM import model_config as _mcfg
+        self._chat_panel.set_status("ready")
+        bubble = self._chat_panel.start_assistant_message()
+        bubble.set_text(STRINGS[self.current_lang]["BOT_READY"].format(_mcfg.ACTIVE_MODEL['name']))
+        self._chat_panel.finish_streaming()
+
+    def _on_llm_error(self, msg: str):
+        if hasattr(self, '_chat_panel'):
+            self._chat_panel._error_received.emit(msg)
+
+    def _llm_error_ui(self, msg: str):
+        if not hasattr(self, '_chat_panel'):
+            return
+        self._chat_panel.set_status("error")
+        self._chat_panel.show_error(msg)
+
+    def _bot_switch_model(self, model_key: str):
+        """Handle model switch from the combobox."""
+        from src.modules.LLM import model_config as _mcfg
+
+        # Check if already on this model
+        current_key = next(
+            (k for k, cfg in _mcfg.MODEL_REGISTRY.items()
+             if cfg is _mcfg.ACTIVE_MODEL), None
+        )
+        if model_key == current_key:
+            return
+
+        # Cancel + unload old model (non-blocking — won't freeze GUI)
+        if hasattr(self, '_llm_assistant'):
+            self._llm_assistant.cancel()
+            self._llm_assistant.unload()
+
+        # Clear any active streaming state
+        if hasattr(self, '_chat_panel'):
+            self._chat_panel._streaming_bubble = None
+            self._chat_panel._token_count = 0
+
+        # Switch the active model config
+        new_cfg = _mcfg.set_active_model(model_key)
+
+        # Update UI
+        self._chat_panel.set_status("loading")
+        self._chat_panel.show_loading_message(STRINGS[self.current_lang]["BOT_LOADING"].format(new_cfg['name']))
+
+        # Create fresh assistant and load new model
+        from src.modules.LLM.assistant import LLMAssistant
+        self._llm_assistant = LLMAssistant()
+        self._llm_assistant.load(
+            on_ready=self._on_llm_ready,
+            on_error=self._on_llm_error,
+        )
+
+    def _bot_ask(self, question: str):
+        if not hasattr(self, '_llm_assistant'):
+            return
+        self._chat_panel.add_user_message(question)
+
+        code = self.monacoPlaceholder.toPlainText() if hasattr(self, 'monacoPlaceholder') else ""
+        console = self.consoleBody.toPlainText() if hasattr(self, 'consoleBody') else ""
+
+        # Short-circuit: check for missing workflow steps and answer directly
+        from src.modules.LLM.prompt_builder import _detect_missing_workflow
+        workflow_hint = _detect_missing_workflow(code, self.current_lang)
+        if workflow_hint:
+            # Check if the question is about the missing step
+            q_lower = question.lower()
+            display_keywords = ["display", "show", "camera", "feed", "screen", "hiển thị",
+                                "màn hình", "xem", "missing", "thiếu", "không thấy"]
+            if any(kw in q_lower for kw in display_keywords):
+                bubble = self._chat_panel.start_assistant_message()
+                bubble.set_text(workflow_hint)
+                self._chat_panel.finish_streaming()
+                return
+
+        self._chat_panel.set_status("thinking")
+        self._chat_panel.start_assistant_message()
+
+        panel = self._chat_panel
+        assistant = self._llm_assistant  # capture current instance
+
+        def on_token(t):
+            if self._llm_assistant is not assistant:
+                return  # stale callback from old model
+            panel._token_received.emit(t)
+
+        def on_done(full):
+            if self._llm_assistant is not assistant:
+                return
+            panel._streaming_done.emit()
+
+        def on_error(msg):
+            if self._llm_assistant is not assistant:
+                return
+            panel._error_received.emit(msg)
+
+        self._llm_assistant.ask(
+            question=question,
+            editor_code=code,
+            console_output=console,
+            lang=self.current_lang,
+            on_token=on_token,
+            on_done=on_done,
+            on_error=on_error,
+        )
+
+    def _bot_fix(self):
+        if not hasattr(self, '_llm_assistant'):
+            return
+        code = self.monacoPlaceholder.toPlainText() if hasattr(self, 'monacoPlaceholder') else ""
+        console = self.consoleBody.toPlainText() if hasattr(self, 'consoleBody') else ""
+        # Grab the full traceback — include "File" lines (contain line numbers),
+        # "error"/"traceback" lines, and indented code context lines
+        error_lines = [
+            l for l in console.splitlines()
+            if "error" in l.lower() or "traceback" in l.lower()
+            or l.strip().startswith("File ") or l.strip().startswith("line ")
+            or (l.startswith("    ") and l.strip())  # indented traceback context
+        ]
+        error_text = "\n".join(error_lines[-10:]) if error_lines else ""
+
+        # Short-circuit: if no console error AND code compiles, skip LLM entirely
+        if not error_text.strip() and code.strip():
+            try:
+                compile(code, "<student>", "exec")
+                # Code is valid — no need to waste LLM inference
+                s = STRINGS[self.current_lang]
+                no_err = "Tuyệt vời! Không tìm thấy lỗi nào. 🎉" if self.current_lang == "vi" else "Great job! No errors found. 🎉"
+                self._chat_panel.add_user_message(s["BOT_FIX_MSG"])
+                bubble = self._chat_panel.start_assistant_message()
+                bubble.set_text(no_err)
+                self._chat_panel.finish_streaming()
+                return
+            except SyntaxError:
+                pass  # there IS an error — fall through to LLM
+
+        # If no error_text from console but compile failed, let build_fix_prompt handle it
+        if not error_text.strip():
+            error_text = ""
+
+        self._chat_panel.add_user_message(STRINGS[self.current_lang]["BOT_FIX_MSG"])
+        self._chat_panel.set_status("thinking")
+        self._chat_panel.start_assistant_message()
+
+        panel = self._chat_panel
+        assistant = self._llm_assistant
+
+        def on_token(t):
+            if self._llm_assistant is not assistant:
+                return
+            panel._token_received.emit(t)
+
+        def on_done(full):
+            if self._llm_assistant is not assistant:
+                return
+            panel._fix_done.emit(full)
+
+        def on_error(msg):
+            if self._llm_assistant is not assistant:
+                return
+            panel._error_received.emit(msg)
+
+        self._llm_assistant.fix_error(
+            error_text=error_text,
+            editor_code=code,
+            lang=self.current_lang,
+            on_token=on_token,
+            on_done=on_done,
+            on_error=on_error,
+        )
+
+    def _bot_explain(self):
+        if not hasattr(self, '_llm_assistant'):
+            return
+        code = self.monacoPlaceholder.toPlainText() if hasattr(self, 'monacoPlaceholder') else ""
+        if not code.strip():
+            self._chat_panel.show_error(STRINGS[self.current_lang]["BOT_NO_CODE"])
+            return
+
+        self._chat_panel.add_user_message(STRINGS[self.current_lang]["BOT_EXPLAIN_MSG"])
+        self._chat_panel.set_status("thinking")
+        self._chat_panel.start_assistant_message()
+
+        panel = self._chat_panel
+        assistant = self._llm_assistant
+
+        def on_token(t):
+            if self._llm_assistant is not assistant:
+                return
+            panel._token_received.emit(t)
+
+        def on_done(full):
+            if self._llm_assistant is not assistant:
+                return
+            panel._streaming_done.emit()
+
+        def on_error(msg):
+            if self._llm_assistant is not assistant:
+                return
+            panel._error_received.emit(msg)
+
+        self._llm_assistant.explain_code(
+            editor_code=code,
+            lang=self.current_lang,
+            on_token=on_token,
+            on_done=on_done,
+            on_error=on_error,
+        )
+
+    def _reposition_chat_panel(self):
+        """Position chat panel on the right side of the editor."""
+        if not hasattr(self, '_chat_panel') or not hasattr(self, 'btnAssistantBot'):
+            return
+        btn = self.btnAssistantBot
+        panel = self._chat_panel
+        editor_w = self.monacoPlaceholder.width()
+        panel_w = panel.width()
+        panel_h = panel.minimumHeight()
+
+        # Align right edge of panel with right edge of editor, clear scrollbar
+        x = editor_w - panel_w - 20
+        # Place panel above the button with a small gap
+        y = btn.y() - panel_h - 10
+        # Clamp so it doesn't go above the editor top
+        y = max(8, y)
+        panel.move(x, y)
+
+    def resizeEvent(self, event):
+        """Handle window resize to reposition floating assistant bot button."""
+        super().resizeEvent(event)
+        if hasattr(self, 'btnAssistantBot'):
+            QTimer.singleShot(10, self._reposition_assistant_bot)
+
+    def eventFilter(self, obj, event):
+        """Reposition assistant bot button when the editor widget is resized."""
+        from PyQt5.QtCore import QEvent
+        if hasattr(self, 'monacoPlaceholder') and obj is self.monacoPlaceholder:
+            if event.type() == QEvent.Resize:
+                QTimer.singleShot(0, self._reposition_assistant_bot)
+        return super().eventFilter(obj, event)
 
     # --- Language Support ---
     def set_language(self, lang_code):
@@ -1624,6 +2019,18 @@ class AICodingLab(QMainWindow):
                 self.btnSaveFile.setFixedHeight(30 if is_small else 40)
                 self.btnSaveFile.setStyleSheet(f"background-color: rgba(255,255,255,0.15); color: white; border-radius: 4px; padding: {'3px 6px' if is_small else '4px 10px'}; font-weight: bold; font-size: {s_size}px;")
 
+            # Assistant Bot Button Scaling
+            if hasattr(self, 'btnAssistantBot') and self.btnAssistantBot:
+                btn_size = 48 if is_small else 56
+                self.btnAssistantBot.setFixedSize(btn_size, btn_size)
+                self._apply_assistant_bot_style(btn_size)
+                QTimer.singleShot(50, self._reposition_assistant_bot)
+
+            # Chat panel scaling
+            if hasattr(self, '_chat_panel') and self._chat_panel:
+                self._chat_panel.set_small_mode(is_small)
+                QTimer.singleShot(60, self._reposition_chat_panel)
+
     def retranslate_ui(self):
         """Update all core UI strings from the translation dictionary."""
         s = STRINGS[self.current_lang]
@@ -1635,6 +2042,10 @@ class AICodingLab(QMainWindow):
         if hasattr(self, 'footerHints'): self.footerHints.setText(s["FOOTER_HINTS"])
         if hasattr(self, 'footerCredit'): self.footerCredit.setText(s["FOOTER_CREDIT"])
         if hasattr(self, 'btnResToggle') and self.btnResToggle: self.btnResToggle.setToolTip(s["TIP_RES_TOGGLE"])
+
+        # AI Assistant chat panel
+        if hasattr(self, '_chat_panel') and self._chat_panel:
+            self._chat_panel.retranslate(s)
         
         # running_mode.ui elements (tabs)
         if hasattr(self, 'tabExamples'): self.tabExamples.setText(s["TAB_EXAMPLES"])
@@ -2517,9 +2928,13 @@ class AICodingLab(QMainWindow):
     def switch_mode(self, index):
         """Toggle between Running Mode (0) and Training Mode (1)."""
         self.mainStack.setCurrentIndex(index)
-        # Let Qt handle the :checked style from the .ui stylesheet automatically
         if index == 1:
             self.setup_training_mode_logic()
+            # Free LLM memory when entering Training Mode (YOLO needs the RAM)
+            if hasattr(self, '_llm_assistant'):
+                self._llm_assistant.unload()
+            if hasattr(self, '_chat_panel'):
+                self._chat_panel.hide()
 
     def setup_training_mode_logic(self):
         """Configure all signals for the Training Mode UI."""
@@ -3364,6 +3779,9 @@ class AICodingLab(QMainWindow):
         if hasattr(self, '_bbox_panel'):
             self._bbox_panel.setVisible(False)
             self._bbox_panel_visible = False
+            # CRITICAL: Set fixed height to 0 to fully collapse the panel and reclaim space
+            # Just setVisible(False) leaves the space reserved in the layout
+            self._bbox_panel.setFixedHeight(0)
             # Restore scroll area max height so it reclaims full space
             if not self.is_small_screen:
                 scroll = self.training_mode_widget.findChild(QWidget, "classScrollArea")
@@ -3915,6 +4333,12 @@ class AICodingLab(QMainWindow):
             
         was_visible = self._bbox_panel.isVisible()
         self._bbox_panel.setVisible(True)
+        # CRITICAL: Restore proper height when reopening (was set to 0 when closed)
+        if self.is_small_screen:
+            self._bbox_panel.setFixedHeight(200)
+        else:
+            self._bbox_panel.setMinimumHeight(450)
+            self._bbox_panel.setMaximumHeight(16777215)
         self._bbox_panel_visible = True
         self._bbox_canvas.setFocus()
         self._bbox_canvas.update()

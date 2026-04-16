@@ -60,6 +60,16 @@ class AdvancedPythonEditor(QsciScintilla):
         
         self.setBraceMatching(QsciScintilla.SloppyBraceMatch)
         
+        # 🐍 Smart Python Indentation Settings
+        self.setAutoIndent(True)
+        self.setTabWidth(4)
+        self.setIndentationsUseTabs(False)
+        self.setIndentationWidth(4)
+        self.setBackspaceUnindents(True)
+        self.setIndentationGuides(True)
+        self.setIndentationGuidesBackgroundColor(QColor("#e2e8f0"))
+        self.setIndentationGuidesForegroundColor(QColor("#cbd5e1"))
+        
         # --- 🚀 SNIPPET REGISTRY ---
         # Map function names to their full usage snippets
         self.snippets = {}
@@ -690,14 +700,65 @@ class AdvancedPythonEditor(QsciScintilla):
         
         return registry
         
+    # 🐍 Python block-opening keywords for smart indentation
+    _BLOCK_OPENERS = frozenset((
+        'if', 'elif', 'else', 'for', 'while',
+        'def', 'class', 'try', 'except', 'finally', 'with'
+    ))
+
     def keyPressEvent(self, event):
-        """Intercept and block attempts to modify 'Fixed Tags' (Indicator 13)."""
+        """Smart Python auto-indentation + Fixed Tag (Indicator 13) protection."""
         # 1. Allow Navigation and Selection keys
         if event.key() in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down, 
                            Qt.Key_Home, Qt.Key_End, Qt.Key_PageUp, Qt.Key_PageDown,
                            Qt.Key_Control, Qt.Key_Shift, Qt.Key_Alt):
             super().keyPressEvent(event)
             return
+
+        # ── 🐍 2. SMART PYTHON AUTO-INDENTATION on Enter/Return ──────────
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            # Block Enter inside protected tags
+            pos = self.SendScintilla(self.SCI_GETCURRENTPOS)
+            if self.SendScintilla(self.SCI_INDICATORVALUEAT, self.PROTECTED_INDICATOR, pos):
+                return
+
+            # Capture context from the current line BEFORE inserting newline
+            line, col = self.getCursorPosition()
+            line_text = self.text(line)
+            current_indent = self.indentation(line)
+            stripped = line_text.strip()
+            text_up_to_cursor = line_text[:col].rstrip()
+
+            # Let QScintilla handle newline + basic auto-indent
+            super().keyPressEvent(event)
+            new_line, _ = self.getCursorPosition()
+
+            # CASE A: Block opener (if/while/for/def/class/else/try/except/finally/with)
+            #         Text before cursor ends with ':' AND first word is a Python keyword
+            if text_up_to_cursor.endswith(':'):
+                first_word = stripped.split()[0].rstrip(':') if stripped else ''
+                if first_word in self._BLOCK_OPENERS:
+                    new_indent = current_indent + 4
+                    self.setIndentation(new_line, new_indent)
+                    self.setCursorPosition(new_line, new_indent)
+
+            # CASE B: Flow terminator → de-indent one level
+            #         return, break, continue, pass, raise
+            elif stripped in ('return', 'break', 'continue', 'pass') or \
+                 stripped.startswith('return ') or stripped.startswith('raise '):
+                new_indent = max(0, current_indent - 4)
+                self.setIndentation(new_line, new_indent)
+                self.setCursorPosition(new_line, new_indent)
+
+            # CASE C: Structural END marker (# [ENDIF], # [ENDLOOP]) → de-indent
+            elif stripped.startswith('# [END'):
+                new_indent = max(0, current_indent - 4)
+                self.setIndentation(new_line, new_indent)
+                self.setCursorPosition(new_line, new_indent)
+
+            return
+
+        # ── 3. Protected Tag Guards ──────────────────────────────────────
 
         # 🚀 OPTION A: If the entire line is selected, allow deletion even if it has protected zones
         if self.hasSelectedText():
@@ -715,7 +776,7 @@ class AdvancedPythonEditor(QsciScintilla):
                     # Blocking selection modification if it touches protected code
                     return 
         
-        # 2. Check current cursor and intended modification
+        # 4. Check current cursor and intended modification
         pos = self.SendScintilla(self.SCI_GETCURRENTPOS)
         
         # CASE: Backspacing into a protected zone
@@ -728,8 +789,8 @@ class AdvancedPythonEditor(QsciScintilla):
             if self.SendScintilla(self.SCI_INDICATORVALUEAT, self.PROTECTED_INDICATOR, pos):
                 return # Block
         
-        # CASE: Regular typing / Enter / Space
-        elif event.text() or event.key() in (Qt.Key_Enter, Qt.Key_Return, Qt.Key_Tab):
+        # CASE: Regular typing / Tab / Space (Enter is handled above)
+        elif event.text() or event.key() == Qt.Key_Tab:
             # If cursor is INSIDE a protected word (not at the end of it)
             if self.SendScintilla(self.SCI_INDICATORVALUEAT, self.PROTECTED_INDICATOR, pos):
                 # EXCEPTION: If we are at the very END of the protected zone, and NOT backspacing, allow.

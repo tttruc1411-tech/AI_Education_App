@@ -7,6 +7,8 @@ A professional, education-focused Python development environment built with **Py
 * **UI Framework**: Python PyQt5 using `.ui` XML files loaded dynamically via `loadUi`.
 * **Localization Engine**: Custom `translations.py` module providing a reactive dictionary for all UI text, tooltips, and terminal hints.
 * **Frontend-Backend Bridge**: Function Library logic mapped to Python injection managers.
+* **Target Hardware**: NVIDIA Jetson Orin Nano (8GB unified RAM, JetPack 6.x, Ubuntu 22.04, Python 3.10).
+* **Dev Machine**: Windows, Python 3.9.
 
 ## 3. Supported Features
 
@@ -16,6 +18,12 @@ A professional, education-focused Python development environment built with **Py
 * **Reactive Core**: All labels, success/error hints, tooltips, and terminal status update instantly upon language switch.
 * **AI Vocabulary**: Optimized for Vietnamese technical standards (e.g., using **"Nhận diện"** for Recognition/Detection).
 * **Localized Curriculum**: All core lessons (Face Detection, YOLOv10) support dual-language headers (`TITLE_VI`, `DESC_VI`) in the Learning Hub.
+
+### 📐 Dual Resolution Mode
+* **Status**: ✅ **COMPLETED**
+* **Toggle**: `btnResToggle` (💻 icon) in the main header switches between Standard (1280×800) and Small/16:9 (1024×600) layouts.
+* **Mechanism**: `refresh_ui_resolution(is_transition)` in `main.py` uses regex-based stylesheet patching + direct widget property overrides to scale fonts, paddings, splitter sizes, and button heights.
+* **Known Issue**: In small-screen mode, some font sizes are set to `3px`–`4px` (e.g. form labels, metric cards) which are unreadable. These values need to be raised to a minimum of `8px`.
 
 ### 📂 Workspace & File System (Adaptive Mode)
 * **Smart Permissions**: 
@@ -76,6 +84,7 @@ A professional, education-focused Python development environment built with **Py
     3. **Fast Validation**: Auto-transitions from a locked placeholder to an active camera preview upon successful training completion.
 * **Architecture Stability (V15)**: Zero `QGridLayout` policy. Completely replaced deprecated `margin` properties with explicit directional padding.
 * **Geometry Engine**: Optimized window minimum-size constraints (lowered to 120px internally) to ensure the 1080p UI remains perfectly centered and crash-free even with the Windows Taskbar active.
+* **BBox Editor Close Bug — FIXED**: When user closed the bounding box annotation editor via the "✕" button instead of finishing all images, the left panel header expanded downward and hid the Webcam/Upload/Label buttons. Root cause: `setVisible(False)` on the bbox panel did not collapse its layout space. Fix: `_close_bbox_panel()` now calls `self._bbox_panel.setFixedHeight(0)` to fully collapse it. `_open_bbox_editor()` restores proper height constraints when reopening.
 
 ### 📂 Project-Based Data Workflow
 * **Mandatory Initialization**: The UI prevents data collection (Webcam/Upload) until a valid "Project Name" is verified.
@@ -148,6 +157,88 @@ A professional, education-focused Python development environment built with **Py
 * **Full State Restore**: Reloads all image thumbnails, populates the `MultiClassTagPanel`, detects image resolution (320 or 640) from the first image, updates all UI states including size toggle buttons and labels.
 * **Overwrite Protection**: When initializing a project folder that already has data, a confirmation dialog warns the user before clearing existing images/annotations.
 
+### 🤖 AI Assistant Bot (Running Mode)
+* **Status**: ✅ **COMPLETED**
+* **Location**: Floating circular `🤖` button parented to the `monacoPlaceholder` (QScintilla editor widget) in Running Mode. Positioned at ~68% down the editor height, right side, 26px from edge to clear the scrollbar.
+* **Trigger**: Click the bot button → `AssistantChatPanel` floats above it with fade-in animation (`QGraphicsOpacityEffect`). Second click hides it. Switching to Training Mode hides it and unloads the model to free RAM.
+* **Panel Position**: Right-aligned inside the editor with 20px margin to clear the scrollbar. Panel size: 370×420–600px (normal), 300×320–420px (small screen). All fonts bumped +2pt from original for readability.
+* **Models** (3 options, user-switchable via dropdown):
+    | Model | Size | Chat Format | Best For |
+    |-------|------|-------------|----------|
+    | `Qwen2.5-Coder-1.5B-Instruct` Q4_K_M | ~1.12 GB | ChatML | Code tasks (recommended) |
+    | `Phi-3-mini-4k-instruct` Q4 | ~2.39 GB | Phi-3 | General reasoning |
+    | `Gemma-3-1B-IT` Q4_K_M | ~0.81 GB | Gemma turn | Lightweight/memory-constrained |
+* **Model Storage**: `src/modules/LLM/llm_model/` (co-located with the LLM module).
+* **Backend**: `llama-cpp-python` v0.3.20 (CPU-only on Windows dev machine; GPU via Jetson-specific wheel on Orin Nano).
+* **Inference speed**: ~18 tok/s CPU (Windows laptop), ~35–45 tok/s GPU (Jetson Orin Nano).
+
+* **Module files**:
+    * `src/modules/LLM/__init__.py` — Module init.
+    * `src/modules/LLM/model_config.py` — Multi-model registry with paths, GPU layers (999=all), context 4096, max_tokens 512, temp 0.2. `set_active_model(key)` for runtime switching.
+    * `src/modules/LLM/prompt_builder.py` — Prompt engineering hub (see "Prompt Architecture" below).
+    * `src/modules/LLM/assistant.py` — `LLMAssistant` class: `load()`, `ask()`, `fix_error()`, `explain_code()`, `cancel()`, `unload()`. Includes `suppress_stdout_stderr` monkey-patch for Windows GUI compatibility.
+    * `src/modules/LLM/chat_panel.py` — `AssistantChatPanel` + `MessageBubble` widgets with `QGraphicsOpacityEffect` fade-in animation.
+
+* **Chat Panel Features**:
+    * Header with status dot (🟡 loading / 🟢 ready / 🟣 thinking / 🔴 error) and animated "thinking..." dots
+    * Model selector dropdown (switch between Qwen/Phi-3/Gemma at runtime)
+    * Two quick-action buttons: **🔧 Fix Error** / **💡 Explain** (bilingual labels via `translations.py`)
+    * Free-text input field with Enter-to-send (bilingual placeholder)
+    * Streaming token-by-token response into chat bubbles
+    * `retranslate(strings)` method — all UI text updates when language is switched
+
+* **Bilingual Support (EN ⇆ VI)**:
+    * All chat panel UI text (buttons, placeholders, status messages) uses translation keys from `translations.py` (`BOT_TITLE`, `BOT_FIX_BTN`, `BOT_EXPLAIN_BTN`, `BOT_INPUT_HINT`, etc.)
+    * `lang` parameter flows through `main.py` → `assistant.py` → `prompt_builder.py`
+    * System prompts and few-shot examples switch between English and Vietnamese
+    * Fix error output format: EN uses `Line/Original/Fixed`, VI uses `Dòng/Gốc/Sửa`
+    * `_postprocess_fix()` regex recognizes both formats
+
+* **Prompt Architecture (Translator Pattern)**:
+    * **Design Philosophy**: 1B/1.5B models cannot reliably analyze code. Python's built-in tools (`compile()`, traceback parsing) find the error; the LLM only *translates* it into kid-friendly language. This eliminates hallucination.
+    * **System Prompts**: Minimal — just "You are a coding tutor for kids. Explain this Python error simply." No "common mistakes" lists (causes prompt leakage on small models).
+    * **SYSTEM_PROMPT** (Ask/Explain): Contains numbered workflow (Init_Camera → Get_Camera_Frame → Load Model → Run Model → Draw → Update_Dashboard → while True loop). Explicitly states `Update_Dashboard()` is the ONLY way to show camera feed.
+    * **Fix Error Flow** (`build_fix_prompt`):
+        1. `_bot_fix()` in `main.py` runs `compile(code)` first
+        2. If code compiles clean AND no console error → instant "Great job! No errors found. 🎉" (no LLM)
+        3. If `compile()` catches SyntaxError → extract line number, error type, broken line
+        4. If console has runtime error (NameError, ImportError, etc.) → extract from traceback
+        5. Special handling for indentation errors: preserves leading spaces in `Original:`, pre-fills `Fixed:` with stripped version
+        6. Special handling for "code after colon" (e.g. `while True:x = 1`): detects via previous-line analysis, provides kid-friendly "Press Enter after..." instruction
+        7. LLM receives ONLY: error message + broken line + output format template. Zero room for hallucination.
+    * **Ask Flow** (`build_prompt`):
+        1. `_detect_missing_workflow()` checks code for missing pipeline steps (e.g. has `Draw_*` but no `Update_Dashboard`)
+        2. If question matches display/show keywords AND workflow step is missing → instant pre-built answer (no LLM)
+        3. `_extract_func_context()` scans code/question for known function names, injects parameter definitions from `definitions.py` (max 4 functions to save tokens)
+        4. Falls through to LLM for general questions
+    * **Explain Flow** (`build_explain_prompt`): Injects relevant function definitions from `definitions.py`, asks model to explain simply for a beginner.
+    * **Function Context Injection**: `_load_func_cache()` lazy-loads all function definitions from `LIBRARY_FUNCTIONS` in `definitions.py`. `_extract_func_context(text)` finds mentioned functions and returns their descriptions, parameters, return types, and usage examples.
+
+* **Windows GUI Compatibility Fixes**:
+    * **suppress_stdout_stderr monkey-patch**: llama-cpp-python's `verbose=False` uses `os.dup/dup2` to redirect fd 1/2, which corrupts stdout/stderr permanently in PyQt5 GUI apps (no valid console handles). Fix: replace `suppress_stdout_stderr` with a no-op class at module import time AND inside `_load_worker` after import. This prevents fd corruption during both loading and inference.
+    * **OSError fallback**: If the monkey-patch somehow doesn't take effect, `except OSError` in `_load_worker` checks if `self._llm is not None` (model loaded before the error) and proceeds normally.
+    * **Debug print removal**: Removed `print(flush=True)` from `_on_token_signal` — crashes in GUI apps with no console.
+
+* **Model Switching**:
+    * `_bot_switch_model()` in `main.py`: cancels + unloads old model, switches `ACTIVE_MODEL`, creates fresh `LLMAssistant`, loads new model.
+    * 3-second stabilization delay after model switch (silent — no UI message) to let the previous model's C-level destructor finish before enabling input.
+    * First launch: no delay, instant "ready" message.
+
+* **🟢 FIXED — Response truncated mid-sentence/Empty response on large code**:
+    * Raised `max_tokens` to **512**. Implemented `_trim_code()` (lines > 300 chars truncated, total code 1500 chars max).
+
+* **🟢 FIXED — Blank response bubble**: Replaced `QTextEdit` with `QLabel` + `_BubbleBox` to bypass QScintilla stylesheet cascade.
+
+* **🟢 FIXED — All models fail to load (WinError 1/6)**: Monkey-patched `suppress_stdout_stderr` to no-op. See "Windows GUI Compatibility Fixes" above.
+
+* **🟢 FIXED — Gemma crash on inference**: Same root cause as loading — fd corruption from `suppress_stdout_stderr`. Monkey-patch fixes both.
+
+* **🟢 FIXED — Crash on model switch**: Previous model's destructor writes to corrupted stderr. 3-second stabilization delay + monkey-patch prevents this.
+
+* **🟢 FIXED — Chat panel crash on bot click**: `QPropertyAnimation` on `windowOpacity` only works on top-level windows. Replaced with `QGraphicsOpacityEffect` (from `QtWidgets`, not `QtGui`).
+
+* **🟢 FIXED — LLM hallucination on fix errors**: Replaced complex prompt with Translator Pattern. Python finds the error, LLM just explains it. No "common mistakes" list to cause prompt leakage.
+
 ## 4. Stability & Performance
 * **Custom Event Routing**: Implementation of a global `QEventFilter` for tooltips to bypass OS-level rendering restrictions.
 * **Deferred Init**: Application launches instantly regardless of editor complexity.
@@ -155,7 +246,7 @@ A professional, education-focused Python development environment built with **Py
 * **Init Order Logic**: All UI splitters and containers are fully initialized before the translation engine applies the first string map.
 
 ## 5. File Structure
-* `main.py`: Central controller and UI integrator (~3600+ lines).
+* `main.py`: Central controller and UI integrator (~4800+ lines).
 * `src/ui/training_mode.ui`: Training mode layout (3-column QSplitter with config/progress/validation panels).
 * `src/ui/running_mode.ui`: Running mode layout.
 * `src/ui/main_window.ui`: Main window shell with mode switcher.
@@ -170,6 +261,12 @@ A professional, education-focused Python development environment built with **Py
 * `src/modules/library/functions/motor_driver_v2.py`: Low-level I2C driver for OhStem Motor Driver V2 + `check_orc_hub()` probe.
 * `src/modules/library/functions/motor.py`: Brain layer with async motor control (DCMotor class, run_time, run_until_stalled).
 * `src/modules/library/definitions.py`: Master function registry for all Library categories.
+* `src/modules/LLM/__init__.py`: LLM module init.
+* `src/modules/LLM/model_config.py`: Multi-model registry (Qwen2.5-Coder-1.5B, Phi-3-mini-4k, Gemma-3-1B-IT) with paths, GPU layers, inference params.
+* `src/modules/LLM/prompt_builder.py`: Prompt engineering hub — Translator Pattern for fix errors, workflow detection for ask mode, function context injection from `definitions.py`. Supports EN/VI bilingual prompts.
+* `src/modules/LLM/assistant.py`: `LLMAssistant` class — background thread load + streaming inference.
+* `src/modules/LLM/chat_panel.py`: `AssistantChatPanel` + `MessageBubble` — floating chat UI.
+* `src/modules/LLM/llm_model/`: LLM GGUF model files (Qwen2.5-Coder-1.5B, Phi-3-mini-4k, Gemma-3-1B-IT).
 
 ## 6. Next Steps for Development
 * [x] **Dual-Language**: Full Vietnamese/English support across the entire GUI.
@@ -181,12 +278,35 @@ A professional, education-focused Python development environment built with **Py
 * [x] **Premium Tooltips**: Custom dark-themed tooltip engine for OS-agnostic styling.
 * [x] **Robotics Blocks**: 4 function blocks (DC_Run, DC_Stop, Get_Speed, Set_Servo) wired to Motor Driver V2 via I2C.
 * [x] **ORC Hub Status Indicator**: Live connection dot in footer with refresh button and bilingual tooltips.
-* [x] **Backend Training Engine**: Fully integrated YOLOv8n training engine with Jetson Orin Nano memory optimizations (batch=1, workers=0, disk cache, AMP monkey-patch).
-* [x] **Post-Training Fast Validation**: Auto-launching live camera detection stream after training completes, with Save Model and Stop Validation buttons.
-* [x] **Project Reload**: Reload existing detection projects with class name recovery from `classes.txt` or annotation file scanning.
+* [x] **Backend Training Engine**: Fully integrated YOLOv8n training engine with Jetson Orin Nano memory optimizations.
+* [x] **Post-Training Fast Validation**: Auto-launching live camera detection stream after training completes.
+* [x] **Project Reload**: Reload existing detection projects with class name recovery.
 * [x] **Collapsible Training Console**: Toggle button for advanced users; collapsed by default.
-* [x] **Training Progress Animation**: Animated "Training..." dots while waiting for first epoch to complete.
-* [x] **Resilient Training Pipeline**: Non-fatal TRT export, model availability check on crash, GPU memory cleanup between stages.
-* [x] **TensorRT Support**: Native support for `.engine` models via the Ultralytics YOLO framework (TRT export skipped on Orin Nano due to memory constraints).
-* [x] **Read-Only Fixed Tags**: High-fidelity syntax protection system that locks parameter names and assignment keys, preventing common student syntax errors.
+* [x] **Training Progress Animation**: Animated "Training..." dots while waiting for first epoch.
+* [x] **Resilient Training Pipeline**: Non-fatal TRT export, model availability check on crash, GPU memory cleanup.
+* [x] **TensorRT Support**: Native support for `.engine` models (TRT export skipped on Orin Nano).
+* [x] **Read-Only Fixed Tags**: Syntax protection system locking parameter names and assignment keys.
+* [x] **BBox Editor Close Bug Fixed**: `setFixedHeight(0)` on close, height restored on reopen.
+* [x] **AI Assistant Bot UI**: Floating 🤖 button in code editor, chat panel with Fix/Explain quick actions, streaming inference backend with Qwen2.5-Coder-1.5B.
+* [x] **AI Assistant Bot — Fix blank response bubble**: Replaced `QTextEdit` with `QLabel` in `MessageBubble` to escape QScintilla stylesheet cascade.
+* [x] **Gemma-3-1B-IT Model**: Added as third LLM option (~810 MB Q4_K_M). Gemma turn-based prompt format, download script, model registry entry. Requires `llama-cpp-python >= 0.3.8`.
+* [x] **LLM Model Storage Relocation**: Moved GGUF files from `projects/model/llm/` to `src/modules/LLM/llm_model/`.
+* [x] **llama-cpp-python Upgrade**: v0.3.2 → v0.3.20 (Windows dev machine) for Gemma 3 architecture support.
+* [x] **verbose=False Windows Fix**: Monkey-patched `suppress_stdout_stderr` to no-op to prevent fd corruption in PyQt5 GUI apps.
+* [x] **Model Switching Stability**: 3-second silent stabilization delay after model switch to let C-level destructor finish.
+* [x] **Chat Panel Fade Animation Fix**: Replaced `windowOpacity` animation with `QGraphicsOpacityEffect` for child widgets.
+* [x] **Debug Print Crash Fix**: Removed `print(flush=True)` from `_on_token_signal` that crashed in GUI apps without console.
+* [x] **AI Bot Bilingual Support**: All chat panel UI text (buttons, placeholders, messages) uses translation keys. LLM prompts switch between EN/VI. Fix output uses `Dòng/Gốc/Sửa` in Vietnamese.
+* [x] **Translator Pattern for Fix Errors**: Python's `compile()` finds syntax errors, console traceback finds runtime errors. LLM only translates the error into kid-friendly language. Eliminates hallucination on 1B models.
+* [x] **Syntax Check Short-Circuit**: If code compiles clean and no console error, instant "No errors found 🎉" without LLM inference.
+* [x] **Indentation Error Handling**: Preserves leading spaces in `Original:` line, pre-fills `Fixed:` with stripped version.
+* [x] **Code-After-Colon Detection**: Detects `while True:code_here` pattern, provides kid-friendly "Press Enter after..." instruction.
+* [x] **Runtime Error Support**: NameError, ImportError, AttributeError etc. detected from console traceback, sent to LLM with simple "explain and suggest fix" prompt.
+* [x] **Workflow Missing Step Detection**: `_detect_missing_workflow()` checks for missing pipeline steps (Init_Camera, Load Model, Draw, Update_Dashboard, while loop). Instant pre-built answer for display/show questions without LLM.
+* [x] **Function Context Injection**: `_extract_func_context()` scans code/question for known function names, injects parameter definitions from `definitions.py` into Ask/Explain prompts (max 4 functions). Not injected into Fix prompts.
+* [x] **Kid-Friendly System Prompt**: Numbered workflow (1→7) explaining the AI camera pipeline. Explicitly states `Update_Dashboard()` is required for camera feed display. Rules enforce short answers, no full scripts.
 * [ ] **Dataset Augmentation**: Add UI controls for Flip, Blur, and Noise simulations.
+* [ ] **Small-screen font sizes**: Minimum font size floor of 8px needed in `refresh_ui_resolution()` for form labels, metric cards, and dataset summary labels.
+* [ ] **Save Model on Jetson**: `_save_trained_model()` only saves `.engine` files — on Orin Nano TRT export is skipped, so the button always shows "No .engine model found". Needs fallback to save `.pt` or `.onnx`.
+* [ ] **Resume Training label**: After stopping training, button shows "🚀 Resume Training" but clicking starts fresh. Label is misleading.
+* [ ] **Jetson llama-cpp-python upgrade**: Rebuild/upgrade Jetson wheel to >= 0.3.8 for Gemma 3 support. Current Jetson wheel is v0.3.2.
