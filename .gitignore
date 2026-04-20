@@ -8,3 +8,4 @@ run_engine_code.py
 *.pt 
 *.gguf
 src/modules/LLM/llm_model/
+*.zip

@@ -1,9 +1,13 @@
 # AI Code Lab — LLM Assistant (multi-model, Jetson Orin Nano)
+# Uses a subprocess worker for GPU inference so CUDA CMA is not
+# shared with PyTorch/YOLO in the main app process.
 
 from __future__ import annotations
 import os
 import sys
 import re
+import json
+import subprocess
 import threading
 from typing import Callable, Optional
 
@@ -11,29 +15,8 @@ from . import model_config as _mcfg
 from .prompt_builder import build_prompt, build_fix_prompt, build_explain_prompt
 
 
-# ── Neutralise llama-cpp-python's broken stdout/stderr redirect ────────────
-# On Windows GUI apps (PyQt5), fd 1/2 may not be valid console handles.
-# llama-cpp-python's suppress_stdout_stderr (used when verbose=False)
-# does os.dup/dup2 on these fds which corrupts them permanently, causing
-# hard crashes when llama.cpp's C code writes perf stats during inference.
-# Fix: replace it with a no-op at import time, before any Llama() call.
-
-if sys.platform == "win32":
-    try:
-        import llama_cpp.llama as _llama_mod  # type: ignore
-
-        class _SafeSuppressStdoutStderr:
-            """No-op replacement — prevents fd corruption on Windows GUI."""
-            def __init__(self, disable=True):
-                pass
-            def __enter__(self):
-                return self
-            def __exit__(self, *_):
-                pass
-
-        _llama_mod.suppress_stdout_stderr = _SafeSuppressStdoutStderr
-    except ImportError:
-        pass  # llama_cpp not installed yet — patch will be applied in _load_worker
+# ── Path to the worker script ─────────────────────────────────────────────
+_WORKER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "llm_worker.py")
 
 
 # ── Post-processing for fix-error responses ────────────────────────────────
@@ -88,8 +71,8 @@ def _postprocess_fix(response: str) -> str:
 
 class LLMAssistant:
     """
-    Wraps llama-cpp-python for on-device LLM inference.
-    All blocking work runs in daemon threads — never blocks the PyQt5 UI.
+    Manages LLM inference via a subprocess worker that runs on GPU.
+    The worker process is isolated from PyTorch/YOLO CUDA allocations.
 
     Each instance has a unique _generation id. When cancel() or unload() is
     called the id increments, causing any in-flight inference to silently stop
@@ -97,7 +80,7 @@ class LLMAssistant:
     """
 
     def __init__(self):
-        self._llm = None
+        self._proc: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
         self._loaded = False
         self._loading = False
@@ -123,30 +106,6 @@ class LLMAssistant:
                          args=(on_ready, on_error), daemon=True).start()
 
     def _load_worker(self, on_ready, on_error):
-        try:
-            from llama_cpp import Llama  # type: ignore
-            # Re-apply patch in case it wasn't applied at module level
-            if sys.platform == "win32":
-                try:
-                    import llama_cpp.llama as _lm
-                    if getattr(_lm.suppress_stdout_stderr, '__name__', '') != '_SafeSuppressStdoutStderr':
-                        class _SafeSuppressStdoutStderr:
-                            def __init__(self, disable=True): pass
-                            def __enter__(self): return self
-                            def __exit__(self, *_): pass
-                        _lm.suppress_stdout_stderr = _SafeSuppressStdoutStderr
-                except Exception:
-                    pass
-        except ImportError:
-            self._loading = False
-            if on_error:
-                on_error(
-                    "llama-cpp-python not installed.\n"
-                    "Run:\n  pip install llama-cpp-python \\\n"
-                    "    --extra-index-url https://pypi.jetson-ai-lab.io/jp6/cu126"
-                )
-            return
-
         cfg = _mcfg.ACTIVE_MODEL
         if not _mcfg.model_exists(cfg):
             self._loading = False
@@ -159,35 +118,53 @@ class LLMAssistant:
             return
 
         try:
-            self._llm = Llama(
-                model_path=_mcfg.get_model_path(cfg),
-                n_ctx=cfg["context_len"],
-                n_gpu_layers=cfg["gpu_layers"],
-                n_threads=cfg["threads"],
-                use_mmap=True,
-                use_mlock=False,
-                verbose=False,
+            # Launch worker subprocess with GPU access
+            self._proc = subprocess.Popen(
+                [sys.executable, _WORKER_SCRIPT],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,  # line-buffered
             )
-            self._loaded = True
-            self._loading = False
-            if on_ready:
-                on_ready()
-        except OSError:
-            # Safety fallback — if suppress_stdout_stderr patch didn't
-            # take effect, the model may still have loaded successfully.
-            if self._llm is not None:
+
+            # Send load command
+            load_cmd = json.dumps({
+                "action": "load",
+                "model_path": _mcfg.get_model_path(cfg),
+                "config": {
+                    "context_len": cfg["context_len"],
+                    "gpu_layers": cfg["gpu_layers"],
+                    "threads": cfg["threads"],
+                    "max_tokens": cfg["max_tokens"],
+                    "temperature": cfg["temperature"],
+                    "top_p": cfg["top_p"],
+                    "repeat_penalty": cfg["repeat_penalty"],
+                    "stop": cfg["stop"],
+                },
+            })
+            self._proc.stdin.write(load_cmd + "\n")
+            self._proc.stdin.flush()
+
+            # Wait for response
+            response = self._proc.stdout.readline().strip()
+            if response.startswith("STATUS:ready"):
                 self._loaded = True
                 self._loading = False
                 if on_ready:
                     on_ready()
             else:
                 self._loading = False
+                self._kill_proc()
+                err_msg = response.replace("STATUS:error:", "") if response.startswith("STATUS:error:") else response
                 if on_error:
-                    on_error("Failed to load model (OS handle error).")
+                    on_error(f"Failed to load model:\n{err_msg}")
+
         except Exception as e:
             self._loading = False
+            self._kill_proc()
             if on_error:
-                on_error(f"Failed to load model:\n{e}")
+                on_error(f"Failed to start LLM worker:\n{e}")
 
     # ── Inference helpers ──────────────────────────────────────────────────────
 
@@ -249,32 +226,42 @@ class LLMAssistant:
     def _infer(self, prompt, on_token, on_done, on_error, gen):
         acquired = self._lock.acquire(timeout=5)
         if not acquired or gen != self._gen:
-            # Another request or cancel happened — abort silently
             if acquired:
                 self._lock.release()
             return
         try:
-            llm = self._llm
-            if llm is None:
+            proc = self._proc
+            if proc is None or proc.poll() is not None:
+                if on_error:
+                    on_error("LLM worker process died unexpectedly.")
                 return
-            cfg = _mcfg.ACTIVE_MODEL
+
+            # Send inference command
+            infer_cmd = json.dumps({"action": "infer", "prompt": prompt})
+            proc.stdin.write(infer_cmd + "\n")
+            proc.stdin.flush()
+
+            # Read streaming tokens
             full = ""
-            stream = llm(
-                prompt,
-                max_tokens=cfg["max_tokens"],
-                temperature=cfg["temperature"],
-                top_p=cfg["top_p"],
-                repeat_penalty=cfg["repeat_penalty"],
-                stop=cfg["stop"],
-                stream=True,
-            )
-            for chunk in stream:
+            while True:
                 if gen != self._gen:
                     break  # cancelled or new request
-                token = chunk["choices"][0]["text"]
-                full += token
-                if on_token:
-                    on_token(token)
+                line = proc.stdout.readline()
+                if not line:
+                    break  # process died
+                line = line.rstrip("\n")
+                if line.startswith("TOKEN:"):
+                    token = line[6:]
+                    full += token
+                    if on_token:
+                        on_token(token)
+                elif line == "STATUS:done":
+                    break
+                elif line.startswith("STATUS:error:"):
+                    if gen == self._gen and on_error:
+                        on_error(f"Inference error: {line[13:]}")
+                    return
+
             if gen == self._gen and on_done:
                 on_done(full.strip())
         except Exception as e:
@@ -283,11 +270,23 @@ class LLMAssistant:
         finally:
             self._lock.release()
 
+    def _kill_proc(self):
+        """Kill the worker subprocess if running."""
+        if self._proc is not None:
+            try:
+                self._proc.stdin.write(json.dumps({"action": "quit"}) + "\n")
+                self._proc.stdin.flush()
+                self._proc.wait(timeout=3)
+            except Exception:
+                try:
+                    self._proc.kill()
+                except Exception:
+                    pass
+            self._proc = None
+
     def unload(self):
-        """Release model from memory. Non-blocking — does NOT wait for inference."""
+        """Release model and GPU memory by terminating the worker process."""
         self._gen += 1       # invalidate any in-flight inference
         self._loaded = False
         self._loading = False
-        # Release the model object — if _infer is running it holds its own
-        # local reference (llm) so it won't crash, it just finishes silently.
-        self._llm = None
+        self._kill_proc()

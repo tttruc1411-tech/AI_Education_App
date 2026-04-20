@@ -162,26 +162,40 @@ A professional, education-focused Python development environment built with **Py
 * **Location**: Floating circular `🤖` button parented to the `monacoPlaceholder` (QScintilla editor widget) in Running Mode. Positioned at ~68% down the editor height, right side, 26px from edge to clear the scrollbar.
 * **Trigger**: Click the bot button → `AssistantChatPanel` floats above it with fade-in animation (`QGraphicsOpacityEffect`). Second click hides it. Switching to Training Mode hides it and unloads the model to free RAM.
 * **Panel Position**: Right-aligned inside the editor with 20px margin to clear the scrollbar. Panel size: 370×420–600px (normal), 300×320–420px (small screen). All fonts bumped +2pt from original for readability.
-* **Models** (3 options, user-switchable via dropdown):
+* **Models** (2 options, user-switchable via dropdown):
     | Model | Size | Chat Format | Best For |
     |-------|------|-------------|----------|
     | `Qwen2.5-Coder-1.5B-Instruct` Q4_K_M | ~1.12 GB | ChatML | Code tasks (recommended) |
-    | `Phi-3-mini-4k-instruct` Q4 | ~2.39 GB | Phi-3 | General reasoning |
     | `Gemma-3-1B-IT` Q4_K_M | ~0.81 GB | Gemma turn | Lightweight/memory-constrained |
 * **Model Storage**: `src/modules/LLM/llm_model/` (co-located with the LLM module).
-* **Backend**: `llama-cpp-python` v0.3.20 (CPU-only on Windows dev machine; GPU via Jetson-specific wheel on Orin Nano).
-* **Inference speed**: ~18 tok/s CPU (Windows laptop), ~35–45 tok/s GPU (Jetson Orin Nano).
+* **Backend**: `llama-cpp-python` v0.3.20 built with CUDA (`-DGGML_CUDA=on`). Runs in a **subprocess worker** for GPU isolation from PyTorch/YOLO.
+* **Inference speed**: ~18 tok/s CPU fallback, ~35–45 tok/s GPU (Jetson Orin Nano).
+* **⚠️ CRITICAL ARCHITECTURE — Subprocess Worker (DO NOT REVERT)**:
+    * **Problem**: On Jetson Orin Nano (8 GB shared RAM, 256 MB CMA), PyTorch/YOLO and llama.cpp cannot both call `cudaMalloc` in the same process — CMA fragmentation causes OOM even with 3+ GB "free" RAM. Setting `CUDA_VISIBLE_DEVICES=""` after CUDA is already initialized has no effect.
+    * **Solution**: LLM inference runs in a **separate subprocess** (`llm_worker.py`) that is launched by `assistant.py`. This subprocess has its own CUDA context, isolated from PyTorch/YOLO.
+    * **CMA-Aware GPU/CPU Selection**: The worker reads `/proc/meminfo` CmaFree at load time. If CmaFree > 200 MB → GPU mode (`n_gpu_layers=999`). If CmaFree ≤ 200 MB → sets `CUDA_VISIBLE_DEVICES=""` before importing llama_cpp, then loads on CPU.
+    * **IPC Protocol** (stdin/stdout JSON, line-buffered):
+        * Parent → Worker: `{"action": "load", "model_path": "...", "config": {...}}`
+        * Parent → Worker: `{"action": "infer", "prompt": "..."}`
+        * Parent → Worker: `{"action": "quit"}`
+        * Worker → Parent: `STATUS:ready:gpu` or `STATUS:ready:cpu`
+        * Worker → Parent: `TOKEN:<text>` (streaming, one per token)
+        * Worker → Parent: `STATUS:done` or `STATUS:error:<msg>`
+    * **Why not in-process?**: Even with `n_gpu_layers=0`, llama-cpp-python v0.3.20 with CUDA compiled still allocates ~480 MB CUDA compute buffers if `ggml_cuda_init` detects a device. The ONLY way to prevent this is to hide the GPU BEFORE the library is imported — impossible in the main process where PyTorch already uses CUDA.
+    * **GPU unlock**: To get consistent GPU inference, increase CMA: add `cma=1536M` to APPEND line in `/boot/extlinux/extlinux.conf` and reboot.
+    * **Phi-3 removed**: Too large (2.39 GB) for the 2 GB GPU memory budget. Only Qwen and Gemma are available.
 
 * **Module files**:
     * `src/modules/LLM/__init__.py` — Module init.
-    * `src/modules/LLM/model_config.py` — Multi-model registry with paths, GPU layers (999=all), context 4096, max_tokens 512, temp 0.2. `set_active_model(key)` for runtime switching.
+    * `src/modules/LLM/model_config.py` — Model registry (Qwen, Gemma) with paths, GPU layers, context, inference params. `set_active_model(key)` for runtime switching.
     * `src/modules/LLM/prompt_builder.py` — Prompt engineering hub (see "Prompt Architecture" below).
-    * `src/modules/LLM/assistant.py` — `LLMAssistant` class: `load()`, `ask()`, `fix_error()`, `explain_code()`, `cancel()`, `unload()`. Includes `suppress_stdout_stderr` monkey-patch for Windows GUI compatibility.
+    * `src/modules/LLM/assistant.py` — `LLMAssistant` class: `load()`, `ask()`, `fix_error()`, `explain_code()`, `cancel()`, `unload()`. Launches `llm_worker.py` as subprocess and communicates via stdin/stdout JSON.
+    * `src/modules/LLM/llm_worker.py` — **Standalone subprocess** for GPU LLM inference. Loads model with CUDA, streams tokens back via stdout. CMA-aware: auto-falls back to CPU if GPU memory unavailable.
     * `src/modules/LLM/chat_panel.py` — `AssistantChatPanel` + `MessageBubble` widgets with `QGraphicsOpacityEffect` fade-in animation.
 
 * **Chat Panel Features**:
     * Header with status dot (🟡 loading / 🟢 ready / 🟣 thinking / 🔴 error) and animated "thinking..." dots
-    * Model selector dropdown (switch between Qwen/Phi-3/Gemma at runtime)
+    * Model selector dropdown (switch between Qwen/Gemma at runtime)
     * Two quick-action buttons: **🔧 Fix Error** / **💡 Explain** (bilingual labels via `translations.py`)
     * Free-text input field with Enter-to-send (bilingual placeholder)
     * Streaming token-by-token response into chat bubbles
@@ -214,14 +228,13 @@ A professional, education-focused Python development environment built with **Py
     * **Explain Flow** (`build_explain_prompt`): Injects relevant function definitions from `definitions.py`, asks model to explain simply for a beginner.
     * **Function Context Injection**: `_load_func_cache()` lazy-loads all function definitions from `LIBRARY_FUNCTIONS` in `definitions.py`. `_extract_func_context(text)` finds mentioned functions and returns their descriptions, parameters, return types, and usage examples.
 
-* **Windows GUI Compatibility Fixes**:
-    * **suppress_stdout_stderr monkey-patch**: llama-cpp-python's `verbose=False` uses `os.dup/dup2` to redirect fd 1/2, which corrupts stdout/stderr permanently in PyQt5 GUI apps (no valid console handles). Fix: replace `suppress_stdout_stderr` with a no-op class at module import time AND inside `_load_worker` after import. This prevents fd corruption during both loading and inference.
-    * **OSError fallback**: If the monkey-patch somehow doesn't take effect, `except OSError` in `_load_worker` checks if `self._llm is not None` (model loaded before the error) and proceeds normally.
+* **Windows GUI Compatibility Fixes** (Windows dev machine only — Jetson uses subprocess worker):
+    * **suppress_stdout_stderr monkey-patch**: llama-cpp-python's `verbose=False` uses `os.dup/dup2` to redirect fd 1/2, which corrupts stdout/stderr permanently in PyQt5 GUI apps (no valid console handles). Fix: replace `suppress_stdout_stderr` with a no-op class at module import time.
     * **Debug print removal**: Removed `print(flush=True)` from `_on_token_signal` — crashes in GUI apps with no console.
 
 * **Model Switching**:
-    * `_bot_switch_model()` in `main.py`: cancels + unloads old model, switches `ACTIVE_MODEL`, creates fresh `LLMAssistant`, loads new model.
-    * 3-second stabilization delay after model switch (silent — no UI message) to let the previous model's C-level destructor finish before enabling input.
+    * `_bot_switch_model()` in `main.py`: cancels + unloads old model (kills worker subprocess), switches `ACTIVE_MODEL`, creates fresh `LLMAssistant`, loads new model (spawns new worker subprocess).
+    * 3-second stabilization delay after model switch (silent — no UI message) to let the previous worker terminate cleanly.
     * First launch: no delay, instant "ready" message.
 
 * **🟢 FIXED — Response truncated mid-sentence/Empty response on large code**:
@@ -262,11 +275,12 @@ A professional, education-focused Python development environment built with **Py
 * `src/modules/library/functions/motor.py`: Brain layer with async motor control (DCMotor class, run_time, run_until_stalled).
 * `src/modules/library/definitions.py`: Master function registry for all Library categories.
 * `src/modules/LLM/__init__.py`: LLM module init.
-* `src/modules/LLM/model_config.py`: Multi-model registry (Qwen2.5-Coder-1.5B, Phi-3-mini-4k, Gemma-3-1B-IT) with paths, GPU layers, inference params.
+* `src/modules/LLM/model_config.py`: Model registry (Qwen2.5-Coder-1.5B, Gemma-3-1B-IT) with paths, GPU layers (999=all), inference params.
 * `src/modules/LLM/prompt_builder.py`: Prompt engineering hub — Translator Pattern for fix errors, workflow detection for ask mode, function context injection from `definitions.py`. Supports EN/VI bilingual prompts.
-* `src/modules/LLM/assistant.py`: `LLMAssistant` class — background thread load + streaming inference.
+* `src/modules/LLM/assistant.py`: `LLMAssistant` class — spawns subprocess worker, sends JSON commands via stdin, reads streaming tokens from stdout.
+* `src/modules/LLM/llm_worker.py`: **Subprocess GPU worker** — loads model with CUDA, CMA-aware fallback to CPU. DO NOT merge into assistant.py (CUDA isolation requirement).
 * `src/modules/LLM/chat_panel.py`: `AssistantChatPanel` + `MessageBubble` — floating chat UI.
-* `src/modules/LLM/llm_model/`: LLM GGUF model files (Qwen2.5-Coder-1.5B, Phi-3-mini-4k, Gemma-3-1B-IT).
+* `src/modules/LLM/llm_model/`: LLM GGUF model files (Qwen2.5-Coder-1.5B, Gemma-3-1B-IT).
 
 ## 6. Next Steps for Development
 * [x] **Dual-Language**: Full Vietnamese/English support across the entire GUI.
@@ -309,4 +323,8 @@ A professional, education-focused Python development environment built with **Py
 * [ ] **Small-screen font sizes**: Minimum font size floor of 8px needed in `refresh_ui_resolution()` for form labels, metric cards, and dataset summary labels.
 * [ ] **Save Model on Jetson**: `_save_trained_model()` only saves `.engine` files — on Orin Nano TRT export is skipped, so the button always shows "No .engine model found". Needs fallback to save `.pt` or `.onnx`.
 * [ ] **Resume Training label**: After stopping training, button shows "🚀 Resume Training" but clicking starts fresh. Label is misleading.
-* [ ] **Jetson llama-cpp-python upgrade**: Rebuild/upgrade Jetson wheel to >= 0.3.8 for Gemma 3 support. Current Jetson wheel is v0.3.2.
+* [x] **Jetson llama-cpp-python upgrade**: Upgraded to v0.3.20 built with CUDA (`CMAKE_ARGS="-DGGML_CUDA=on"`). Supports Gemma 3 architecture + GPU inference.
+* [x] **LLM Subprocess Worker (GPU Isolation)**: Moved LLM inference to `llm_worker.py` subprocess to avoid CUDA CMA conflict with PyTorch/YOLO. Auto-detects CMA availability for GPU/CPU mode.
+* [x] **Phi-3 Removed**: Removed from model registry and combobox — too large (2.39 GB) for 2 GB GPU budget.
+* [x] **llama-cpp-python _internals.py fix**: Patched `LlamaModel.close()` to use `getattr()` for `sampler`/`_exit_stack` attributes — prevents `AttributeError` crash when model fails to load.
+* [ ] **Increase CMA for consistent GPU**: Add `cma=1536M` to `/boot/extlinux/extlinux.conf` APPEND line and reboot. Currently CMA=256MB is mostly consumed by Xorg/GNOME, forcing LLM to CPU fallback.
