@@ -12,6 +12,47 @@ from PyQt5.QtCore import Qt, QMimeData, pyqtSignal
 from PyQt5.QtGui import QDrag, QFont, QColor
 
 from .library.definitions import LIBRARY_FUNCTIONS
+from .translations import STRINGS
+
+# Mapping from English category names in LIBRARY_FUNCTIONS → translation keys
+_CAT_KEY_MAP = {
+    "Camera": "CAT_CAMERA",
+    "Image Processing": "CAT_IMAGE_PROCESSING",
+    "AI Vision Core": "CAT_AI_VISION_CORE",
+    "Display & Dashboard": "CAT_DISPLAY_DASHBOARD",
+    "Logic Operations": "CAT_LOGIC_OPERATIONS",
+    "Robotics": "CAT_ROBOTICS",
+}
+
+# Mapping from function IDs → description translation keys
+_FN_DESC_KEY_MAP = {
+    "Init_Camera": "FN_INIT_CAMERA",
+    "Get_Camera_Frame": "FN_GET_CAMERA_FRAME",
+    "Close_Camera": "FN_CLOSE_CAMERA",
+    "convert_to_gray": "FN_CONVERT_TO_GRAY",
+    "resize_image": "FN_RESIZE_IMAGE",
+    "apply_blur": "FN_APPLY_BLUR",
+    "detect_edges": "FN_DETECT_EDGES",
+    "flip_image": "FN_FLIP_IMAGE",
+    "Load_YuNet_Model": "FN_LOAD_YUNET_MODEL",
+    "Run_YuNet_Model": "FN_RUN_YUNET_MODEL",
+    "Load_ONNX_Model": "FN_LOAD_ONNX_MODEL",
+    "Run_ONNX_Model": "FN_RUN_ONNX_MODEL",
+    "Load_Engine_Model": "FN_LOAD_ENGINE_MODEL",
+    "Run_Engine_Model": "FN_RUN_ENGINE_MODEL",
+    "Draw_Detections": "FN_DRAW_DETECTIONS",
+    "Draw_Detections_Multiclass": "FN_DRAW_DETECTIONS_MULTICLASS",
+    "Draw_Engine_Detections": "FN_DRAW_ENGINE_DETECTIONS",
+    "Update_Dashboard": "FN_UPDATE_DASHBOARD",
+    "Loop_Forever": "FN_LOOP_FOREVER",
+    "If_Condition": "FN_IF_CONDITION",
+    "If_Else_Control": "FN_IF_ELSE_CONTROL",
+    "DC_Run": "FN_DC_RUN",
+    "DC_Stop": "FN_DC_STOP",
+    "Get_Speed": "FN_GET_SPEED",
+    "Set_Servo": "FN_SET_SERVO",
+    "Define_Classes": "FN_DEFINE_CLASSES",
+}
 
 
 def _darken_hex(hex_color, factor=0.82):
@@ -34,8 +75,9 @@ class FunctionInfoPanel(QFrame):
     Flat design: Snippet → Parameters → Returns → Source Code.
     """
 
-    def __init__(self, func_id, info, category_color, is_small=False):
+    def __init__(self, func_id, info, category_color, is_small=False, lang="en"):
         super().__init__()
+        s = STRINGS.get(lang, STRINGS["en"])
         self.setObjectName("InfoPanel")
         self.setStyleSheet(f"""
             QFrame#InfoPanel {{
@@ -57,7 +99,7 @@ class FunctionInfoPanel(QFrame):
 
         # 1. Snippet (dragged)
         if usage:
-            layout.addWidget(self._bold_label("Snippet (Dragged):"))
+            layout.addWidget(self._bold_label(s.get("INFO_SNIPPET", "Snippet (Dragged):")))
             # Estimate if content exceeds 1 row (contains newlines or long text that will wrap)
             lines_estimate = usage.count('\n') + 1 + (len(usage) // 50)
             h = 84 if lines_estimate > 1 else 42
@@ -65,7 +107,7 @@ class FunctionInfoPanel(QFrame):
 
         # 2. Parameters
         if params:
-            layout.addWidget(self._bold_label("Parameters:"))
+            layout.addWidget(self._bold_label(s.get("INFO_PARAMETERS", "Parameters:")))
             for p in params:
                 name = p.get("name", "")
                 ptype = p.get("type", "")
@@ -91,7 +133,7 @@ class FunctionInfoPanel(QFrame):
 
         # 3. Returns
         if returns:
-            layout.addWidget(self._bold_label("Returns:"))
+            layout.addWidget(self._bold_label(s.get("INFO_RETURNS", "Returns:")))
             rtype = returns.get("type", "")
             rdesc = returns.get("desc", "")
             ret_line = QLabel(
@@ -106,12 +148,12 @@ class FunctionInfoPanel(QFrame):
             layout.addWidget(ret_line)
 
         # 4. Source Code
-        layout.addWidget(self._bold_label("Source Code:"))
+        layout.addWidget(self._bold_label(s.get("INFO_SOURCE_CODE", "Source Code:")))
         source_text = self._load_source(info)
         if source_text:
             layout.addWidget(self._code_block(source_text, height=200, dark=True, font_size=7))
         else:
-            no_src = QLabel("Source code not available.")
+            no_src = QLabel(s.get("INFO_NO_SOURCE", "Source code not available."))
             no_src.setStyleSheet("color: #94a3b8; font-size: 13px; background: transparent;")
             layout.addWidget(no_src)
 
@@ -231,13 +273,19 @@ class ToggleLabel(QLabel):
 class DraggableFunctionBlock(QFrame):
     expandRequested = pyqtSignal(object)
 
-    def __init__(self, func_id, info, category_color, category_icon="🌣", is_small=False):
+    def __init__(self, func_id, info, category_color, category_icon="🌣", is_small=False, lang="en"):
         super().__init__()
         self.func_id        = func_id
         self.info           = info
         self.category_color = category_color
         self.category_icon  = category_icon
         self._expanded      = False
+        self._lang          = lang
+
+        # Resolve translated description
+        s = STRINGS.get(lang, STRINGS["en"])
+        desc_key = _FN_DESC_KEY_MAP.get(func_id)
+        translated_desc = s.get(desc_key, info.get("desc", "")) if desc_key else info.get("desc", "")
 
         self.setObjectName("FunctionCard")
         self.setStyleSheet("""
@@ -286,7 +334,7 @@ class DraggableFunctionBlock(QFrame):
         name_lbl.setStyleSheet(
             f"font-weight: 700; color: #1e293b; font-size: {n_size}px; background: transparent;"
         )
-        short_desc = QLabel(info.get("desc", ""))
+        short_desc = QLabel(translated_desc)
         short_desc.setAttribute(Qt.WA_TransparentForMouseEvents)
         d_size = 9 if is_small else 14
         short_desc.setStyleSheet(
@@ -308,7 +356,7 @@ class DraggableFunctionBlock(QFrame):
         self._root.addWidget(self._header)
 
         # ── Info panel (hidden) ──────────────────────────────
-        self._panel = FunctionInfoPanel(func_id, info, category_color, is_small=is_small)
+        self._panel = FunctionInfoPanel(func_id, info, category_color, is_small=is_small, lang=lang)
         self._panel.setVisible(False)
         self._root.addWidget(self._panel)
 
@@ -451,7 +499,7 @@ class CategoryHeader(QPushButton):
 #  Populate the Functions Tab
 # ────────────────────────────────────────────────────────────
 
-def populate_functions_tab(running_mode_widget, is_small=False):
+def populate_functions_tab(running_mode_widget, is_small=False, lang="en"):
     layout = running_mode_widget.findChild(QVBoxLayout, "functionsListLayout")
 
     # Remove all existing items (widgets + spacers)
@@ -462,6 +510,8 @@ def populate_functions_tab(running_mode_widget, is_small=False):
 
     # Pin content to top — critical so collapsed headers sit at top, not center
     layout.setAlignment(Qt.AlignTop)
+
+    s = STRINGS.get(lang, STRINGS["en"])
 
     # 🤝 ACCORDION MANAGERS
     all_blocks = []
@@ -491,7 +541,11 @@ def populate_functions_tab(running_mode_widget, is_small=False):
         icon  = cat_data.get("icon", "📂")
         count = len(cat_data["functions"])
 
-        header = CategoryHeader(cat_name, count, color, icon=icon, is_small=is_small)
+        # Translate category name
+        cat_key = _CAT_KEY_MAP.get(cat_name)
+        display_name = s.get(cat_key, cat_name) if cat_key else cat_name
+
+        header = CategoryHeader(display_name, count, color, icon=icon, is_small=is_small)
         layout.addWidget(header)
         all_category_buttons.append(header)
 
@@ -510,7 +564,8 @@ def populate_functions_tab(running_mode_widget, is_small=False):
                 info=info,
                 category_color=color,
                 category_icon=icon,
-                is_small=is_small
+                is_small=is_small,
+                lang=lang
             )
             all_blocks.append(block)
             block.expandRequested.connect(collapse_all_blocks)

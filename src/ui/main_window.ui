@@ -131,7 +131,7 @@
         <layout class="QVBoxLayout">
          <item>
           <widget class="QLabel" name="appTitle">
-           <property name="text"><string>&lt;/&gt; AI Code Lab ✨</string></property>
+           <property name="text"><string>&lt;/&gt; KDI AI Code Lab ✨</string></property>
           </widget>
          </item>
          <item>

@@ -812,7 +812,7 @@ class AICodingLab(QMainWindow):
 
         # F) POPULATE FUNCTIONS
         try:
-            populate_functions_tab(self.running_mode_widget, is_small=self.is_small_screen)
+            populate_functions_tab(self.running_mode_widget, is_small=self.is_small_screen, lang=self.current_lang)
         except Exception as e:
             print(f"Error populating functions tab: {e}")
 
@@ -957,6 +957,9 @@ class AICodingLab(QMainWindow):
 
         # 11. Final Retranslation Initial
         self.retranslate_ui()
+
+        # 11b. Apply initial resolution scaling (default is small screen)
+        self.refresh_ui_resolution(is_transition=False)
 
         # 12. Deferred ORC Hub check (after UI is visible)
         self._orc_connected = False
@@ -1431,6 +1434,12 @@ class AICodingLab(QMainWindow):
         # Full refresh of dynamic content
         self.populate_curriculum_hub()
         self.update_workspace_counts()
+        # Refresh function library with new language
+        try:
+            from src.modules.function_library import populate_functions_tab
+            populate_functions_tab(self.running_mode_widget, is_small=self.is_small_screen, lang=self.current_lang)
+        except Exception:
+            pass
 
     def toggle_resolution(self, checked):
         """Toggle between standard and small (10-inch) screen layout."""
@@ -1456,9 +1465,9 @@ class AICodingLab(QMainWindow):
         # 1. Update Core Header/Footer font sizes via Variables from CLEAN Template
         style = getattr(self, "base_style", self.styleSheet())
         
-        title_font = 14 if is_small else 22
-        subtitle_font = 9 if is_small else 12
-        footer_font = 10 if is_small else 13
+        title_font = 11 if is_small else 22
+        subtitle_font = 7 if is_small else 12
+        footer_font = 8 if is_small else 13
         
         # Regex replacement for specific font sizes in stylesheet
         import re
@@ -1467,9 +1476,9 @@ class AICodingLab(QMainWindow):
         style = re.sub(r"(#footerHints,\s*#footerCredit\s*\{\s*color:\s*white;\s*font-size:\s*)\d+px", rf"\g<1>{footer_font}px", style)
 
         # Mode toggle buttons padding/font/radius
-        _mode_fs = 11 if is_small else 14
-        _mode_pad = '4px 8px' if is_small else '6px 16px'
-        _mode_br = 10 if is_small else 14
+        _mode_fs = 9 if is_small else 14
+        _mode_pad = '2px 6px' if is_small else '6px 16px'
+        _mode_br = 8 if is_small else 14
         
         # We ensure border is set and radius is correct to prevent "sharp corners"
         style = re.sub(
@@ -1486,9 +1495,9 @@ class AICodingLab(QMainWindow):
             style = re.sub(r"(#btnRunMode,\s*#btnTrainMode\s*\{[^}]*?)(\s*\})", rf"\g<1>font-size: {_mode_fs}px;\g<2>", style)
 
         # Language toggle font-size and padding
-        _lang_fs = 12 if is_small else 16
-        _lang_pad = '3px 7px' if is_small else '4px 10px'
-        _lang_br = 10 if is_small else 14
+        _lang_fs = 9 if is_small else 16
+        _lang_pad = '2px 5px' if is_small else '4px 10px'
+        _lang_br = 8 if is_small else 14
         style = re.sub(
             r"(#btnLangEN,\s*#btnLangVN\s*\{[^}]*?)font-size:\s*\d+px",
             rf"\g<1>font-size: {_lang_fs}px", style)
@@ -1500,14 +1509,14 @@ class AICodingLab(QMainWindow):
             rf"\g<1>border-radius: {_lang_br}px", style)
 
         # Toggle containers border-radius
-        _cont_br = 14 if is_small else 18
+        _cont_br = 10 if is_small else 18
         style = re.sub(r"(#toggleContainer\s*\{[^}]*?)border-radius:\s*\d+px", rf"\g<1>border-radius: {_cont_br}px", style)
         style = re.sub(r"(#langToggleContainer\s*\{[^}]*?)border-radius:\s*\d+px", rf"\g<1>border-radius: {_cont_br}px", style)
 
         # Resolution toggle button sizing
-        _res_sz = 26 if is_small else 34
-        _res_fs = 14 if is_small else 18
-        _res_br = 13 if is_small else 17
+        _res_sz = 22 if is_small else 34
+        _res_fs = 11 if is_small else 18
+        _res_br = 11 if is_small else 17
         style = re.sub(r"(#btnResToggle\s*\{[^}]*?)border-radius:\s*\d+px", rf"\g<1>border-radius: {_res_br}px", style)
         style = re.sub(r"(#btnResToggle\s*\{[^}]*?)font-size:\s*\d+px", rf"\g<1>font-size: {_res_fs}px", style)
         style = re.sub(r"(#btnResToggle\s*\{[^}]*?)min-width:\s*\d+px", rf"\g<1>min-width: {_res_sz}px", style)
@@ -1520,13 +1529,17 @@ class AICodingLab(QMainWindow):
 
         # Header and Footer frame height scaling - LOOSEN CONSTRAINTS to fix setGeometry errors
         if hasattr(self, 'headerFrame') and self.headerFrame:
-            h_min = 48 if is_small else 70
-            h_max = 54 if is_small else 16777215
+            h_min = 36 if is_small else 56
+            h_max = 42 if is_small else 64
             self.headerFrame.setMinimumHeight(h_min)
             self.headerFrame.setMaximumHeight(h_max)
+            # Scale header layout margins for small screen
+            h_layout = self.headerFrame.layout()
+            if h_layout:
+                h_layout.setContentsMargins(8 if is_small else 20, 4 if is_small else 6, 6 if is_small else 12, 4 if is_small else 6)
         if hasattr(self, 'footerFrame') and self.footerFrame:
-            f_min = 24 if is_small else 30
-            f_max = 28 if is_small else 16777215
+            f_min = 20 if is_small else 26
+            f_max = 24 if is_small else 32
             self.footerFrame.setMinimumHeight(f_min)
             self.footerFrame.setMaximumHeight(f_max)
         
@@ -1563,19 +1576,6 @@ class AICodingLab(QMainWindow):
                 if p: p.setMinimumWidth(min_w)
         
 
-        try:
-            self.setStyleSheet(style)
-        except Exception as e:
-            print(f"Error applying stylesheet: {e}")
-
-        # Header and Footer frame height scaling
-        if hasattr(self, 'headerFrame') and self.headerFrame:
-            self.headerFrame.setMinimumHeight(46 if is_small else 70)
-            self.headerFrame.setMaximumHeight(50 if is_small else 16777215)
-        if hasattr(self, 'footerFrame') and self.footerFrame:
-            self.footerFrame.setMinimumHeight(22 if is_small else 30)
-            self.footerFrame.setMaximumHeight(26 if is_small else 16777215)
-
         # 3. Refresh Dynamic Components
         if hasattr(self, 'hubContentLayout') and self.hubContentLayout:
             # Small delay to allow layout engine to settle before re-populating complex widgets
@@ -1606,11 +1606,11 @@ class AICodingLab(QMainWindow):
                             item.widget().setStyleSheet(_title_ss)
             
             # Webcam / Upload / Label buttons and capture size toggles in Data Collection
-            btn_font = 11 if is_small else 15
+            btn_font = 11 if is_small else 17
             btn_pad = 2 if is_small else 6
             btn_fw = "normal" if is_small else "600"
-            btn_h = 24 if is_small else 0    # Drop from 26
-            cap_font = 7 if is_small else 11  # Drop from 9/14
+            btn_h = 24 if is_small else 34    # Drop from 26
+            cap_font = 6 if is_small else 13  # Drop from 9/14
             for btn in w.findChildren(QPushButton):
                 txt = btn.text()
                 if "Webcam" in txt or "Upload" in txt or ("Label" in txt and "Save" not in txt and "Continue" not in txt):
@@ -1620,18 +1620,26 @@ class AICodingLab(QMainWindow):
                     ss = _re.sub(r"font-weight:\s*\w+", f"font-weight: {btn_fw}", ss)
                     btn.setStyleSheet(ss)
                     if btn_h: btn.setFixedHeight(btn_h)
-            _cap_pad = '1px 6px' if is_small else '3px 8px' # Drop from 2x8/4x10
+            _cap_pad = '1px 6px' if is_small else '3px 8px'
+            _cap_h = 18 if is_small else 28
             for cap_name in ["btnCapSize320", "btnCapSize640"]:
                 cap_btn = w.findChild(QPushButton, cap_name)
                 if cap_btn:
-                    import re as _re
-                    _ss = cap_btn.styleSheet()
-                    _ss = _re.sub(r"font-size:\s*\d+px", f"font-size: {cap_font}px", _ss)
-                    _ss = _re.sub(r"padding:\s*\d+px\s+\d+px", f"padding: {_cap_pad}", _ss)
-                    cap_btn.setStyleSheet(_ss)
+                    _radius_l = "border-top-left-radius: 8px; border-bottom-left-radius: 8px; border-right: none;" if "320" in cap_name else ""
+                    _radius_r = "border-top-right-radius: 8px; border-bottom-right-radius: 8px;" if "640" in cap_name else ""
+                    cap_btn.setFixedHeight(_cap_h)
+                    cap_btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.2);
+                            padding: {_cap_pad}; font-weight: bold; font-size: {cap_font}px; color: #cbd5e1;
+                            {_radius_l}{_radius_r}
+                        }}
+                        QPushButton:hover:!checked {{ background: rgba(255, 255, 255, 0.25); }}
+                        QPushButton:checked {{ background: white; color: #3b82f6; border-color: white; }}
+                    """)
 
             # Recognition / Detection toggle buttons - REDUCE SIZE BY 20%
-            _tog_fs = 7 if is_small else 12  # Drop from 8/15 to 7/12
+            _tog_fs = 7 if is_small else 14  # Drop from 8/15 to 7/12
             _tog_pad = '1px 4px' if is_small else '5px 13px' # Drop from 2x6/6x16
             for _tog_name in ["btnRecognition", "btnDetection"]:
                 _tog_btn = w.findChild(QPushButton, _tog_name)
@@ -1644,8 +1652,8 @@ class AICodingLab(QMainWindow):
 
             # Project name row — bigger for normal resolution
             _proj_h = 20 if is_small else 26
-            _proj_fs = 12 if is_small else 15
-            _proj_btn_fs = 10 if is_small else 12
+            _proj_fs = 12 if is_small else 17
+            _proj_btn_fs = 10 if is_small else 14
             if hasattr(self, 'lblProjName') and self.lblProjName:
                 self.lblProjName.setFixedHeight(_proj_h)
                 self.lblProjName.setStyleSheet(f"#lblProjName {{ color: white; font-weight: bold; font-size: {_proj_fs}px; padding: 0; margin: 0; min-height: 0; max-height: {_proj_h}px; }}")
@@ -1687,8 +1695,8 @@ class AICodingLab(QMainWindow):
             # Detection mode class card scaling (scroll area, thumbnails, badges, hints)
             if hasattr(self, '_class_data'):
                 _badge_w = 48 if is_small else 68
-                _badge_font = 10 if is_small else 14
-                _hint_font = 12 if is_small else 14
+                _badge_font = 10 if is_small else 16
+                _hint_font = 12 if is_small else 16
                 for info in self._class_data:
                     if info is None: continue
                     # Scroll area min height
@@ -1698,9 +1706,16 @@ class AICodingLab(QMainWindow):
                     # Hint label
                     hint = info.get("hint_lbl")
                     if hint:
-                        hint.setStyleSheet(f"color: #94a3b8; font-size: {_hint_font}px; font-weight: 50;")
-                        if hint.minimumHeight() > 100:
-                            hint.setMinimumHeight(140 if is_small else 240)
+                        hint.setStyleSheet(f"color: #94a3b8; font-size: {_hint_font}px; font-weight: 50; padding: 0; margin: 0;")
+                    # Hint icon
+                    hint_icon = info.get("hint_icon")
+                    if hint_icon:
+                        _ico_sz = 48 if is_small else 108
+                        hint_icon.setStyleSheet(f"font-size: {_ico_sz}px; color: rgba(203, 213, 225, 0.4); padding: 0; margin: 0;")
+                    # Hint container
+                    hint_cont = info.get("hint_container")
+                    if hint_cont and hint_cont.minimumHeight() > 80:
+                        hint_cont.setMinimumHeight(100 if is_small else 240)
                     # Count badge
                     badge = info.get("count_badge")
                     if badge:
@@ -1752,7 +1767,13 @@ class AICodingLab(QMainWindow):
 
             # Status icon scaling
             _status_icon = w.findChild(QLabel, "statusIcon")
-            if _status_icon: _status_icon.setStyleSheet(f"font-size: {16 if is_small else 36}px; color: #cbd5e1;")
+            if _status_icon:
+                _ico_sz = 51 if is_small else 115
+                _status_icon.setStyleSheet(f"font-size: {_ico_sz}px; color: rgba(203, 213, 225, 0.4);")
+                from PyQt5.QtWidgets import QGraphicsOpacityEffect
+                _op = QGraphicsOpacityEffect(_status_icon)
+                _op.setOpacity(0.45)
+                _status_icon.setGraphicsEffect(_op)
 
             # Input fields (skip widgets with their own custom styling)
             from PyQt5.QtWidgets import QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit
@@ -1770,22 +1791,27 @@ class AICodingLab(QMainWindow):
             # SpinBoxes — fancy arrows for normal, .ui default for small
             for field in w.findChildren((QSpinBox, QDoubleSpinBox)):
                 if is_small:
-                    # Clear inline style, let .ui stylesheet handle it
-                    field.setStyleSheet("")
-                    _font = field.font()
-                    _font.setPixelSize(4)
-                    field.setFont(_font)
-                else:
-                    _arrow_up, _arrow_down = self._get_spin_arrow_paths()
+                    _obj = field.objectName() or "QSpinBox"
                     field.setStyleSheet(
-                        f"QSpinBox, QDoubleSpinBox {{ border: 1px solid #e2e8f0; border-radius: 6px; padding: 0px 10px; "
-                        f"background-color: #f8fafc; font-size: 17px; color: #0f172a; }}\n"
-                        f"QSpinBox::up-button, QDoubleSpinBox::up-button {{ subcontrol-origin: border; subcontrol-position: top right; width: 20px; background: #e2e8f0; border-left: 1px solid #cbd5e1; border-top-right-radius: 6px; }}\n"
-                        f"QSpinBox::down-button, QDoubleSpinBox::down-button {{ subcontrol-origin: border; subcontrol-position: bottom right; width: 20px; background: #e2e8f0; border-left: 1px solid #cbd5e1; border-bottom-right-radius: 6px; }}\n"
-                        f"QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover {{ background: #cbd5e1; }}\n"
-                        f"QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{ background: #cbd5e1; }}\n"
-                        f"QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url({_arrow_up}); width: 8px; height: 8px; }}\n"
-                        f"QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url({_arrow_down}); width: 8px; height: 8px; }}"
+                        f"#{_obj} {{ border: 1px solid #e2e8f0; border-radius: 3px; padding: 1px 4px; "
+                        f"background-color: #f8fafc; font-size: 4px; color: #0f172a; min-height: 0px; }}"
+                    )
+                else:
+                    _spin_h = 32
+                    field.setMinimumHeight(0)
+                    field.setMaximumHeight(_spin_h)
+                    field.setFixedHeight(_spin_h)
+                    _arrow_up, _arrow_down = self._get_spin_arrow_paths()
+                    _obj = field.objectName() or "QSpinBox"
+                    field.setStyleSheet(
+                        f"#{_obj} {{ border: 1px solid #e2e8f0; border-radius: 6px; padding: 0px 10px; "
+                        f"background-color: #f8fafc; font-size: 17px; color: #0f172a; min-height: 0px; max-height: {_spin_h}px; }}\n"
+                        f"#{_obj}::up-button {{ subcontrol-origin: border; subcontrol-position: top right; width: 20px; background: #e2e8f0; border-left: 1px solid #cbd5e1; border-top-right-radius: 6px; }}\n"
+                        f"#{_obj}::down-button {{ subcontrol-origin: border; subcontrol-position: bottom right; width: 20px; background: #e2e8f0; border-left: 1px solid #cbd5e1; border-bottom-right-radius: 6px; }}\n"
+                        f"#{_obj}::up-button:hover {{ background: #cbd5e1; }}\n"
+                        f"#{_obj}::down-button:hover {{ background: #cbd5e1; }}\n"
+                        f"#{_obj}::up-arrow {{ image: url({_arrow_up}); width: 8px; height: 8px; }}\n"
+                        f"#{_obj}::down-arrow {{ image: url({_arrow_down}); width: 8px; height: 8px; }}"
                     )
 
             # Config scroll area margins
@@ -1990,12 +2016,12 @@ class AICodingLab(QMainWindow):
 
             # Refresh Function Library with scaling
             from src.modules.function_library import populate_functions_tab
-            populate_functions_tab(self.running_mode_widget, is_small=is_small)
+            populate_functions_tab(self.running_mode_widget, is_small=is_small, lang=self.current_lang)
 
             # Workspace Dashboard Scaling
             if hasattr(self, 'workspaceDashboard') and self.workspaceDashboard:
                 d = self.workspaceDashboard
-                card_title_font = 8 if is_small else 11
+                card_title_font = 6 if is_small else 9
                 card_count_font = 12 if is_small else 20
                 for card_name, color in [("cardCode", "#2563eb"), ("cardData", "#16a34a"), ("cardModel", "#9333ea")]:
                     card = d.findChild(QFrame, card_name)
@@ -2006,7 +2032,10 @@ class AICodingLab(QMainWindow):
                         for lbl in card.findChildren(QLabel):
                             if lbl.objectName().startswith("count"):
                                 lbl.setStyleSheet(f"font-size: {card_count_font}px; font-weight: bold; color: {color}; background: transparent;")
+                            elif lbl.text() in ("📄", "🖼️", "💻"):
+                                pass  # Skip icon labels
                             else:
+                                lbl.setWordWrap(True)
                                 lbl.setStyleSheet(f"font-size: {card_title_font}px; font-weight: bold; color: {color}; background: transparent;")
 
             # Editor Buttons
@@ -2082,6 +2111,21 @@ class AICodingLab(QMainWindow):
         # ORC Hub indicator
         if hasattr(self, 'lblOrcText') and self.lblOrcText:
             self.lblOrcText.setText(s.get("ORC_HUB_LABEL", "ORC Hub"))
+
+        # Workspace card titles (Code / Data / Model)
+        _card_label_map = {
+            "cardCode": ("Code", s.get("CODE", "Code")),
+            "cardData": ("Data", s.get("DATA", "Data")),
+            "cardModel": ("Model", s.get("MODEL", "Model")),
+        }
+        for card_name, (fallback, translated) in _card_label_map.items():
+            card = getattr(self, card_name, None)
+            if card:
+                for lbl in card.findChildren(QLabel):
+                    txt = lbl.text()
+                    if txt in ("Code", "Data", "Model", "Thư mục Code", "Dữ liệu", "Mô hình"):
+                        lbl.setText(translated)
+                        break
         if hasattr(self, 'btnOrcRefresh') and self.btnOrcRefresh:
             self.btnOrcRefresh.setToolTip(s.get("ORC_REFRESH_TIP", "Re-check ORC Hub connection"))
         if hasattr(self, '_orc_connected'):
@@ -2537,14 +2581,106 @@ class AICodingLab(QMainWindow):
             self.log_to_console(f"Error loading example: {e}", True)
 
     def create_new_file(self):
-        filename, ok = QInputDialog.getText(self, "Create New File", "Enter filename (without .py):")
-        if ok and filename:
-            result = self.file_manager.create_file(filename, folder='Code')
-            if result['success']:
-                self.add_tab(filename if filename.endswith('.py') else filename + '.py')
-                self.log_to_console(f"File created: {result['path']}")
-            else:
-                self.log_to_console(f"Error: {result['message']}", True)
+        self._show_new_file_dialog(source="workspace")
+
+    def _show_new_file_dialog(self, source="workspace"):
+        """Show a dialog with filename input and template radio buttons."""
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QRadioButton, QDialogButtonBox, QButtonGroup, QFrame
+        
+        s = STRINGS[self.current_lang]
+        is_small = self.is_small_screen
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(s.get("DLG_NEW_FILE_TITLE", "Create New File"))
+        dlg.setWindowFlags(dlg.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        dlg.setMinimumWidth(280 if is_small else 380)
+        dlg.setStyleSheet("""
+            QDialog { background: #1e1e2f; }
+            QLabel { color: #e2e8f0; font-size: 13px; background: transparent; }
+            QLineEdit { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; font-size: 13px; color: #0f172a; }
+            QLineEdit:focus { border: 1px solid #7c3aed; }
+            QRadioButton { color: #e2e8f0; font-size: 12px; spacing: 6px; background: transparent; }
+            QRadioButton::indicator { width: 14px; height: 14px; }
+            QFrame#tmplFrame { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; }
+        """)
+
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 16, 20, 16)
+
+        # Filename input
+        lbl_name = QLabel(s.get("DLG_NEW_FILE_NAME", "Filename (without .py):"))
+        edit_name = QLineEdit()
+        edit_name.setPlaceholderText("my_script")
+        layout.addWidget(lbl_name)
+        layout.addWidget(edit_name)
+
+        # Template selection
+        lbl_tmpl = QLabel(s.get("DLG_NEW_FILE_TMPL", "Template:"))
+        layout.addWidget(lbl_tmpl)
+
+        tmpl_frame = QFrame()
+        tmpl_frame.setObjectName("tmplFrame")
+        tmpl_layout = QVBoxLayout(tmpl_frame)
+        tmpl_layout.setContentsMargins(12, 8, 12, 8)
+        tmpl_layout.setSpacing(6)
+
+        rb_instructive = QRadioButton(s.get("DLG_TMPL_INSTRUCTIVE", "📘 Instructive — full guided template with comments"))
+        rb_blank = QRadioButton(s.get("DLG_TMPL_BLANK", "📄 Blank — minimal setup + loop skeleton"))
+        rb_instructive.setChecked(True)
+
+        tmpl_group = QButtonGroup(dlg)
+        tmpl_group.addButton(rb_instructive, 0)
+        tmpl_group.addButton(rb_blank, 1)
+
+        tmpl_layout.addWidget(rb_instructive)
+        tmpl_layout.addWidget(rb_blank)
+        layout.addWidget(tmpl_frame)
+
+        # OK / Cancel
+        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btn_box.setStyleSheet("""
+            QPushButton { background: #7c3aed; color: white; border-radius: 6px; padding: 6px 18px; font-weight: bold; font-size: 12px; }
+            QPushButton:hover { background: #6d28d9; }
+        """)
+        btn_box.accepted.connect(dlg.accept)
+        btn_box.rejected.connect(dlg.reject)
+        layout.addWidget(btn_box)
+
+        if dlg.exec_() != QDialog.Accepted:
+            return
+
+        filename = edit_name.text().strip()
+        if not filename:
+            return
+
+        use_blank = tmpl_group.checkedId() == 1
+        content = self._get_blank_template() if use_blank else None  # None = default instructive
+
+        result = self.file_manager.create_file(filename, content=content, folder='Code')
+        if result['success']:
+            full_name = filename if filename.endswith('.py') else filename + '.py'
+            self.add_tab(full_name)
+            if source == "tab":
+                self.load_file_by_tab(full_name)
+            self.log_to_console(f"File created: {result['path']}")
+        else:
+            self.log_to_console(f"Error: {result['message']}", True)
+
+    def _get_blank_template(self):
+        return (
+            "# ============================================================\n"
+            "# Setup section\n"
+            "# ============================================================\n"
+            "\n"
+            "\n"
+            "while True:\n"
+            "    # ========================================================\n"
+            "    # Main Loop section\n"
+            "    # ========================================================\n"
+            "    \n"
+            "\n"
+        )
 
     def save_current_file(self):
         """Save the current editor content back to disk."""
@@ -2647,19 +2783,7 @@ class AICodingLab(QMainWindow):
                 if close: close.setStyleSheet("color: #64748b; background: transparent; border: none; font-size: 14px;")
 
     def create_new_tab(self):
-        filename, ok = QInputDialog.getText(self, "New Python Tab", "Enter script name (without .py):")
-        if ok and filename:
-            # Ensure we have the .py extension for consistent lookups
-            full_name = filename if filename.endswith('.py') else filename + '.py'
-            
-            result = self.file_manager.create_file(filename, folder='Code')
-            if result['success']:
-                self.add_tab(full_name)
-                # 🚀 THE FIX: Tell the UI to load the template we just saved to disk
-                self.load_file_by_tab(full_name) 
-                self.log_to_console(f"File created: {result['path']}")
-            else:
-                self.log_to_console(f"Error: {result['message']}", True)
+        self._show_new_file_dialog(source="tab")
                 
 
     def load_file_by_tab(self, filename: str):
@@ -3153,7 +3277,7 @@ class AICodingLab(QMainWindow):
             chart_acc_frame.setLayout(QVBoxLayout())
             chart_acc_frame.layout().setContentsMargins(4, 2, 4, 2)
             chart_acc_frame.setMinimumHeight(300) 
-            self.canvasAcc = TrainingCanvas(chart_acc_frame, title="Accuracy (mAP50) Over Epochs", ylabel="Accuracy (%)", color_train="#10b981", color_val="#f59e0b")
+            self.canvasAcc = TrainingCanvas(chart_acc_frame, title="Accuracy Over Epochs", ylabel="Accuracy (%)", color_train="#10b981", color_val="#f59e0b")
             chart_acc_frame.layout().addWidget(self.canvasAcc)
             self._charts = [self.canvasAcc]
         else:
@@ -3949,16 +4073,37 @@ class AICodingLab(QMainWindow):
             img_grid.addStretch()
             
         scroll.setWidget(scroll_widget)
-        # Placeholder hint label (shown when no images)
+        # Placeholder container (icon + hint text, tightly grouped)
+        hint_container = QWidget()
+        hint_container.setStyleSheet("background: transparent;")
+        hint_vbox = QVBoxLayout(hint_container)
+        hint_vbox.setContentsMargins(0, 0, 0, 0)
+        hint_vbox.setSpacing(0)
+
+        hint_icon = QLabel("🖼️")
+        hint_icon.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignBottom)
+        _ico_sz = 48 if self.is_small_screen else 108
+        hint_icon.setStyleSheet(f"font-size: {_ico_sz}px; color: rgba(203, 213, 225, 0.4); padding: 0; margin: 0;")
+        from PyQt5.QtWidgets import QGraphicsOpacityEffect
+        _op = QGraphicsOpacityEffect(hint_icon)
+        _op.setOpacity(0.45)
+        hint_icon.setGraphicsEffect(_op)
+
         hint_lbl = QLabel("No images collected yet.")
-        hint_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        hint_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignTop)
         _hint_font = 10 if self.is_small_screen else 14
-        hint_lbl.setStyleSheet(f"color: #94a3b8; font-size: {_hint_font}px; font-weight: 50;")
+        hint_lbl.setStyleSheet(f"color: #94a3b8; font-size: {_hint_font}px; font-weight: 50; padding: 0; margin: 0;")
+
+        hint_vbox.addStretch()
+        hint_vbox.addWidget(hint_icon)
+        hint_vbox.addWidget(hint_lbl)
+        hint_vbox.addStretch()
+
         if is_detection:
-            hint_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            hint_lbl.setMinimumHeight(100 if self.is_small_screen else 240)
+            hint_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            hint_container.setMinimumHeight(100 if self.is_small_screen else 240)
         
-        body_layout.addWidget(hint_lbl)
+        body_layout.addWidget(hint_container)
         body_layout.addWidget(scroll)
         scroll.setVisible(False)
         
@@ -4036,6 +4181,8 @@ class AICodingLab(QMainWindow):
             "name_edit": name_edit,
             "count_badge": count_badge,
             "hint_lbl": hint_lbl,
+            "hint_icon": hint_icon,
+            "hint_container": hint_container,
             "img_grid": img_grid,
             "scroll": scroll,
             "images": [],
@@ -4104,6 +4251,8 @@ class AICodingLab(QMainWindow):
         count = len(info["images"])
         info["count_badge"].setText(f"{count} imgs")
         info["hint_lbl"].setVisible(False)
+        if info.get("hint_icon"): info["hint_icon"].setVisible(False)
+        if info.get("hint_container"): info["hint_container"].setVisible(False)
         info["scroll"].setVisible(True)
 
         # Create thumbnail tile
@@ -4190,6 +4339,8 @@ class AICodingLab(QMainWindow):
         info["count_badge"].setText(f"{count} imgs")
         if count == 0:
             info["hint_lbl"].setVisible(True)
+            if info.get("hint_icon"): info["hint_icon"].setVisible(True)
+            if info.get("hint_container"): info["hint_container"].setVisible(True)
             info["scroll"].setVisible(False)
 
         # Remove tile widget from UI
