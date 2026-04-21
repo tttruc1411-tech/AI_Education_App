@@ -112,6 +112,9 @@ def main():
         torch.cuda.synchronize()
     gc.collect()
 
+    # Reduce PyTorch memory fragmentation on shared-memory Jetson
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "max_split_size_mb:128")
+
     # Detect GPU memory and choose device/imgsz accordingly.
     # On Orin Nano (7.6GB shared), the PyQt5 app + OS consume most memory.
     # CUDA OOM crashes at C level (uncatchable), so we must prevent it upfront.
@@ -151,22 +154,22 @@ def main():
 
     model.add_callback("on_train_epoch_end", on_train_epoch_end)
 
-    # Config matching proven train_code.py settings for Jetson Orin Nano
-    # On Jetson, RAM = GPU memory (unified). cache=True eats GPU memory.
-    # Dynamically choose batch/cache/workers based on available memory.
-    _batch = 2
-    _cache = "disk"  # Default to disk cache — safe on shared-memory Jetson
-    _workers = 2
+    # Config for Jetson Orin Nano 8GB — conservative defaults to avoid OOM reboot.
+    # On Jetson, RAM = GPU memory (unified). The PyQt app already uses ~2-3GB.
+    # Always use minimal settings: batch=1, workers=0, disk cache, imgsz=320.
+    imgsz = min(imgsz, 320)
+    _batch = 1
+    _cache = "disk"
+    _workers = 0
 
     if torch.cuda.is_available():
         free_mb = torch.cuda.mem_get_info()[0] / (1024 * 1024)
-        if free_mb < 4500:
-            _batch = 1
-            _workers = 1
-            print(f"STATUS: Tight GPU memory ({free_mb:.0f}MB free). Using batch=1, disk cache.")
         if free_mb >= 5000:
-            _cache = True  # Only use RAM cache when memory is comfortable
-            print(f"STATUS: Sufficient GPU memory ({free_mb:.0f}MB free). Using RAM cache.")
+            _batch = 2
+            _workers = 1
+            print(f"STATUS: Good GPU memory ({free_mb:.0f}MB free). Using batch=2.")
+        else:
+            print(f"STATUS: Limited GPU memory ({free_mb:.0f}MB free). Using batch=1, workers=0, disk cache.")
 
     train_config = {
         "batch": _batch,
@@ -201,7 +204,6 @@ def main():
     best_pt = Path(f"{results.save_dir}/weights/best.pt")
     local_pt = local_dir / "best.pt"
     local_onnx = local_dir / "best.onnx"
-    local_engine = local_dir / "best.engine"
 
     if best_pt.exists():
         shutil.copy2(best_pt, local_pt)
@@ -221,11 +223,11 @@ def main():
     # Done in-process so CUDA context stays alive (separate QProcess can't see GPU on Jetson)
     import time as _time
 
-    print("STATUS: Converting to TensorRT Engine...")
+    print("STATUS: Converting to ONNX...")
     sys.stdout.flush()
 
     # Step 1: PT → ONNX
-    print("CONVERT:[1/2] Exporting PT to ONNX...")
+    print("CONVERT:[1/1] Exporting PT to ONNX...")
     sys.stdout.flush()
     try:
         export_model = YOLO(str(local_pt))
@@ -247,76 +249,11 @@ def main():
 
         onnx_size = local_onnx.stat().st_size / (1024 * 1024)
         print(f"CONVERT:  ONNX exported ({onnx_size:.1f} MB)")
+        print(f"RESULT_MODEL_ONNX:{local_onnx}")
     except Exception as e:
         print(f"CONVERT:  ONNX export failed: {e}")
         print("STATUS: Finished!")
         sys.exit(0)
-
-    sys.stdout.flush()
-
-    # Step 2: ONNX → TensorRT Engine (raw TRT API — proven on Jetson)
-    print("CONVERT:[2/2] Building TensorRT engine (FP16, ~30-40s)...")
-    sys.stdout.flush()
-    try:
-        import tensorrt as trt
-
-        TRT_WORKSPACE_GB = 2
-        TRT_OPT_LEVEL = 0
-
-        logger = trt.Logger(trt.Logger.WARNING)
-        builder = trt.Builder(logger)
-        network = builder.create_network(
-            1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
-        )
-        parser = trt.OnnxParser(network, logger)
-
-        with open(str(local_onnx), "rb") as f:
-            if not parser.parse(f.read()):
-                for i in range(parser.num_errors):
-                    print(f"CONVERT:  Parse error: {parser.get_error(i)}")
-                print("STATUS: Finished!")
-                sys.exit(0)
-
-        config = builder.create_builder_config()
-        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, TRT_WORKSPACE_GB << 30)
-        config.set_flag(trt.BuilderFlag.FP16)
-        config.builder_optimization_level = TRT_OPT_LEVEL
-
-        # Timing cache
-        project_root = Path(__file__).resolve().parents[3]
-        cache_file = project_root / "timing.cache"
-        if cache_file.exists():
-            with open(str(cache_file), "rb") as f:
-                cache_data = f.read()
-            cache = config.create_timing_cache(cache_data)
-            config.set_timing_cache(cache, ignore_mismatch=True)
-
-        t0 = _time.time()
-        engine = builder.build_serialized_network(network, config)
-        elapsed = _time.time() - t0
-
-        if engine is None:
-            print("CONVERT:  Engine build failed!")
-            print("STATUS: Finished!")
-            sys.exit(0)
-
-        with open(str(local_engine), "wb") as f:
-            f.write(engine)
-
-        # Save timing cache for next time
-        try:
-            cache = config.get_timing_cache()
-            with open(str(cache_file), "wb") as f:
-                f.write(cache.serialize())
-        except Exception:
-            pass
-
-        engine_size = local_engine.stat().st_size / (1024 * 1024)
-        print(f"CONVERT:  Engine built ({engine_size:.1f} MB) [{elapsed:.1f}s]")
-        print(f"RESULT_MODEL_ENGINE:{local_engine}")
-
-    except Exception as e:
-        print(f"CONVERT:  TensorRT build failed: {e}")
 
     print("STATUS: Finished!")
 

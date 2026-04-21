@@ -2958,6 +2958,8 @@ class AICodingLab(QMainWindow):
         self._convert_process = None
         self._training_is_running = False
         self._last_exported_engine = None
+        self._last_exported_onnx = None
+        self._selected_backbone = "yolov8n.pt"
         self._train_dot_count = 0
         self._train_dot_timer = QTimer(self)
         self._train_dot_timer.setInterval(500)
@@ -3077,7 +3079,16 @@ class AICodingLab(QMainWindow):
             self.btnCapSize320.clicked.connect(lambda: set_size_unified(320))
             self.btnCapSize640.clicked.connect(lambda: set_size_unified(640))
 
-        
+
+        # Wire Backbone Model combobox
+        self._backbone_map = {"YOLOv8 Nano": "yolov8n.pt", "YOLOv11 Nano": "yolo11n.pt"}
+        self.cmbBackbone = self.training_mode_widget.findChild(QComboBox, "cmbBackbone")
+        if self.cmbBackbone:
+            self.cmbBackbone.setCurrentIndex(0)
+            self.cmbBackbone.currentTextChanged.connect(
+                lambda text: setattr(self, '_selected_backbone', self._backbone_map.get(text, "yolov8n.pt"))
+            )
+
         # Wire Add Class
         self.btnAddClass = self.training_mode_widget.findChild(QPushButton, "btnAddClass")
         if self.btnAddClass:
@@ -4752,24 +4763,24 @@ class AICodingLab(QMainWindow):
         if not self._project_initialized:
             self.log_to_console("Error: Project not initialized.", is_error=True)
             return
-        
-        # Check for backbone model yolov8n.pt (Stored in backend for protection)
+
+        # Check for selected backbone model
         project_root = os.path.dirname(os.path.abspath(__file__))
-        backbone_path = Path(project_root) / "src" / "modules" / "training" / "yolov8n.pt"
-        
+        backbone_path = Path(project_root) / "src" / "modules" / "training" / self._selected_backbone
+
         if not backbone_path.exists():
             self.log_to_console(f"Error: Backbone model not found at {backbone_path}", is_error=True)
-            self.log_to_console("Please place 'yolov8n.pt' in the src/modules/training/ folder.")
+            self.log_to_console(f"Please place '{self._selected_backbone}' in the src/modules/training/ folder.")
             return
 
         # 2. Get config from UI
         spin_epochs = self.training_mode_widget.findChild(QSpinBox, "spinEpochs")
         epochs = spin_epochs.value() if spin_epochs else 20
         self._training_total_epochs = epochs
-        
+
         # Image size
         imgsz = self._capture_size
-        
+
         # Class names (from Tag Panel)
         info = self._class_data[0] # Detection mode uses first class card
         if not info or "tag_panel" not in info:
@@ -4805,6 +4816,7 @@ class AICodingLab(QMainWindow):
         # Clean stale model files from previous runs to prevent false success detection
         self._local_model_path = None
         self._last_exported_engine = None
+        self._last_exported_onnx = None
         model_dir = os.path.join(project_root, "src", "modules", "training")
         for stale in ["best.pt", "best.onnx", "best.engine"]:
             stale_path = os.path.join(model_dir, stale)
@@ -4909,6 +4921,9 @@ class AICodingLab(QMainWindow):
                         self._convert_dot_count = 0
                         self._convert_dot_timer.start()
 
+            elif line.startswith("RESULT_MODEL_ONNX:"):
+                self._last_exported_onnx = line[18:].strip()
+
             elif line.startswith("RESULT_MODEL_ENGINE:"):
                 self._last_exported_engine = line[20:].strip()
 
@@ -4983,17 +4998,17 @@ class AICodingLab(QMainWindow):
             # Stop convert animation
             self._convert_dot_timer.stop()
 
-            # Check if engine was produced
+            # Check if ONNX was produced
             project_root = os.path.dirname(os.path.abspath(__file__))
-            local_engine = os.path.join(project_root, "src", "modules", "training", "best.engine")
-            has_engine = (self._last_exported_engine and os.path.exists(self._last_exported_engine)) or os.path.exists(local_engine)
+            local_onnx = os.path.join(project_root, "src", "modules", "training", "best.onnx")
+            has_onnx = (self._last_exported_onnx and os.path.exists(self._last_exported_onnx)) or os.path.exists(local_onnx)
 
-            if has_engine:
-                self.txtTrainLog.appendPlainText("> Engine model ready. Starting validation...")
-                self.log_to_console("Engine ready. Starting live validation...")
+            if has_onnx:
+                self.txtTrainLog.appendPlainText("> ONNX model ready. Starting validation...")
+                self.log_to_console("ONNX ready. Starting live validation...")
             else:
-                self.txtTrainLog.appendPlainText("> Engine conversion failed. Validating with .pt...")
-                self.log_to_console("Engine conversion failed. Validating with .pt...")
+                self.txtTrainLog.appendPlainText("> ONNX conversion failed. Validating with .pt...")
+                self.log_to_console("ONNX conversion failed. Validating with .pt...")
 
             # Restore Save button for user to choose name and save
             if hasattr(self, 'btnSaveModel') and self.btnSaveModel:
@@ -5021,15 +5036,17 @@ class AICodingLab(QMainWindow):
         # Stop any active data-collection camera first
         self._stop_webcam()
 
-        # Determine model path (prefer .engine, fallback to .pt)
+        # Determine model path (prefer .onnx, fallback to .pt)
         project_root = os.path.dirname(os.path.abspath(__file__))
-        local_engine = os.path.join(project_root, "src", "modules", "training", "best.engine")
+        local_onnx = os.path.join(project_root, "src", "modules", "training", "best.onnx")
         local_pt = os.path.join(project_root, "src", "modules", "training", "best.pt")
 
-        if self._local_model_path and os.path.exists(self._local_model_path):
+        if self._last_exported_onnx and os.path.exists(self._last_exported_onnx):
+            model_path = self._last_exported_onnx
+        elif os.path.exists(local_onnx):
+            model_path = local_onnx
+        elif self._local_model_path and os.path.exists(self._local_model_path):
             model_path = self._local_model_path
-        elif os.path.exists(local_engine):
-            model_path = local_engine
         elif os.path.exists(local_pt):
             model_path = local_pt
         else:
@@ -5139,19 +5156,19 @@ class AICodingLab(QMainWindow):
             if hint: hint.deleteLater()
 
     def _save_trained_model(self):
-        """Copy the trained .engine model to projects/model/."""
+        """Copy the trained .onnx model to projects/model/."""
         from PyQt5.QtWidgets import QMessageBox
 
-        # Only save engine — conversion is still running, wait for it
+        # Only save model — conversion is still running, wait for it
         if self._convert_process and self._convert_process.state() != QProcess.ProcessState.NotRunning:
-            QMessageBox.information(self, "Please Wait", "Engine conversion is still running.\nThe model will be saved automatically when done.")
+            QMessageBox.information(self, "Please Wait", "ONNX conversion is still running.\nThe model will be saved automatically when done.")
             return
 
         project_root = os.path.dirname(os.path.abspath(__file__))
-        local_engine = os.path.join(project_root, "src", "modules", "training", "best.engine")
+        local_onnx = os.path.join(project_root, "src", "modules", "training", "best.onnx")
 
-        if not os.path.exists(local_engine):
-            QMessageBox.warning(self, "No Engine Model", "No .engine model found.\nConversion may have failed — check the console log.")
+        if not os.path.exists(local_onnx):
+            QMessageBox.warning(self, "No ONNX Model", "No .onnx model found.\nConversion may have failed — check the console log.")
             return
 
         new_name, ok = QInputDialog.getText(
@@ -5159,15 +5176,15 @@ class AICodingLab(QMainWindow):
         )
         if not ok or not new_name:
             return
-        if not new_name.endswith(".engine"):
-            new_name += ".engine"
+        if not new_name.endswith(".onnx"):
+            new_name += ".onnx"
 
         dest_path = os.path.join("projects", "model", new_name)
         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
 
         try:
             import shutil
-            shutil.copy2(local_engine, dest_path)
+            shutil.copy2(local_onnx, dest_path)
             self.log_to_console(f"Model saved to: projects/model/{new_name}")
             self.txtTrainLog.appendPlainText(f"✨ Saved to projects/model/{new_name}")
             self.update_workspace_counts()

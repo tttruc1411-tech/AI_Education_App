@@ -9,15 +9,7 @@ os.environ["ORT_LOG_LEVEL"] = "ERROR"
 import cv2
 import numpy as np
 
-# Temporarily silence fd-level stderr during ORT import to suppress
-# the C++ "device_discovery.cc" warning on Jetson (writes to fd 2 directly)
-_devnull = os.open(os.devnull, os.O_WRONLY)
-_old_stderr = os.dup(2)
-os.dup2(_devnull, 2)
 import onnxruntime as ort
-os.dup2(_old_stderr, 2)
-os.close(_devnull)
-os.close(_old_stderr)
 
 ort.set_default_logger_severity(3)  # 3 = ERROR only
 
@@ -140,47 +132,78 @@ def Update_Dashboard(camera_frame, var_name=None, var_value=None):
 
 def Draw_Detections_MultiClass(camera_frame, outputs, classes, conf_threshold=0.50):
     """
-    Advanced block that parses raw YOLO ONNX output, scales coordinates, 
+    Advanced block that parses raw YOLO ONNX output, scales coordinates,
     applies Non-Maximum Suppression (NMS), and draws the results!
+    Supports both YOLOv10 [1, 300, 6] and YOLOv8/v11 [1, N_classes+4, N_anchors] formats.
     """
     if len(outputs) == 0: return 0
-    
-    fh, fw, _ = camera_frame.shape 
-    detections = outputs[0][0]  # Standard [1, 300, 6] YOLO shape
-    
+    conf_threshold = float(conf_threshold)
+
+    fh, fw, _ = camera_frame.shape
+    raw = outputs[0]  # shape: [1, 300, 6] or [1, C+4, N]
+
     boxes, confidences, class_ids = [], [], []
-    
-    for i in range(len(detections)):
-        data = detections[i]
-        
-        # ℹ️ DYNAMIC COLUMN FIX
-        if data[4] > 1.0 or data[4].is_integer():
-            class_id = int(data[4])
-            confidence = float(data[5])
-        else:
-            confidence = float(data[4])
-            class_id = int(data[5])
-        
-        if confidence > conf_threshold: 
-            # 📏 SCALING LOGIC
-            if data[2] <= 1.5:  
-                x1 = int(data[0] * fw)
-                y1 = int(data[1] * fh)
-                x2 = int(data[2] * fw)
-                y2 = int(data[3] * fh)
-            else:               
-                x1 = int(data[0] * (fw / 640))
-                y1 = int(data[1] * (fh / 640))
-                x2 = int(data[2] * (fw / 640))
-                y2 = int(data[3] * (fh / 640))
-                
-            width = x2 - x1
-            height = y2 - y1
-            
-            boxes.append([x1, y1, width, height])
-            confidences.append(confidence)
-            class_ids.append(class_id)
- 
+
+    # Detect output format by shape
+    if raw.ndim == 3 and raw.shape[1] < raw.shape[2]:
+        # YOLOv8/v11 transposed format: [1, 4+num_classes, num_anchors]
+        # Transpose to [num_anchors, 4+num_classes]
+        data = raw[0].T
+        num_classes = data.shape[1] - 4
+
+        # Determine model input size from anchor count (deterministic)
+        # YOLOv8/v11 anchors: 320→2100, 640→8400
+        n_anchors = raw.shape[2]
+        img_size = 320 if n_anchors <= 4200 else 640
+        sx, sy = fw / img_size, fh / img_size
+
+        for row in data:
+            scores = row[4:]
+            cid = int(np.argmax(scores))
+            cf = float(scores[cid])
+            if cf < conf_threshold:
+                continue
+            cx, cy, w, h = row[:4]
+            x1 = int((cx - w / 2) * sx)
+            y1 = int((cy - h / 2) * sy)
+            boxes.append([x1, y1, int(w * sx), int(h * sy)])
+            confidences.append(cf)
+            class_ids.append(cid)
+    else:
+        # YOLOv10 format: [1, 300, 6] — [x1, y1, x2, y2, conf/cls, cls/conf]
+        detections = raw[0]
+
+        for i in range(len(detections)):
+            det = detections[i]
+
+            # DYNAMIC COLUMN FIX
+            if det[4] > 1.0 or det[4].is_integer():
+                class_id = int(det[4])
+                confidence = float(det[5])
+            else:
+                confidence = float(det[4])
+                class_id = int(det[5])
+
+            if confidence > conf_threshold:
+                # SCALING LOGIC
+                if det[2] <= 1.5:
+                    x1 = int(det[0] * fw)
+                    y1 = int(det[1] * fh)
+                    x2 = int(det[2] * fw)
+                    y2 = int(det[3] * fh)
+                else:
+                    x1 = int(det[0] * (fw / 640))
+                    y1 = int(det[1] * (fh / 640))
+                    x2 = int(det[2] * (fw / 640))
+                    y2 = int(det[3] * (fh / 640))
+
+                width = x2 - x1
+                height = y2 - y1
+
+                boxes.append([x1, y1, width, height])
+                confidences.append(confidence)
+                class_ids.append(class_id)
+
     # Filtering overlapping boxes down to exactly 1 perfect box!
     indices = cv2.dnn.NMSBoxes(boxes, confidences, conf_threshold, 0.4)
     
@@ -221,26 +244,41 @@ def Load_ONNX_Model(model_path):
 
     available = ort.get_available_providers()
     providers = []
-    if 'TensorrtExecutionProvider' in available:
-        providers.append('TensorrtExecutionProvider')
     if 'CUDAExecutionProvider' in available:
-        providers.append('CUDAExecutionProvider')
+        providers.append(('CUDAExecutionProvider', {'device_id': 0}))
     providers.append('CPUExecutionProvider')
 
-    device = "GPU" if len(providers) > 1 else "CPU"
+    device = "GPU" if 'CUDAExecutionProvider' in available else "CPU"
     print(f"[OK] Loading AI Model using ONNX Runtime ({device})...")
+
+    # Suppress C-level stderr during session creation (CUDA init warnings)
+    # to prevent corrupting the IMG: stdout protocol
+    _dn = os.open(os.devnull, os.O_WRONLY)
+    _se = os.dup(2)
+    os.dup2(_dn, 2)
     session = ort.InferenceSession(model_path, providers=providers)
+    os.dup2(_se, 2)
+    os.close(_dn)
+    os.close(_se)
     return session
 
 def Run_ONNX_Model(model_session, camera_frame, img_size=640):
     """
     Prepares a camera frame and runs it through the loaded ONNX session.
     img_size is forced to a square (e.g., 640x640 or 320x320) per YOLO standards.
+    Auto-detects model input size when possible.
     """
     if model_session is None or camera_frame is None:
         return []
-        
-    input_name = model_session.get_inputs()[0].name
+
+    img_size = int(img_size)
+    # Auto-detect model's expected input size to prevent shape mismatch
+    model_input = model_session.get_inputs()[0]
+    input_name = model_input.name
+    input_shape = model_input.shape  # e.g. [1, 3, 320, 320]
+    if len(input_shape) == 4 and isinstance(input_shape[2], int) and input_shape[2] in (320, 640):
+        img_size = input_shape[2]
+
     # Pre-processing: Resizes and colors the frame for the AI
     blob = cv2.dnn.blobFromImage(camera_frame, 1/255.0, (img_size, img_size), swapRB=True, crop=False)
     

@@ -62,6 +62,7 @@
     QPushButton#btnCapSize320:hover:!checked, QPushButton#btnCapSize640:hover:!checked { background: rgba(255, 255, 255, 0.25); }
     QPushButton#btnCapSize320:checked, QPushButton#btnCapSize640:checked { background: white; color: #3b82f6; border-color: white; }
 
+
     QPushButton#btnStartTraining {
         background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #16a34a, stop:1 #059669);
         color: white; border-radius: 8px; font-weight: bold; border: none;
@@ -300,10 +301,10 @@
               <property name="spacing"><number>2</number></property>
               <item><widget class="QLabel" name="lblBackbone"><property name="text"><string>Pre-trained Model</string></property></widget></item>
               <item>
-               <!-- Changed from QComboBox to QLabel to statically show YOLOv8n -->
-               <widget class="QLabel" name="lblStaticBackbone">
-                <property name="styleSheet"><string notr="true">QLabel { font-weight: bold; color: #16a34a; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 6px; font-size: 15px;}</string></property>
-                <property name="text"><string>YOLOv8 Nano (Fastest)</string></property>
+               <widget class="QComboBox" name="cmbBackbone">
+                <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+                <item><property name="text"><string>YOLOv8 Nano</string></property></item>
+                <item><property name="text"><string>YOLOv11 Nano</string></property></item>
                </widget>
               </item>
              </layout>
