@@ -88,18 +88,20 @@ class TrainingCanvas(FigureCanvas):
     def set_small_mode(self, is_small):
         if not hasattr(self, 'axes') or self.axes is None:
             return
-        size = 8 if is_small else 12
-        lbl_size = 7 if is_small else 9
+        size = 5 if is_small else 12
+        lbl_size = 6 if is_small else 9
         try:
             self.axes.title.set_fontsize(size)
+            self.axes.title.set_pad(1 if is_small else 6)
             curr_label = self.axes.get_ylabel()
             if curr_label:
-                self.axes.set_ylabel(str(curr_label), fontsize=lbl_size)
-            self.axes.tick_params(labelsize=lbl_size-1)
+                self.axes.set_ylabel(str(curr_label), fontsize=lbl_size, labelpad=1 if is_small else 4)
+            self.axes.tick_params(labelsize=lbl_size-1, pad=1 if is_small else 4)
+
             if self.axes.get_legend():
                 for text in self.axes.get_legend().get_texts():
                     text.set_fontsize(lbl_size-1)
-            self.draw_idle() # Use draw_idle instead of draw for better stability
+            self.draw_idle()
         except Exception:
             pass
 
@@ -407,7 +409,7 @@ class CurriculumCard(QFrame):
     def __init__(self, filename, title, level, icon, color, desc, on_load_click, is_small=False):
         super().__init__()
         self.filename = filename
-        card_h = 70 if is_small else 90
+        card_h = 50 if is_small else 90
         self.setMinimumHeight(card_h)
         self.setMaximumHeight(card_h + 20)
         
@@ -436,8 +438,8 @@ class CurriculumCard(QFrame):
         layout.setSpacing(margin)
         
         # 1. Icon
-        icon_size = 30 if is_small else 40
-        icon_font = 18 if is_small else 24
+        icon_size = 24 if is_small else 40
+        icon_font = 12 if is_small else 24
         icon_str = icon.strip('"\' ')
         icon_lbl = QLabel()
         from PyQt5.QtGui import QPixmap, QFont
@@ -466,7 +468,7 @@ class CurriculumCard(QFrame):
         
         # --- ROW 1: Title + Badge ---
         row1 = QHBoxLayout()
-        title_font = 13 if is_small else 15
+        title_font = 8 if is_small else 15
         title_lbl = QLabel(title)
         title_lbl.setStyleSheet(f"font-weight: bold; font-size: {title_font}px; color: #1e293b; background: transparent;")
         
@@ -475,9 +477,10 @@ class CurriculumCard(QFrame):
         badge_bg = badge_colors.get(level, "#64748b")
         badge = QLabel(level)
         badge.setAlignment(Qt.AlignCenter)
-        badge_w, badge_h = (60, 16) if is_small else (80, 20)
+        badge_w, badge_h = (52, 14) if is_small else (80, 20)
+        badge_fs = 6 if is_small else 9
         badge.setFixedSize(badge_w, badge_h)
-        badge.setStyleSheet(f"background: {badge_bg}; color: white; border-radius: 6px; font-size: 9px; font-weight: bold;")
+        badge.setStyleSheet(f"background: {badge_bg}; color: white; border-radius: {badge_fs}px; font-size: {badge_fs}px; font-weight: bold;")
         
         row1.addWidget(title_lbl, 1)
         row1.addWidget(badge)
@@ -485,14 +488,14 @@ class CurriculumCard(QFrame):
         
         # --- ROW 2: Description + Load Button ---
         row2 = QHBoxLayout()
-        desc_font = 11 if is_small else 13
+        desc_font = 6 if is_small else 13
         desc_lbl = QLabel(desc)
         desc_lbl.setStyleSheet(f"color: #475569; font-size: {desc_font}px; background: transparent;")
         
         # Load Button
         btn_load = QPushButton("Load")
         btn_load.setCursor(Qt.PointingHandCursor)
-        btn_w, btn_h = (60, 24) if is_small else (80, 28)
+        btn_w, btn_h = (52, 14) if is_small else (80, 28)
         btn_load.setFixedSize(btn_w, btn_h)
         btn_load.setStyleSheet(f"""
             QPushButton {{ 
@@ -1586,13 +1589,17 @@ class AICodingLab(QMainWindow):
             for chart in self._charts:
                 if chart:
                     chart.set_small_mode(is_small)
+                    # Scale chart frame height
+                    parent_frame = chart.parent()
+                    if parent_frame:
+                        parent_frame.setMinimumHeight(160 if is_small else 300)
         
         # 4. Handle Training Mode scaling if possible
         if hasattr(self, 'training_mode_widget') and self.training_mode_widget:
             w = self.training_mode_widget
             
             # Panel Titles — all headers uniform
-            t_size = 9 if is_small else 18
+            t_size = 12 if is_small else 22
             t_pad = '2px 6px' if is_small else '6px 16px'
             _title_ss = f"font-weight: bold; font-size: {t_size}px; color: white; padding: {t_pad}; background: transparent;"
             for header_name in ["leftHeader", "configHeader", "progressHeader", "rightHeader"]:
@@ -1609,8 +1616,8 @@ class AICodingLab(QMainWindow):
             btn_font = 11 if is_small else 17
             btn_pad = 2 if is_small else 6
             btn_fw = "normal" if is_small else "600"
-            btn_h = 24 if is_small else 34    # Drop from 26
-            cap_font = 6 if is_small else 13  # Drop from 9/14
+            btn_h = 24 if is_small else 34
+            cap_font = 8 if is_small else 13
             for btn in w.findChildren(QPushButton):
                 txt = btn.text()
                 if "Webcam" in txt or "Upload" in txt or ("Label" in txt and "Save" not in txt and "Continue" not in txt):
@@ -1638,21 +1645,25 @@ class AICodingLab(QMainWindow):
                         QPushButton:checked {{ background: white; color: #3b82f6; border-color: white; }}
                     """)
 
-            # Recognition / Detection toggle buttons - REDUCE SIZE BY 20%
-            _tog_fs = 7 if is_small else 14  # Drop from 8/15 to 7/12
-            _tog_pad = '1px 4px' if is_small else '5px 13px' # Drop from 2x6/6x16
+            # Recognition / Detection toggle buttons
+            _tog_fs = 8 if is_small else 14 
+            _tog_pad = '1px 2px' if is_small else '5px 13px'
+            _tog_br = 4 if is_small else 8
             for _tog_name in ["btnRecognition", "btnDetection"]:
                 _tog_btn = w.findChild(QPushButton, _tog_name)
                 if _tog_btn:
-                    import re as _re
-                    _ss = _tog_btn.styleSheet()
-                    _ss = _re.sub(r"font-size:\s*\d+px", f"font-size: {_tog_fs}px", _ss)
-                    _ss = _re.sub(r"padding:\s*\d+px\s*\d+px", f"padding: {_tog_pad}", _ss)
-                    _tog_btn.setStyleSheet(_ss)
+                    _tog_btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.3);
+                            border-radius: {_tog_br}px; padding: {_tog_pad}; font-weight: 800; color: #e0e7ff; font-size: {_tog_fs}px;
+                        }}
+                        QPushButton:hover:!checked {{ background: rgba(255, 255, 255, 0.3); }}
+                        QPushButton:checked {{ background: white; color: #4338ca; border-color: white; }}
+                    """)
 
             # Project name row — bigger for normal resolution
-            _proj_h = 20 if is_small else 26
-            _proj_fs = 12 if is_small else 17
+            _proj_h = 18 if is_small else 26
+            _proj_fs = 10 if is_small else 16
             _proj_btn_fs = 10 if is_small else 14
             if hasattr(self, 'lblProjName') and self.lblProjName:
                 self.lblProjName.setFixedHeight(_proj_h)
@@ -1696,7 +1707,7 @@ class AICodingLab(QMainWindow):
             if hasattr(self, '_class_data'):
                 _badge_w = 48 if is_small else 68
                 _badge_font = 10 if is_small else 16
-                _hint_font = 12 if is_small else 16
+                _hint_font = 10 if is_small else 16
                 for info in self._class_data:
                     if info is None: continue
                     # Scroll area min height
@@ -1727,8 +1738,8 @@ class AICodingLab(QMainWindow):
                         tag_panel.set_small_mode(is_small)
 
             # Form Labels and Inputs
-            lbl_size = 4 if is_small else 17
-            input_size = 4 if is_small else 17
+            lbl_size = 8 if is_small else 17
+            input_size = 8 if is_small else 17
 
             # Target specific label types via name or class
             all_labels = w.findChildren(QLabel)
@@ -1738,18 +1749,18 @@ class AICodingLab(QMainWindow):
                 if lbl.objectName() in target_labels:
                     lbl.setStyleSheet(f"font-weight: bold; font-size: {lbl_size}px; color: #1e293b; background: transparent;")
                 elif lbl.objectName() in static_labels:
-                    _sl_fs = 3 if is_small else 15
+                    _sl_fs = 8 if is_small else 15
                     _sl_pad = '1px' if is_small else '6px'
                     lbl.setStyleSheet(f"QLabel {{ font-weight: bold; color: #16a34a; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 3px; padding: {_sl_pad}; font-size: {_sl_fs}px;}}")
                 elif lbl.objectName() == "lblValueAccuracy" or lbl.objectName() == "lblValueLoss" or lbl.objectName() == "metricValue":
-                    mv_size = 5 if is_small else 20
+                    mv_size = 10 if is_small else 20
                     lbl.setStyleSheet(f"color: #0f172a; font-size: {mv_size}px; font-weight: bold; background: transparent;")
                 elif lbl.objectName() == "metricTitle":
-                    mt_size = 3 if is_small else 14
+                    mt_size = 8 if is_small else 14
                     lbl.setStyleSheet(f"color: rgba(0,0,0,0.6); font-size: {mt_size}px; font-weight: bold; background: transparent;")
 
             # Epoch progress labels
-            _ep_fs = 3 if is_small else 14
+            _ep_fs = 8 if is_small else 14
             _ep_prog = w.findChild(QLabel, "lblEpochProgTitle")
             if _ep_prog: _ep_prog.setStyleSheet(f"font-weight: 600; color: #475569; font-size: {_ep_fs}px;")
             _ep_cnt = w.findChild(QLabel, "lblEpochCounter")
@@ -1757,13 +1768,13 @@ class AICodingLab(QMainWindow):
 
             # Dataset card labels
             _ds_title = w.findChild(QLabel, "dsTitle")
-            if _ds_title: _ds_title.setStyleSheet(f"font-weight: bold; color: #1e3a8a; font-size: {3 if is_small else 17}px;")
+            if _ds_title: _ds_title.setStyleSheet(f"font-weight: bold; color: #1e3a8a; font-size: {8 if is_small else 17}px;")
             _ds_hint = w.findChild(QLabel, "lblDsHint")
-            if _ds_hint: _ds_hint.setStyleSheet(f"color: #3b82f6; font-size: {3 if is_small else 14}px; font-weight: normal;")
+            if _ds_hint: _ds_hint.setStyleSheet(f"color: #3b82f6; font-size: {6 if is_small else 14}px; font-weight: normal;")
             _ds_count = w.findChild(QLabel, "lblImageCountLarge")
-            if _ds_count: _ds_count.setStyleSheet(f"font-size: {9 if is_small else 28}px; font-weight: bold; color: #2563eb;")
+            if _ds_count: _ds_count.setStyleSheet(f"font-size: {12 if is_small else 28}px; font-weight: bold; color: #2563eb;")
             _ds_icon = w.findChild(QLabel, "dsIcon")
-            if _ds_icon and is_small: _ds_icon.setStyleSheet(f"color: #1e40af; font-size: 3px;")
+            if _ds_icon and is_small: _ds_icon.setStyleSheet(f"color: #1e40af; font-size: 8px;")
 
             # Status icon scaling
             _status_icon = w.findChild(QLabel, "statusIcon")
@@ -1794,7 +1805,7 @@ class AICodingLab(QMainWindow):
                     _obj = field.objectName() or "QSpinBox"
                     field.setStyleSheet(
                         f"#{_obj} {{ border: 1px solid #e2e8f0; border-radius: 3px; padding: 1px 4px; "
-                        f"background-color: #f8fafc; font-size: 4px; color: #0f172a; min-height: 0px; }}"
+                        f"background-color: #f8fafc; font-size: 8px; color: #0f172a; min-height: 0px; }}"
                     )
                 else:
                     _spin_h = 32
@@ -1823,13 +1834,14 @@ class AICodingLab(QMainWindow):
 
             # Training Log
             if hasattr(self, 'txtTrainLog') and self.txtTrainLog:
-                log_font = 3 if is_small else 10
+                log_font = 5 if is_small else 10
+                self.txtTrainLog.setMaximumHeight(30 if is_small else 120)
                 self.txtTrainLog.setStyleSheet(f"background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; \n"
                                              f"font-family: 'Consolas'; font-size: {log_font}px; padding: 2px; border-radius: 0 0 3px 3px;")
 
             # Action Buttons
             btn_add_size = 4 if is_small else 16
-            btn_start_size = 5 if is_small else 16
+            btn_start_size = 8 if is_small else 16
             btn_add = w.findChild(QPushButton, "btnAddClass")
             if btn_add:
                 btn_add.setStyleSheet(f"border: 2px dashed #cbd5e1; background: #f8fafc; color: #64748b; "
@@ -1842,14 +1854,14 @@ class AICodingLab(QMainWindow):
 
             # Validation buttons
             if hasattr(self, 'btnStopValidation') and self.btnStopValidation:
-                _vb_fs = 4 if is_small else 14
+                _vb_fs = 8 if is_small else 14
                 _vb_h = 16 if is_small else 36
                 self.btnStopValidation.setFixedHeight(_vb_h)
                 import re as _re
                 _ss = _re.sub(r"font-size:\s*\d+px", f"font-size: {_vb_fs}px", self.btnStopValidation.styleSheet())
                 self.btnStopValidation.setStyleSheet(_ss)
             if hasattr(self, 'btnSaveModel') and self.btnSaveModel:
-                _vb_fs = 4 if is_small else 14
+                _vb_fs = 8 if is_small else 14
                 _vb_h = 16 if is_small else 36
                 self.btnSaveModel.setFixedHeight(_vb_h)
                 import re as _re
@@ -1857,8 +1869,8 @@ class AICodingLab(QMainWindow):
                 self.btnSaveModel.setStyleSheet(_ss)
 
             # Status messages
-            msg_size = 5 if is_small else 15
-            hint_size = 3 if is_small else 14
+            msg_size = 7 if is_small else 15
+            hint_size = 6 if is_small else 14
             status_msg = w.findChild(QLabel, "statusMsg")
             if status_msg: status_msg.setStyleSheet(f"font-weight: bold; font-size: {msg_size}px; color: #94a3b8;")
             status_hint = w.findChild(QLabel, "statusHint")
@@ -1956,8 +1968,8 @@ class AICodingLab(QMainWindow):
         # 5. Handle Running Mode scaling if possible
         if hasattr(self, 'running_mode_widget') and self.running_mode_widget:
             rw = self.running_mode_widget
-            title_size = 6 if is_small else 18
-            _t_fw = "normal" if is_small else "bold"
+            title_size = 12 if is_small else 20
+            _t_fw = "bold"
 
             # Panel headers — use #id selector to override .ui global stylesheet
             for t_name in ["hubTitle", "editorTitle", "camTitle", "resTitle", "lblCT", "lblCCT"]:
@@ -1965,33 +1977,40 @@ class AICodingLab(QMainWindow):
                 if t_lbl:
                     t_lbl.setStyleSheet(f"#{t_name} {{ font-weight: {_t_fw}; font-size: {title_size}px; color: white; background: transparent; padding: 1px 4px; }}")
 
+            # Hub header height/padding — shrink for small screen
+            hubHeader = rw.findChild(QFrame, "hubHeader")
+            if hubHeader:
+                _hh_pad = '2px 0px' if is_small else '8px 0px'
+                hubHeader.setStyleSheet(f"QFrame#hubHeader {{ background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #7c3aed, stop:1 #2563eb); border: none; padding: {_hh_pad}; }}")
+
             # Hub tab buttons font size
-            tab_size = 10 if is_small else 15
-            tab_pad = '3px 6px' if is_small else '4px 8px'
+            tab_size = 8 if is_small else 15
+            tab_pad = '1px 3px' if is_small else '4px 8px'
+            tab_br = 5 if is_small else 8
             for btn_name in ["tabExamples", "tabFunctions", "tabWorkspace"]:
                 tab_btn = rw.findChild(QPushButton, btn_name)
                 if tab_btn:
-                    tab_btn.setStyleSheet(tab_btn.styleSheet() + f" font-size: {tab_size}px; padding: {tab_pad};")
+                    tab_btn.setStyleSheet(tab_btn.styleSheet() + f" font-size: {tab_size}px; padding: {tab_pad}; border-radius: {tab_br}px;")
 
             # Console Body
             if hasattr(self, 'consoleBody') and self.consoleBody:
-                c_font = 9 if is_small else 14
+                c_font = 8 if is_small else 14
                 self.consoleBody.setStyleSheet(f"background-color: transparent; color: #334155; font-family: 'Consolas', 'Courier New'; font-size: {c_font}px;")
 
             # Console Header and buttons scaling
             console_header = rw.findChild(QFrame, "consoleHeader")
             if console_header:
-                console_header.setMinimumHeight(28 if is_small else 40)
+                console_header.setMinimumHeight(32 if is_small else 40)
             collapsed_bar = rw.findChild(QFrame, "collapsedConsoleBar")
             if collapsed_bar:
-                collapsed_bar.setMinimumHeight(24 if is_small else 36)
+                collapsed_bar.setMinimumHeight(28 if is_small else 36)
             btn_clear = rw.findChild(QPushButton, "btnClearConsole")
             if btn_clear:
-                _cc_fs = 12 if is_small else 16
+                _cc_fs = 8 if is_small else 16
                 btn_clear.setStyleSheet(f"QPushButton {{ color: #d0d8e5; background: transparent; border: none; font-family: 'Consolas', monospace; font-size: {_cc_fs}px;}} QPushButton:hover {{ color: white; background: rgba(255,255,255,0.1); border-radius: 4px; }}")
             btn_collapse = rw.findChild(QPushButton, "btnCollapseConsole")
             if btn_collapse:
-                _bc_fs = 12 if is_small else 18
+                _bc_fs = 9 if is_small else 18
                 btn_collapse.setStyleSheet(f"QPushButton {{ color: #d0d8e5; background: transparent; border: none; font-family: 'Consolas', monospace; font-size: {_bc_fs}px;}} QPushButton:hover {{ color: white; background: rgba(255,255,255,0.1); border-radius: 4px; }}")
 
             # Footer labels scaling
@@ -2006,12 +2025,21 @@ class AICodingLab(QMainWindow):
 
             # Monaco Placeholder (for now it's a QTextEdit)
             if hasattr(self, 'monacoPlaceholder') and self.monacoPlaceholder:
-                e_font = 11 if is_small else 17
+                e_font = 8 if is_small else 17
                 self.monacoPlaceholder.setStyleSheet(f"background-color: white; border: none; font-family: 'Consolas', 'Courier New'; font-size: {e_font}px; color: #1e293b;")
+                # Scale QScintilla font directly (stylesheet doesn't affect Scintilla rendering)
+                from PyQt5.QtGui import QFont as _QFont
+                _ef = _QFont("Consolas", 8 if is_small else 11)
+                if hasattr(self.monacoPlaceholder, 'lexer') and self.monacoPlaceholder.lexer:
+                    self.monacoPlaceholder.lexer.setDefaultFont(_ef)
+                    for i in range(128):
+                        self.monacoPlaceholder.setMarginsFont(_ef)
+                        self.monacoPlaceholder.setMarginWidth(0, "000" if is_small else "0000")
+                        self.monacoPlaceholder.lexer.setFont(_ef, i)
 
             # Footer Workspace Label
             if hasattr(self, 'lblCurrentFolder') and self.lblCurrentFolder:
-                wf_size = 11 if is_small else 15
+                wf_size = 10 if is_small else 15
                 self.lblCurrentFolder.setStyleSheet(f"font-weight: bold; color: #475569; font-size: {wf_size}px;")
 
             # Refresh Function Library with scaling
@@ -2022,7 +2050,7 @@ class AICodingLab(QMainWindow):
             if hasattr(self, 'workspaceDashboard') and self.workspaceDashboard:
                 d = self.workspaceDashboard
                 card_title_font = 6 if is_small else 9
-                card_count_font = 12 if is_small else 20
+                card_count_font = 8 if is_small else 20
                 for card_name, color in [("cardCode", "#2563eb"), ("cardData", "#16a34a"), ("cardModel", "#9333ea")]:
                     card = d.findChild(QFrame, card_name)
                     if card:
@@ -2038,7 +2066,23 @@ class AICodingLab(QMainWindow):
                                 lbl.setWordWrap(True)
                                 lbl.setStyleSheet(f"font-size: {card_title_font}px; font-weight: bold; color: {color}; background: transparent;")
 
-            # Editor Buttons
+            # Editor Tab Bar height scaling
+            editorTabBar = rw.findChild(QFrame, "editorTabBar")
+            if editorTabBar:
+                editorTabBar.setMaximumHeight(34 if is_small else 16777215)
+                editorTabBar.setStyleSheet(f"#editorTabBar {{ background-color: #1f2937; max-height: {34 if is_small else 16777215}px; }}")
+                _tb_layout = editorTabBar.layout()
+                if _tb_layout:
+                    _tb_layout.setContentsMargins(2, 1, 2, 1)
+            tabContainer = rw.findChild(QWidget, "tabContainer")
+            if tabContainer and tabContainer.layout():
+                tabContainer.layout().setContentsMargins(0, 0, 0, 0)
+                tabContainer.layout().setSpacing(2 if is_small else 4)
+            # Editor header padding
+            editorHeader = rw.findChild(QFrame, "editorHeader")
+            if editorHeader and editorHeader.layout():
+                editorHeader.layout().setContentsMargins(6 if is_small else 10, 2 if is_small else 6, 6 if is_small else 10, 2 if is_small else 6)
+
             if hasattr(self, 'btnRunCode') and self.btnRunCode:
                 r_size = 10 if is_small else 14
                 self.btnRunCode.setFixedHeight(30 if is_small else 40)
@@ -2047,6 +2091,13 @@ class AICodingLab(QMainWindow):
                 s_size = 10 if is_small else 14
                 self.btnSaveFile.setFixedHeight(30 if is_small else 40)
                 self.btnSaveFile.setStyleSheet(f"background-color: rgba(255,255,255,0.15); color: white; border-radius: 4px; padding: {'3px 6px' if is_small else '4px 10px'}; font-weight: bold; font-size: {s_size}px;")
+
+            # Camera Start button scaling
+            if hasattr(self, 'btnStartCamHeader') and self.btnStartCamHeader:
+                _cam_fs = 9 if is_small else 14
+                _cam_h = 20 if is_small else 32
+                self.btnStartCamHeader.setFixedHeight(_cam_h)
+                self.btnStartCamHeader.setStyleSheet(f"QPushButton#btnStartCamHeader {{ background-color: #22c55e; color: white; border-radius: 4px; font-weight: bold; padding: 2px 8px; font-size: {_cam_fs}px; }} QPushButton#btnStartCamHeader:hover {{ background-color: #16a34a; }}")
 
             # Assistant Bot Button Scaling
             if hasattr(self, 'btnAssistantBot') and self.btnAssistantBot:
@@ -2720,14 +2771,14 @@ class AICodingLab(QMainWindow):
         # Title Button
         btn_title = QPushButton(filename)
         btn_title.setObjectName("TabTitle")
-        btn_title.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        btn_title.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
         btn_title.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_title.clicked.connect(lambda _, n=filename: self.load_file_by_tab(n))
         
         # Close Button
         btn_close = QPushButton("×")
         btn_close.setObjectName("TabClose")
-        btn_close.setFixedSize(18, 18)
+        btn_close.setFixedSize(6 if self.is_small_screen else 18, 6 if self.is_small_screen else 18)
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_close.clicked.connect(lambda _, n=filename: self.close_tab(n))
         
@@ -3248,13 +3299,16 @@ class AICodingLab(QMainWindow):
         # Console toggle button — collapsed by default
         self.btnToggleConsole = QPushButton("▶ Console")
         self.btnToggleConsole.setFixedHeight(22)
+        _tc_h = 14 if self.is_small_screen else 22
+        _tc_fs = 7 if self.is_small_screen else 10
+        self.btnToggleConsole.setFixedHeight(_tc_h)
         self.btnToggleConsole.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btnToggleConsole.setStyleSheet("""
-            QPushButton {
+        self.btnToggleConsole.setStyleSheet(f"""
+            QPushButton {{
                 background: #e2e8f0; color: #475569; border: 1px solid #cbd5e1;
-                border-radius: 6px; font-size: 10px; font-weight: bold; padding: 2px 8px;
-            }
-            QPushButton:hover { background: #cbd5e1; }
+                border-radius: 3px; font-size: {_tc_fs}px; font-weight: bold; padding: 1px 4px;
+            }}
+            QPushButton:hover {{ background: #cbd5e1; }}
         """)
         self.btnToggleConsole.clicked.connect(self._toggle_train_console)
         # Insert toggle button before txtTrainLog in the progress layout
