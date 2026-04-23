@@ -185,11 +185,12 @@ class AdvancedPythonEditor(QsciScintilla):
         QTimer.singleShot(500, self.scan_for_blanks)
 
         # 🟢 --- 🚀 PERSISTENT ASSIST BOX (Floating Guidance) ---
+        self._is_small = False  # Resolution mode — updated from main.py
         self.assist_box = QFrame(self)
         self.assist_box.hide()
-        self.assist_box.setMinimumWidth(200)
-        self.assist_box.setMaximumWidth(280) # Balanced shape
-        self.assist_box.setMinimumHeight(100)
+        self.assist_box.setMinimumWidth(220)
+        self.assist_box.setMaximumWidth(340)
+        self.assist_box.setMinimumHeight(60)
         self.assist_box.setStyleSheet("""
             QFrame {
                 background-color: #ffffff;
@@ -199,10 +200,10 @@ class AdvancedPythonEditor(QsciScintilla):
         """)
         
         self.assist_layout = QVBoxLayout(self.assist_box)
-        self.assist_layout.setContentsMargins(15, 15, 15, 15) # Better padding
+        self.assist_layout.setContentsMargins(15, 15, 15, 15)
         self.assist_label = QLabel(self.assist_box)
         self.assist_label.setWordWrap(True)
-        self.assist_label.setStyleSheet("border: none; color: #1e293b; font-size: 10px; line-height: 1.5;")
+        self._update_assist_base_style()
         self.assist_layout.addWidget(self.assist_label, 0, Qt.AlignCenter)
         
         # Add a premium drop shadow
@@ -216,6 +217,15 @@ class AdvancedPythonEditor(QsciScintilla):
         self.cursorPositionChanged.connect(self._update_assist_box)
         # 🟡 High-Fidelity Occurrence Selection
         self.selectionChanged.connect(self._update_occurrence_highlights)
+
+    def _update_assist_base_style(self):
+        """Update assist label base font size based on resolution mode."""
+        fs = 8 if self._is_small else 12
+        self.assist_label.setStyleSheet(f"border: none; color: #1e293b; font-size: {fs}px; line-height: 1.5;")
+
+    def _get_assist_title_fs(self):
+        """Get the title font size for the assist box based on resolution."""
+        return 10 if self._is_small else 16
 
     def _update_assist_box(self, line, index):
         """Triggered on cursor changes."""
@@ -312,7 +322,7 @@ class AdvancedPythonEditor(QsciScintilla):
         # 4. Workspace Shortcut: Find if it's a path-based parameter
         workspace_tip = ""
         if "path" in word.lower():
-             workspace_tip = f"<br><div style='margin-top:8px; padding-top:8px; border-top: 1px solid #e2e8f0; color:#6366f1;'>🔍 <b>Select model:</b> 📂 <b>Workspace</b> ➔ 📦 <b>Model</b><br><i style='font-size:11px; color:#94a3b8;'>Choose your file to find the local path!</i></div>"
+             workspace_tip = f"<br><div style='margin-top:8px; padding-top:8px; border-top: 1px solid #e2e8f0; color:#6366f1;'>🔍 <b>Select model:</b> 📂 <b>Workspace</b> ➔ 📦 <b>Model</b><br><i style='font-size:13px; color:#94a3b8;'>Choose your file to find the local path!</i></div>"
 
         # 5. Show and Position the Balanced Box
         if tip_text_inner:
@@ -354,7 +364,7 @@ class AdvancedPythonEditor(QsciScintilla):
                     self.assist_box.setStyleSheet("""
                         QFrame { background-color: #ffffff; border: 2px solid #ef4444; border-radius: 12px; }
                     """)
-                    title_style = "color:#ef4444; font-size: 13px;"
+                    title_style = f"color:#ef4444; font-size: {self._get_assist_title_fs()}px;"
                     prefix_icon = "🧬"
                     action_text = "Type Mismatch"
                     tip_text_inner += f"<br><br><span style='color:#ef4444;'>❌ <b>'{current_val}'</b> is an <b>{registry[current_val]['type']}</b>, but this slot needs a <b>{param_type}</b>.</span>"
@@ -363,7 +373,7 @@ class AdvancedPythonEditor(QsciScintilla):
                     self.assist_box.setStyleSheet("""
                         QFrame { background-color: #ffffff; border: 2px solid #ef4444; border-radius: 12px; }
                     """)
-                    title_style = "color:#ef4444; font-size: 13px;"
+                    title_style = f"color:#ef4444; font-size: {self._get_assist_title_fs()}px;"
                     prefix_icon = "🕵️‍♂️"
                     action_text = f"Warning: '{current_val}' Unknown"
                     if matches:
@@ -373,7 +383,7 @@ class AdvancedPythonEditor(QsciScintilla):
                     self.assist_box.setStyleSheet("""
                         QFrame { background-color: #ffffff; border: 2px solid #f59e0b; border-radius: 12px; }
                     """)
-                    title_style = "color:#d97706; font-size: 13px;"
+                    title_style = f"color:#d97706; font-size: {self._get_assist_title_fs()}px;"
                     prefix_icon = "⚠️"
                     action_text = "Action: Fill"
             else:
@@ -385,13 +395,15 @@ class AdvancedPythonEditor(QsciScintilla):
                         border-radius: 12px;
                     }
                 """)
-                title_style = "color:#4338ca; font-size: 13px;" # Indigo 700
+                title_style = f"color:#4338ca; font-size: {self._get_assist_title_fs()}px;" # Indigo 700
                 prefix_icon = "💡" if is_func else "📝"
                 action_text = "Reference"
 
             # Reformat text with the dynamic style
             styled_text = f"{prefix_icon} <b style='{title_style}'>{action_text}: {word}</b><br><br>{tip_text_inner}"
             self.assist_label.setText(styled_text)
+            self.assist_label.adjustSize()
+            self.assist_box.setMinimumHeight(self.assist_label.sizeHint().height() + 40)
             self.assist_box.adjustSize()
             
             # Position safely relative to trigger

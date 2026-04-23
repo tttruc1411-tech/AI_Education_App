@@ -426,7 +426,7 @@ class LevelBadge(QWidget):
         self.setCursor(Qt.PointingHandCursor)
 
         # Size constants — the icon circle size
-        self._std_sz, self._small_sz = 40, 28
+        self._std_sz, self._small_sz = 40, 20
 
         sz = self._small_sz if is_small else self._std_sz
         self.setFixedSize(sz, sz)
@@ -817,28 +817,32 @@ class AICodingLab(QMainWindow):
         if self.btnCreateFile: self.btnCreateFile.clicked.connect(self.create_new_file)
         if self.btnRunCode: 
             self.btnRunCode.clicked.connect(self.save_and_run_code)
-            self.btnRunCode.setFixedHeight(40)
-            self.btnRunCode.setStyleSheet("""
-                QPushButton { 
+            _run_h = 30 if self.is_small_screen else 40
+            _run_fs = 10 if self.is_small_screen else 16
+            self.btnRunCode.setFixedHeight(_run_h)
+            self.btnRunCode.setStyleSheet(f"""
+                QPushButton {{ 
                     background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #10b981, stop:1 #059669);
-                    color: white; border-radius: 8px; font-weight: bold; font-size: 16px; padding: 0 16px;
-                }
-                QPushButton:hover { background: #059669; }
-                QPushButton:pressed { background: #047857; }
+                    color: white; border-radius: 8px; font-weight: bold; font-size: {_run_fs}px; padding: 0 16px;
+                }}
+                QPushButton:hover {{ background: #059669; }}
+                QPushButton:pressed {{ background: #047857; }}
             """)
         if self.tabPlus: self.tabPlus.clicked.connect(self.create_new_tab)
 
         self.btnSaveFile = self.running_mode_widget.findChild(QPushButton, "btnSaveFile")
         if self.btnSaveFile: 
             self.btnSaveFile.clicked.connect(self.save_current_file)
-            self.btnSaveFile.setFixedHeight(40)
-            self.btnSaveFile.setStyleSheet("""
-                QPushButton { 
+            _save_h = 30 if self.is_small_screen else 40
+            _save_fs = 10 if self.is_small_screen else 16
+            self.btnSaveFile.setFixedHeight(_save_h)
+            self.btnSaveFile.setStyleSheet(f"""
+                QPushButton {{ 
                     background: #2D84E0; color: white; border: none;
-                    border-radius: 8px; font-weight: bold; font-size: 16px; padding: 0 16px;
-                }
-                QPushButton:hover { background: #0E5FB5; }
-                QPushButton:pressed { background: #094D94; }
+                    border-radius: 8px; font-weight: bold; font-size: {_save_fs}px; padding: 0 16px;
+                }}
+                QPushButton:hover {{ background: #0E5FB5; }}
+                QPushButton:pressed {{ background: #094D94; }}
             """)
 
         # Ctrl+S shortcut
@@ -959,6 +963,8 @@ class AICodingLab(QMainWindow):
         if self.cardCode: self.cardCode.mousePressEvent = lambda e: self.show_folder_contents("Code")
         if self.cardData: self.cardData.mousePressEvent = lambda e: self.show_folder_contents("Data")
         if self.cardModel: self.cardModel.mousePressEvent = lambda e: self.show_folder_contents("Model")
+        # Rebuild workspace cards with better layout
+        self._rebuild_workspace_cards()
         if self.btnBackToDashboard: 
             def handle_back_to_dashboard():
                 self.update_workspace_counts()
@@ -1729,7 +1735,7 @@ class AICodingLab(QMainWindow):
                     pass  # Widget may have been deleted during layout transition
             # Resize the nav container bar
             if hasattr(self, '_nav_container') and self._nav_container:
-                bar_h = 36 if is_small else 50
+                bar_h = 30 if is_small else 50
                 bar_br = bar_h // 2
                 self._nav_container.setFixedHeight(bar_h)
                 self._nav_container.setStyleSheet(f"""
@@ -2190,6 +2196,11 @@ class AICodingLab(QMainWindow):
             if hasattr(self, 'monacoPlaceholder') and self.monacoPlaceholder:
                 e_font = 8 if is_small else 17
                 self.monacoPlaceholder.setStyleSheet(f"background-color: white; border: none; font-family: 'Consolas', 'Courier New'; font-size: {e_font}px; color: #1e293b;")
+                # Sync resolution to editor for hint box scaling
+                if hasattr(self.monacoPlaceholder, '_is_small'):
+                    self.monacoPlaceholder._is_small = is_small
+                    if hasattr(self.monacoPlaceholder, '_update_assist_base_style'):
+                        self.monacoPlaceholder._update_assist_base_style()
                 # Scale QScintilla font directly (stylesheet doesn't affect Scintilla rendering)
                 from PyQt5.QtGui import QFont as _QFont
                 _ef = _QFont("Consolas", 8 if is_small else 11)
@@ -2210,25 +2221,9 @@ class AICodingLab(QMainWindow):
             populate_functions_tab(self.running_mode_widget, is_small=is_small, lang=self.current_lang)
 
             # Workspace Dashboard Scaling
-            if hasattr(self, 'workspaceDashboard') and self.workspaceDashboard:
-                d = self.workspaceDashboard
-                card_title_font = 6 if is_small else 9
-                card_count_font = 8 if is_small else 20
-                for card_name, color in [("cardCode", "#2563eb"), ("cardData", "#16a34a"), ("cardModel", "#9333ea")]:
-                    card = d.findChild(QFrame, card_name)
-                    if card:
-                        # Scale cards height
-                        card.setMinimumHeight(50 if is_small else 100)
-                        card.setMaximumHeight(70 if is_small else 130)
-                        for lbl in card.findChildren(QLabel):
-                            if lbl.objectName().startswith("count"):
-                                lbl.setStyleSheet(f"font-size: {card_count_font}px; font-weight: bold; color: {color}; background: transparent;")
-                            elif lbl.text() in ("📄", "🖼️", "💻"):
-                                pass  # Skip icon labels
-                            else:
-                                lbl.setWordWrap(True)
-                                lbl.setStyleSheet(f"font-size: {card_title_font}px; font-weight: bold; color: {color}; background: transparent;")
-
+            if hasattr(self, 'cardCode') and self.cardCode:
+                self._rebuild_workspace_cards()
+                self.update_workspace_counts()
             # Editor Tab Bar scaling (Minimal)
             editorTabBar = rw.findChild(QFrame, "editorTabBar")
             if editorTabBar:
@@ -2437,6 +2432,84 @@ class AICodingLab(QMainWindow):
         self.mainStack.setCurrentIndex(1)
 
     # --- Workspace Logic ---
+    def _rebuild_workspace_cards(self):
+        """Rebuild workspace cards with layout: Row1 = count + icon, Row2 = title."""
+        is_small = self.is_small_screen
+        cards_config = [
+            (self.cardCode, "countCode", "Code", "💻", "#2563eb", "#eff6ff", "#bfdbfe"),
+            (self.cardData, "countData", "Data", "🖼️", "#16a34a", "#f0fdf4", "#bbf7d0"),
+            (self.cardModel, "countModel", "Model", "📦", "#9333ea", "#faf5ff", "#e9d5ff"),
+        ]
+        for card, count_name, title, icon, color, bg, border in cards_config:
+            if not card:
+                continue
+            # Hide ALL existing child widgets from the .ui file first
+            for child in card.findChildren(QWidget):
+                child.setVisible(False)
+                child.setMaximumHeight(0)
+            for child in card.findChildren(QLabel):
+                child.setVisible(False)
+                child.setMaximumHeight(0)
+            # Remove old layout
+            old = card.layout()
+            if old:
+                while old.count():
+                    child = old.takeAt(0)
+                    if child.widget():
+                        child.widget().setVisible(False)
+                QWidget().setLayout(old)
+
+            # Card styling
+            card.setStyleSheet(f"""
+                QFrame#{card.objectName()} {{ background-color: {bg}; border: 1px solid {border}; border-radius: 15px; }}
+                QFrame#{card.objectName()}:hover {{ border: 2px solid {color}; background-color: white; }}
+                QLabel {{ background: transparent; }}
+            """)
+            card.setCursor(Qt.PointingHandCursor)
+
+            count_fs = 14 if is_small else 24
+            icon_fs = 14 if is_small else 22
+            title_fs = 10 if is_small else 22
+            card_h_min = 50 if is_small else 80
+            card_h_max = 70 if is_small else 110
+
+            card.setMinimumHeight(card_h_min)
+            card.setMaximumHeight(card_h_max)
+
+            main_layout = QVBoxLayout(card)
+            main_layout.setContentsMargins(10, 6, 10, 6)
+            main_layout.setSpacing(2)
+
+            # Row 1: Count number (left) + Icon emoji (right)
+            row1 = QHBoxLayout()
+            row1.setSpacing(4)
+
+            count_lbl = QLabel("0")
+            count_lbl.setObjectName(count_name)
+            count_lbl.setVisible(True)
+            count_lbl.setMaximumHeight(16777215)
+            count_lbl.setStyleSheet(f"font-size: {count_fs}px; font-weight: bold; color: {color}; background: transparent;")
+            count_lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+            icon_lbl = QLabel(icon)
+            icon_lbl.setVisible(True)
+            icon_lbl.setMaximumHeight(16777215)
+            icon_lbl.setStyleSheet(f"font-size: {icon_fs}px; background: transparent;")
+            icon_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+            row1.addWidget(count_lbl)
+            row1.addStretch()
+            row1.addWidget(icon_lbl)
+            main_layout.addLayout(row1)
+
+            # Row 2: Title
+            title_lbl = QLabel(title)
+            title_lbl.setVisible(True)
+            title_lbl.setMaximumHeight(16777215)
+            title_lbl.setStyleSheet(f"font-size: {title_fs}px; font-weight: bold; color: {color}; background: transparent;")
+            title_lbl.setWordWrap(True)
+            main_layout.addWidget(title_lbl)
+
     def update_workspace_counts(self):
         """Sync card numbers with physical folders."""
         counts = {
@@ -2734,7 +2807,7 @@ class AICodingLab(QMainWindow):
         """Apply frosted bubble style to active hub tab, gradient to inactive."""
         is_small = self.is_small_screen
         fs = 8 if is_small else 14
-        pad = '3px 8px' if is_small else '6px 16px'
+        pad = '1px 3px' if is_small else '6px 16px'
         br = 4 if is_small else 14
 
         tabs = [
