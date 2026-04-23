@@ -1,8 +1,8 @@
 # TITLE: Face Detection (YuNet)
 # TITLE_VI: Nhận diện khuôn mặt (YuNet)
-# LEVEL: Beginner
+# LEVEL: Intermediate
 # ICON: 👤
-# COLOR: #7c3aed
+# COLOR: #eab308
 # DESC: Detect faces in real-time camera feed using the YuNet ONNX model.
 # DESC_VI: Nhận diện khuôn mặt trong thời gian thực bằng mô hình YuNet ONNX.
 # ============================================================

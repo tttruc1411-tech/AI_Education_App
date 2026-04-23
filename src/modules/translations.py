@@ -89,6 +89,11 @@ STRINGS = {
         "CAT_ROBOTICS": "Robotics",
         "CAT_OTHER": "Other",
 
+        # Level Navigation
+        "LVL_BEGINNER": "Beginner",
+        "LVL_INTERMEDIATE": "Intermediate",
+        "LVL_ADVANCED": "Advanced",
+
         # Function Descriptions
         "FN_INIT_CAMERA": "Initialize the default Jetson/Webcam camera (ID: 0)",
         "FN_GET_CAMERA_FRAME": "Capture the current live frame from the initialized camera",
@@ -244,6 +249,11 @@ STRINGS = {
         "CAT_LOGIC_OPERATIONS": "Khối lệnh Logic",
         "CAT_ROBOTICS": "Điều khiển Robot",
         "CAT_OTHER": "Khác",
+
+        # Level Navigation
+        "LVL_BEGINNER": "Cơ bản",
+        "LVL_INTERMEDIATE": "Trung bình",
+        "LVL_ADVANCED": "Nâng cao",
 
         # Function Descriptions
         "FN_INIT_CAMERA": "Khởi tạo camera mặc định Jetson/Webcam (ID: 0)",

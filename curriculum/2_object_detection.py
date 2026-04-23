@@ -2,7 +2,7 @@
 # TITLE_VI: Nhận diện vật thể (YOLOv10)
 # LEVEL: Intermediate
 # ICON: 🔍
-# COLOR: #22c55e
+# COLOR: #eab308
 # DESC: Detect 80+ objects with YOLOv10.
 # DESC_VI: Nhận diện hơn 80 loại vật thể khác nhau bằng mô hình YOLOv10.
 # ============================================================

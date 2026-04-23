@@ -48,6 +48,39 @@ def Close_Camera(capture_camera):
     cv2.destroyAllWindows()
     print("[OK] Camera released and windows closed.")
 
+
+def Save_Frame(camera_frame, file_path="snapshot.jpg"):
+    """
+    Save a camera frame to disk as an image file.
+    Images are saved to projects/data/saved/ by default.
+    """
+    if camera_frame is None:
+        print("ERROR: No frame to save.")
+        return
+    # Auto-create the saved folder inside projects/data/
+    save_dir = os.path.join("projects", "data", "saved")
+    os.makedirs(save_dir, exist_ok=True)
+    # If the path is just a filename (no directory), put it in the saved folder
+    if os.path.dirname(file_path) == "":
+        file_path = os.path.join(save_dir, file_path)
+    cv2.imwrite(file_path, camera_frame)
+    print(f"[OK] Frame saved to {file_path}")
+
+
+def Load_Image(file_path="image.jpg"):
+    """
+    Load an image from disk. Returns the image or None if not found.
+    """
+    if not os.path.exists(file_path):
+        print(f"ERROR: File '{file_path}' not found!")
+        return None
+    img = cv2.imread(file_path)
+    if img is None:
+        print(f"ERROR: Could not read '{file_path}' as an image.")
+        return None
+    print(f"[OK] Image loaded from {file_path}")
+    return img
+
 def Load_YuNet_Model(model_path):
     """
     Loads the YuNet Face Detection model using OpenCV's native detector.

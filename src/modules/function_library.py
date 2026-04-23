@@ -78,6 +78,8 @@ class FunctionInfoPanel(QFrame):
     def __init__(self, func_id, info, category_color, is_small=False, lang="en"):
         super().__init__()
         s = STRINGS.get(lang, STRINGS["en"])
+        self._lang = lang
+        self._is_small = is_small
         self.setObjectName("InfoPanel")
         self.setStyleSheet(f"""
             QFrame#InfoPanel {{
@@ -100,9 +102,8 @@ class FunctionInfoPanel(QFrame):
         # 1. Snippet (dragged)
         if usage:
             layout.addWidget(self._bold_label(s.get("INFO_SNIPPET", "Snippet (Dragged):")))
-            # Estimate if content exceeds 1 row (contains newlines or long text that will wrap)
             lines_estimate = usage.count('\n') + 1 + (len(usage) // 50)
-            h = 84 if lines_estimate > 1 else 42
+            h = (50 if is_small else 84) if lines_estimate > 1 else (28 if is_small else 42)
             layout.addWidget(self._code_block(usage, height=h))
 
         # 2. Parameters
@@ -111,7 +112,7 @@ class FunctionInfoPanel(QFrame):
             for p in params:
                 name = p.get("name", "")
                 ptype = p.get("type", "")
-                desc  = p.get("desc", "")
+                pdesc = p.get("desc_vi", p.get("desc", "")) if self._lang == "vi" else p.get("desc", "")
                 choices = p.get("choices")
                 choices_html = ""
                 if choices:
@@ -122,7 +123,7 @@ class FunctionInfoPanel(QFrame):
                     choices_html = f" &nbsp;{chips}"
                 line = QLabel(f"  <b style='color:#7c3aed;'>{name}</b>"
                               f" <span style='color:#64748b;'>({ptype})</span>"
-                              f" – {desc}{choices_html}")
+                              f" – {pdesc}{choices_html}")
                 line.setWordWrap(True)
                 line.setTextFormat(Qt.RichText)
                 f_size = 10 if is_small else 16
@@ -135,7 +136,7 @@ class FunctionInfoPanel(QFrame):
         if returns:
             layout.addWidget(self._bold_label(s.get("INFO_RETURNS", "Returns:")))
             rtype = returns.get("type", "")
-            rdesc = returns.get("desc", "")
+            rdesc = returns.get("desc_vi", returns.get("desc", "")) if self._lang == "vi" else returns.get("desc", "")
             ret_line = QLabel(
                 f"  <b style='color:#059669;'>{rtype}</b> – {rdesc}"
             )
@@ -151,18 +152,21 @@ class FunctionInfoPanel(QFrame):
         layout.addWidget(self._bold_label(s.get("INFO_SOURCE_CODE", "Source Code:")))
         source_text = self._load_source(info)
         if source_text:
-            layout.addWidget(self._code_block(source_text, height=200, dark=True, font_size=7))
+            src_h = 120 if is_small else 200
+            src_fs = 5 if is_small else 7
+            layout.addWidget(self._code_block(source_text, height=src_h, dark=True, font_size=src_fs))
         else:
+            no_src_fs = 9 if is_small else 13
             no_src = QLabel(s.get("INFO_NO_SOURCE", "Source code not available."))
-            no_src.setStyleSheet("color: #94a3b8; font-size: 13px; background: transparent;")
+            no_src.setStyleSheet(f"color: #94a3b8; font-size: {no_src_fs}px; background: transparent;")
             layout.addWidget(no_src)
 
     # ── Helpers ────────────────────────────────────────────
 
-    def _bold_label(self, text, is_small=False):
+    def _bold_label(self, text):
         lbl = QLabel(text)
-        lbl.setWordWrap(True)  # CRITICAL: Prevent long bold strings from locking layout widths
-        f_size = 10 if is_small else 14
+        lbl.setWordWrap(True)
+        f_size = 10 if self._is_small else 14
         lbl.setStyleSheet(
             f"color: #1e293b; font-size: {f_size}px; font-weight: 700; background: transparent;"
         )
@@ -171,7 +175,8 @@ class FunctionInfoPanel(QFrame):
     def _code_block(self, text, height=42, dark=False, font_size=8):
         box = QPlainTextEdit(text)
         box.setReadOnly(True)
-        box.setFont(QFont("JetBrains Mono, Consolas, Courier New", font_size))
+        fs = max(5, font_size - 2) if self._is_small else font_size
+        box.setFont(QFont("JetBrains Mono, Consolas, Courier New", fs))
         box.setFixedHeight(height)
         box.setMinimumWidth(50)  # Bypass NoWrap enforcing wide columns
         box.setLineWrapMode(
@@ -285,7 +290,12 @@ class DraggableFunctionBlock(QFrame):
         # Resolve translated description
         s = STRINGS.get(lang, STRINGS["en"])
         desc_key = _FN_DESC_KEY_MAP.get(func_id)
-        translated_desc = s.get(desc_key, info.get("desc", "")) if desc_key else info.get("desc", "")
+        if lang == "vi":
+            translated_desc = info.get("desc_vi", info.get("desc", ""))
+        elif desc_key:
+            translated_desc = s.get(desc_key, info.get("desc", ""))
+        else:
+            translated_desc = info.get("desc", "")
 
         self.setObjectName("FunctionCard")
         self.setStyleSheet("""

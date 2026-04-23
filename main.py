@@ -25,7 +25,7 @@ import base64
 import re
 from datetime import datetime
 from pathlib import Path
-from PyQt5.QtCore import Qt, QDir, QProcess, QProcessEnvironment, QTimer, QEvent, QPoint
+from PyQt5.QtCore import Qt, QDir, QProcess, QProcessEnvironment, QTimer, QEvent, QPoint, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QColor, QFont, QImage, QPixmap
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QStackedWidget, QPushButton, QFrame,
                              QTextEdit, QPlainTextEdit, QInputDialog, QMessageBox, QWidget,
@@ -401,6 +401,120 @@ class AnnotationLabel(QLabel):
 
 
 # ────────────────────────────────────────────────────────────
+# Level Badge — Animated half-circle / flag-ribbon navigation
+# ────────────────────────────────────────────────────────────
+
+LEVEL_CONFIG = {
+    "Beginner":     {"color": "#22c55e", "icon": "⭐", "trans_key": "LVL_BEGINNER"},
+    "Intermediate": {"color": "#eab308", "icon": "🚀", "trans_key": "LVL_INTERMEDIATE"},
+    "Advanced":     {"color": "#ef4444", "icon": "🏆", "trans_key": "LVL_ADVANCED"},
+}
+
+class LevelBadge(QWidget):
+    """Level tab icon — colored circle (active) or muted icon (inactive) inside a shared nav bar."""
+    level_clicked = pyqtSignal(str)
+
+    def __init__(self, level_key, color, icon, is_small=False, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_StyledBackground, True)  # CRITICAL: enables background rendering on QWidget
+        self._level_key = level_key
+        self._color = color
+        self._icon = icon
+        self._active = False
+        self._count = 0
+        self._is_small = is_small
+        self.setCursor(Qt.PointingHandCursor)
+
+        # Size constants — the icon circle size
+        self._std_sz, self._small_sz = 40, 28
+
+        sz = self._small_sz if is_small else self._std_sz
+        self.setFixedSize(sz, sz)
+
+        # Layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.setAlignment(Qt.AlignCenter)
+
+        fs_icon = 14 if is_small else 20
+
+        self._icon_lbl = QLabel(icon)
+        self._icon_lbl.setAlignment(Qt.AlignCenter)
+        self._icon_lbl.setStyleSheet(f"font-size: {fs_icon}px; background: transparent;")
+        layout.addWidget(self._icon_lbl)
+
+        self._apply_inactive_style()
+
+    def _hex_to_rgb(self, hex_color):
+        h = hex_color.lstrip('#')
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+    def _apply_active_style(self):
+        sz = self._small_sz if self._is_small else self._std_sz
+        fs = 14 if self._is_small else 20
+        self._icon_lbl.setStyleSheet(f"font-size: {fs}px; background: transparent; color: #6d28d9;")
+        # White frosted bubble — pops against the purple-blue gradient bar
+        self.setObjectName("lvlActive")
+        self.setStyleSheet(f"""
+            QWidget#lvlActive {{
+                background: rgba(255, 255, 255, 0.92);
+                border-radius: {sz//2}px;
+                border: 2px solid rgba(255, 255, 255, 0.8);
+            }}
+        """)
+
+    def _apply_inactive_style(self):
+        sz = self._small_sz if self._is_small else self._std_sz
+        fs = 14 if self._is_small else 20
+        self._icon_lbl.setStyleSheet(f"font-size: {fs}px; background: transparent; color: rgba(255,255,255,0.85);")
+        self.setObjectName("lvlInactive")
+        self.setStyleSheet(f"""
+            QWidget#lvlInactive {{
+                background: transparent;
+                border-radius: {sz//2}px;
+                border: none;
+            }}
+            QWidget#lvlInactive:hover {{
+                background: rgba(255,255,255,0.2);
+                border: 1px solid rgba(255,255,255,0.3);
+            }}
+        """)
+
+    def set_active(self, active):
+        if active == self._active:
+            return
+        self._active = active
+        if active:
+            self._apply_active_style()
+        else:
+            self._apply_inactive_style()
+
+    def set_count(self, count):
+        self._count = count
+
+    def update_resolution(self, is_small):
+        self._is_small = is_small
+        sz = self._small_sz if is_small else self._std_sz
+        self.setFixedSize(sz, sz)
+        if self._active:
+            self._apply_active_style()
+        else:
+            self._apply_inactive_style()
+        # Also update the nav container bar if it exists
+        if hasattr(self.parent(), '_nav_container') if self.parent() else False:
+            pass  # handled by MainWindow
+
+    def retranslate(self, strings):
+        # No text labels in the new icon-only design — nothing to translate
+        pass
+
+    def mousePressEvent(self, event):
+        self.level_clicked.emit(self._level_key)
+        super().mousePressEvent(event)
+
+
+# ────────────────────────────────────────────────────────────
 #  Dynamic Curriculum Card Widget
 # ────────────────────────────────────────────────────────────
 
@@ -412,6 +526,8 @@ class CurriculumCard(QFrame):
         card_h = 50 if is_small else 90
         self.setMinimumHeight(card_h)
         self.setMaximumHeight(card_h + 20)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumWidth(0)
         
         # Consistent colorful card design
         self.setObjectName("CurriculumCard")
@@ -471,6 +587,9 @@ class CurriculumCard(QFrame):
         title_font = 8 if is_small else 15
         title_lbl = QLabel(title)
         title_lbl.setStyleSheet(f"font-weight: bold; font-size: {title_font}px; color: #1e293b; background: transparent;")
+        title_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        title_lbl.setMinimumWidth(0)
+        title_lbl.setWordWrap(True)
         
         # Level Badge
         badge_colors = {"Beginner": "#08a54f", "Intermediate": "#f6710b", "Advanced": "#b51414"}
@@ -491,6 +610,9 @@ class CurriculumCard(QFrame):
         desc_font = 6 if is_small else 13
         desc_lbl = QLabel(desc)
         desc_lbl.setStyleSheet(f"color: #475569; font-size: {desc_font}px; background: transparent;")
+        desc_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        desc_lbl.setMinimumWidth(0)
+        desc_lbl.setWordWrap(True)
         
         # Load Button
         btn_load = QPushButton("Load")
@@ -691,7 +813,6 @@ class AICodingLab(QMainWindow):
         
         # DYNAMIC CURRICULUM DISCOVERY
         self.hubContentLayout = self.running_mode_widget.findChild(QVBoxLayout, "hubContentLayout")
-        self.populate_curriculum_hub()
         
         if self.btnCreateFile: self.btnCreateFile.clicked.connect(self.create_new_file)
         if self.btnRunCode: 
@@ -771,9 +892,16 @@ class AICodingLab(QMainWindow):
         self.tabWorkspace = self.running_mode_widget.findChild(QPushButton, "tabWorkspace")
 
         if self.hubStackedWidget:
-            if self.tabExamples: self.tabExamples.clicked.connect(lambda: self.hubStackedWidget.setCurrentIndex(0))
-            if self.tabFunctions: self.tabFunctions.clicked.connect(lambda: self.hubStackedWidget.setCurrentIndex(1))
-            if self.tabWorkspace: self.tabWorkspace.clicked.connect(lambda: self.hubStackedWidget.setCurrentIndex(2))
+            if self.tabExamples: self.tabExamples.clicked.connect(lambda: self._switch_hub_tab(0))
+            if self.tabFunctions: self.tabFunctions.clicked.connect(lambda: self._switch_hub_tab(1))
+            if self.tabWorkspace: self.tabWorkspace.clicked.connect(lambda: self._switch_hub_tab(2))
+
+        # Apply initial hub tab styling (Examples active by default)
+        self._update_hub_tab_styles(0)
+
+        # Setup Level Navigation (must be after hubStackedWidget is found)
+        self._setup_level_navigation()
+        self.populate_curriculum_hub()
 
         # C) CONSOLE TERMINAL SETUP
         self.consoleContainer = self.running_mode_widget.findChild(QWidget, "consoleContainer")
@@ -1433,7 +1561,15 @@ class AICodingLab(QMainWindow):
         """Switch application language and refresh UI labels."""
         if self.current_lang == lang_code: return
         self.current_lang = lang_code
+        # Sync language to the code editor for tooltip translations
+        if hasattr(self, 'monacoPlaceholder') and hasattr(self.monacoPlaceholder, '_lang'):
+            self.monacoPlaceholder._lang = lang_code
         self.retranslate_ui()
+        # Update Level Navigation badge labels
+        if hasattr(self, '_level_badges'):
+            s = STRINGS[self.current_lang]
+            for badge in self._level_badges.values():
+                badge.retranslate(s)
         # Full refresh of dynamic content
         self.populate_curriculum_hub()
         self.update_workspace_counts()
@@ -1550,13 +1686,13 @@ class AICodingLab(QMainWindow):
         if is_transition:
             if is_small:
                 if self.mainSplitter: self.mainSplitter.setSizes([180, 564, 280])
-                if self.runningEditorSplitter: self.runningEditorSplitter.setSizes([400, 150])
+                if self.runningEditorSplitter: self.runningEditorSplitter.setSizes([380, 150])
                 if self.rightSplitter: self.rightSplitter.setSizes([300, 300])
             else:
                 if self.mainSplitter: self.mainSplitter.setSizes([280, 720, 280])
                 if self.runningEditorSplitter: self.runningEditorSplitter.setSizes([600, 200])
                 if self.rightSplitter: self.rightSplitter.setSizes([400, 400])
-        
+                
         # Override minimum widths from .ui files to allow more aggressive shrinking
         # We use 100 instead of 0 to prevent "snapping" / total collapse which feels broken
         min_w = 100 if is_small else 200
@@ -1580,9 +1716,33 @@ class AICodingLab(QMainWindow):
         
 
         # 3. Refresh Dynamic Components
-        if hasattr(self, 'hubContentLayout') and self.hubContentLayout:
+        if hasattr(self, '_cards_layout'):
             # Small delay to allow layout engine to settle before re-populating complex widgets
-            QTimer.singleShot(50, self.populate_curriculum_hub)
+            QTimer.singleShot(100, self.populate_curriculum_hub)
+        
+        # Update Level Navigation badges for resolution
+        if hasattr(self, '_level_badges'):
+            for badge in self._level_badges.values():
+                try:
+                    badge.update_resolution(is_small)
+                except RuntimeError:
+                    pass  # Widget may have been deleted during layout transition
+            # Resize the nav container bar
+            if hasattr(self, '_nav_container') and self._nav_container:
+                bar_h = 36 if is_small else 50
+                bar_br = bar_h // 2
+                self._nav_container.setFixedHeight(bar_h)
+                self._nav_container.setStyleSheet(f"""
+                    QFrame#levelNavBar {{
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                            stop:0 rgba(139, 92, 246, 0.35),
+                            stop:0.4 rgba(109, 40, 217, 0.25),
+                            stop:0.7 rgba(59, 130, 246, 0.25),
+                            stop:1 rgba(6, 182, 212, 0.2));
+                        border-radius: {bar_br}px;
+                        border: 1.5px solid rgba(139, 92, 246, 0.3);
+                    }}
+                """)
         
         # Refresh Training charts if they exist
         if hasattr(self, '_charts') and self._charts:
@@ -1972,10 +2132,17 @@ class AICodingLab(QMainWindow):
             _t_fw = "bold"
 
             # Panel headers — use #id selector to override .ui global stylesheet
-            for t_name in ["hubTitle", "editorTitle", "camTitle", "resTitle", "lblCT", "lblCCT"]:
+            for t_name in ["hubTitle", "editorTitle", "camTitle", "resTitle"]:
                 t_lbl = rw.findChild(QLabel, t_name)
                 if t_lbl:
                     t_lbl.setStyleSheet(f"#{t_name} {{ font-weight: {_t_fw}; font-size: {title_size}px; color: white; background: transparent; padding: 1px 4px; }}")
+
+            # Console titles (slightly smaller)
+            console_title_size = title_size - 2
+            for t_name in ["lblCT", "lblCCT"]:
+                t_lbl = rw.findChild(QLabel, t_name)
+                if t_lbl:
+                    t_lbl.setStyleSheet(f"#{t_name} {{ font-weight: {_t_fw}; font-size: {console_title_size}px; color: white; background: transparent; padding: 1px 4px; }}")
 
             # Hub header height/padding — shrink for small screen
             hubHeader = rw.findChild(QFrame, "hubHeader")
@@ -1983,14 +2150,10 @@ class AICodingLab(QMainWindow):
                 _hh_pad = '2px 0px' if is_small else '8px 0px'
                 hubHeader.setStyleSheet(f"QFrame#hubHeader {{ background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #7c3aed, stop:1 #2563eb); border: none; padding: {_hh_pad}; }}")
 
-            # Hub tab buttons font size
-            tab_size = 8 if is_small else 15
-            tab_pad = '1px 3px' if is_small else '4px 8px'
-            tab_br = 5 if is_small else 8
-            for btn_name in ["tabExamples", "tabFunctions", "tabWorkspace"]:
-                tab_btn = rw.findChild(QPushButton, btn_name)
-                if tab_btn:
-                    tab_btn.setStyleSheet(tab_btn.styleSheet() + f" font-size: {tab_size}px; padding: {tab_pad}; border-radius: {tab_br}px;")
+            # Hub tab buttons scaling — use unified frosted bubble style
+            if hasattr(self, 'hubStackedWidget') and self.hubStackedWidget:
+                active_idx = self.hubStackedWidget.currentIndex()
+                self._update_hub_tab_styles(active_idx)
 
             # Console Body
             if hasattr(self, 'consoleBody') and self.consoleBody:
@@ -2000,10 +2163,10 @@ class AICodingLab(QMainWindow):
             # Console Header and buttons scaling
             console_header = rw.findChild(QFrame, "consoleHeader")
             if console_header:
-                console_header.setMinimumHeight(32 if is_small else 40)
+                console_header.setFixedHeight(36 if is_small else 44)
             collapsed_bar = rw.findChild(QFrame, "collapsedConsoleBar")
             if collapsed_bar:
-                collapsed_bar.setMinimumHeight(28 if is_small else 36)
+                collapsed_bar.setFixedHeight(34 if is_small else 40)
             btn_clear = rw.findChild(QPushButton, "btnClearConsole")
             if btn_clear:
                 _cc_fs = 8 if is_small else 16
@@ -2066,18 +2229,24 @@ class AICodingLab(QMainWindow):
                                 lbl.setWordWrap(True)
                                 lbl.setStyleSheet(f"font-size: {card_title_font}px; font-weight: bold; color: {color}; background: transparent;")
 
-            # Editor Tab Bar height scaling
+            # Editor Tab Bar scaling (Minimal)
             editorTabBar = rw.findChild(QFrame, "editorTabBar")
             if editorTabBar:
-                editorTabBar.setMaximumHeight(34 if is_small else 16777215)
-                editorTabBar.setStyleSheet(f"#editorTabBar {{ background-color: #1f2937; max-height: {34 if is_small else 16777215}px; }}")
-                _tb_layout = editorTabBar.layout()
-                if _tb_layout:
-                    _tb_layout.setContentsMargins(2, 1, 2, 1)
+                editorTabBar.setFixedHeight(20 if is_small else 30)
+                
             tabContainer = rw.findChild(QWidget, "tabContainer")
-            if tabContainer and tabContainer.layout():
-                tabContainer.layout().setContentsMargins(0, 0, 0, 0)
-                tabContainer.layout().setSpacing(2 if is_small else 4)
+            if tabContainer:
+                if tabContainer.layout():
+                    tabContainer.layout().setContentsMargins(0, 0, 0, 0)
+                    tabContainer.layout().setSpacing(1 if is_small else 4)
+                
+                # Scale individual tab items (file buttons)
+                # Height increased to 26px to prevent clipping of 'p' and other descenders
+                _et_fs = 6 if is_small else 8
+                _et_h = 14 if is_small else 20
+                for child_btn in tabContainer.findChildren(QPushButton):
+                    child_btn.setFixedHeight(_et_h)
+                    child_btn.setFont(QFont("Segoe UI", _et_fs, QFont.Weight.Bold))
             # Editor header padding
             editorHeader = rw.findChild(QFrame, "editorHeader")
             if editorHeader and editorHeader.layout():
@@ -2555,39 +2724,214 @@ class AICodingLab(QMainWindow):
             self.log_to_console(f"Error loading file: {e}", True)
 
     # --- Curriculum Discovery ---
+    def _switch_hub_tab(self, index):
+        """Switch hub tab and update button styles — active gets frosted white bubble."""
+        if self.hubStackedWidget:
+            self.hubStackedWidget.setCurrentIndex(index)
+        self._update_hub_tab_styles(index)
+
+    def _update_hub_tab_styles(self, active_index=0):
+        """Apply frosted bubble style to active hub tab, gradient to inactive."""
+        is_small = self.is_small_screen
+        fs = 8 if is_small else 14
+        pad = '3px 8px' if is_small else '6px 16px'
+        br = 4 if is_small else 14
+
+        tabs = [
+            (0, self.tabExamples),
+            (1, self.tabFunctions),
+            (2, self.tabWorkspace),
+        ]
+        for idx, btn in tabs:
+            if not btn:
+                continue
+            if idx == active_index:
+                # Active — frosted white bubble (matches level nav active style)
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: rgba(255, 255, 255, 0.92);
+                        color: #6d28d9;
+                        border-radius: {br}px;
+                        font-weight: bold;
+                        font-size: {fs}px;
+                        padding: {pad};
+                        border: 2px solid rgba(255, 255, 255, 0.7);
+                    }}
+                """)
+            else:
+                # Inactive — transparent with white text on the purple header
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: rgba(255, 255, 255, 0.15);
+                        color: rgba(255, 255, 255, 0.85);
+                        border-radius: {br}px;
+                        font-weight: bold;
+                        font-size: {fs}px;
+                        padding: {pad};
+                        border: 1px solid rgba(255, 255, 255, 0.2);
+                    }}
+                    QPushButton:hover {{
+                        background: rgba(255, 255, 255, 0.3);
+                        color: white;
+                    }}
+                """)
+
+    def _setup_level_navigation(self):
+        """Replace flat hubContentLayout with Level_Navigation_Bar + QScrollArea."""
+        if not self.hubStackedWidget:
+            return
+        
+        page = self.hubStackedWidget.widget(0)  # pageExamples
+        if not page:
+            return
+
+        # Remove existing layout if any
+        old_layout = page.layout()
+        if old_layout:
+            while old_layout.count():
+                child = old_layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+            QWidget().setLayout(old_layout)  # Orphan old layout
+
+        # New main layout
+        main_layout = QVBoxLayout(page)
+        main_layout.setContentsMargins(4, 4, 4, 0)
+        main_layout.setSpacing(6)
+
+        # ── Frosted pill container bar (like the reference designs) ──
+        is_small = self.is_small_screen
+        bar_h = 36 if is_small else 50
+        bar_br = bar_h // 2
+
+        nav_container = QFrame()
+        nav_container.setObjectName("levelNavBar")
+        nav_container.setFixedHeight(bar_h)
+        nav_container.setStyleSheet(f"""
+            QFrame#levelNavBar {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 rgba(139, 92, 246, 0.35),
+                    stop:0.4 rgba(109, 40, 217, 0.25),
+                    stop:0.7 rgba(59, 130, 246, 0.25),
+                    stop:1 rgba(6, 182, 212, 0.2));
+                border-radius: {bar_br}px;
+                border: 1.5px solid rgba(139, 92, 246, 0.3);
+            }}
+        """)
+
+        nav_bar = QHBoxLayout(nav_container)
+        nav_bar.setContentsMargins(8, 4, 8, 4)
+        nav_bar.setSpacing(12 if is_small else 20)
+        nav_bar.setAlignment(Qt.AlignCenter)
+
+        self._level_badges = {}
+        self._active_level = "Beginner"
+        self._curriculum_cards = []
+        self._nav_container = nav_container
+
+        s = STRINGS[self.current_lang]
+        for level_key, cfg in LEVEL_CONFIG.items():
+            badge = LevelBadge(level_key, cfg["color"], cfg["icon"], is_small=is_small)
+            badge.retranslate(s)
+            badge.level_clicked.connect(self._on_level_selected)
+            self._level_badges[level_key] = badge
+            nav_bar.addWidget(badge)
+
+        main_layout.addWidget(nav_container, 0, Qt.AlignCenter)
+
+        # Scroll Area
+        self._examples_scroll = QScrollArea()
+        self._examples_scroll.setWidgetResizable(True)
+        self._examples_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._examples_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._examples_scroll.setFrameShape(QFrame.NoFrame)
+        self._examples_scroll.setStyleSheet("QScrollArea { background: transparent; border: none; } QScrollArea > QWidget > QWidget { background: transparent; }")
+
+        scroll_contents = QWidget()
+        scroll_contents.setStyleSheet("background: transparent;")
+        scroll_contents.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self._cards_layout = QVBoxLayout(scroll_contents)
+        self._cards_layout.setContentsMargins(4, 0, 4, 0)
+        self._cards_layout.setSpacing(6)
+        self._cards_layout.setSizeConstraint(QVBoxLayout.SetMinAndMaxSize)
+        self._examples_scroll.setWidget(scroll_contents)
+
+        main_layout.addWidget(self._examples_scroll)
+
+        # Set Beginner active
+        self._level_badges["Beginner"].set_active(True)
+
     def populate_curriculum_hub(self):
-        """Scan curriculum folder and generate cards dynamically."""
-        if not self.hubContentLayout: return
-        
-        # 1. Clear existing items (cards) but keep the spacer at the end
-        while self.hubContentLayout.count() > 1:
-            child = self.hubContentLayout.takeAt(0)
-            if child.widget(): child.widget().deleteLater()
-            
-        # 2. Find all .py files in curriculum directory
+        """Scan curriculum folder, group by level, create cards, apply active filter."""
+        if not hasattr(self, '_cards_layout'):
+            return
+
+        # 1. Clear existing cards
+        self._curriculum_cards = []
+        while self._cards_layout.count():
+            child = self._cards_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        # 2. Scan curriculum directory
         curr_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "curriculum")
-        if not os.path.exists(curr_dir): return
-        
+        if not os.path.exists(curr_dir):
+            return
+
+        counts = {"Beginner": 0, "Intermediate": 0, "Advanced": 0}
+
         for name in sorted(os.listdir(curr_dir)):
             if name.endswith(".py"):
                 file_path = os.path.join(curr_dir, name)
                 metadata = self._parse_lesson_metadata(file_path)
-                
-                # 3. Create a card and insert it before the spacer
+
                 title = metadata.get(f"TITLE_{self.current_lang.upper()}", metadata.get("TITLE", name))
                 desc = metadata.get(f"DESC_{self.current_lang.upper()}", metadata.get("DESC", "Custom curriculum script."))
-                
+                level = metadata.get("LEVEL", "Beginner")
+
                 card = CurriculumCard(
                     filename=name,
                     title=title,
-                    level=metadata.get("LEVEL", "Beginner"),
+                    level=level,
                     icon=metadata.get("ICON", "📄"),
                     color=metadata.get("COLOR", "#7c3aed"),
                     desc=desc,
                     on_load_click=self.load_curriculum_example,
                     is_small=self.is_small_screen
                 )
-                self.hubContentLayout.insertWidget(self.hubContentLayout.count() - 1, card)
+                self._curriculum_cards.append((level, card))
+                self._cards_layout.addWidget(card)
+
+                if level in counts:
+                    counts[level] += 1
+
+        # Add spacer
+        self._cards_layout.addStretch()
+
+        # Update badge counts
+        if hasattr(self, '_level_badges'):
+            for lvl, badge in self._level_badges.items():
+                badge.set_count(counts.get(lvl, 0))
+
+        # Apply filter
+        self._apply_level_filter()
+
+    def _on_level_selected(self, level):
+        """Handle level badge click."""
+        if level == self._active_level:
+            return
+        self._active_level = level
+        for lvl, badge in self._level_badges.items():
+            badge.set_active(lvl == level)
+        self._apply_level_filter()
+        # Scroll to top
+        if hasattr(self, '_examples_scroll'):
+            self._examples_scroll.verticalScrollBar().setValue(0)
+
+    def _apply_level_filter(self):
+        """Show/hide cards based on active level."""
+        for level, card in self._curriculum_cards:
+            card.setVisible(level == self._active_level)
 
     def _parse_lesson_metadata(self, path):
         """Extract # TITLE, # LEVEL, # ICON, # COLOR, # DESC from file header."""
@@ -2771,14 +3115,20 @@ class AICodingLab(QMainWindow):
         # Title Button
         btn_title = QPushButton(filename)
         btn_title.setObjectName("TabTitle")
-        btn_title.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
+        # Match the sizes from refresh_ui_resolution
+        _tab_fs = 6 if self.is_small_screen else 8
+        _tab_h = 14 if self.is_small_screen else 20
+        btn_title.setFont(QFont("Segoe UI", _tab_fs, QFont.Weight.Bold))
+        btn_title.setFixedHeight(_tab_h)
         btn_title.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_title.clicked.connect(lambda _, n=filename: self.load_file_by_tab(n))
         
         # Close Button
         btn_close = QPushButton("×")
         btn_close.setObjectName("TabClose")
-        btn_close.setFixedSize(6 if self.is_small_screen else 18, 6 if self.is_small_screen else 18)
+        _close_sz = 6 if self.is_small_screen else 18
+        btn_close.setFixedSize(_close_sz, _close_sz)
+        btn_close.setFixedHeight(_tab_h)
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_close.clicked.connect(lambda _, n=filename: self.close_tab(n))
         
@@ -4154,8 +4504,9 @@ class AICodingLab(QMainWindow):
         hint_vbox.addStretch()
 
         if is_detection:
-            hint_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            hint_container.setMinimumHeight(100 if self.is_small_screen else 240)
+            hint_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            # Reduce minimum height slightly to prevent squeezing the tag panel below
+            hint_container.setMinimumHeight(100 if self.is_small_screen else 130)
         
         body_layout.addWidget(hint_container)
         body_layout.addWidget(scroll)
@@ -4226,6 +4577,8 @@ class AICodingLab(QMainWindow):
             btn_label.setEnabled(False) # Initial state
             btn_label.setToolTip("Please define at least 1 class name to start labeling.")
         
+        # Add spacing before buttons to prevent overlap
+        body_layout.addSpacing(2 if self.is_small_screen else 10)
         body_layout.addLayout(btn_row)
         
         card_layout.addWidget(body)

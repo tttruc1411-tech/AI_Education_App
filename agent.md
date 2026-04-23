@@ -22,8 +22,23 @@ A professional, education-focused Python development environment built with **Py
 ### 📐 Dual Resolution Mode
 * **Status**: ✅ **COMPLETED**
 * **Toggle**: `btnResToggle` (💻 icon) in the main header switches between Standard (1280×800) and Small/16:9 (1024×600) layouts.
-* **Mechanism**: `refresh_ui_resolution(is_transition)` in `main.py` uses regex-based stylesheet patching + direct widget property overrides to scale fonts, paddings, splitter sizes, and button heights.
-* **Known Issue**: In small-screen mode, some font sizes are set to `3px`–`4px` (e.g. form labels, metric cards) which are unreadable. These values need to be raised to a minimum of `8px`.
+* **Mechanism**: `refresh_ui_resolution(is_transition)` in `main.py` uses regex-based stylesheet patching + direct widget property overrides.
+* **UI Scaling Specifications**:
+    | Component | Standard (1280×800) | Small (1024×600) | Note |
+    | :--- | :--- | :--- | :--- |
+    | **Panel Titles** | 20px (Bold) | 12px (Bold) | Hub, Editor, Cam, Results |
+    | **Console Titles** | 18px (Bold) | 10px (Bold) | Slightly smaller than panel titles |
+    | **Console Header** | 44px (Fixed) | 36px (Fixed) | `setFixedHeight` prevents overlap |
+    | **Collapsed Console** | 40px (Fixed) | 34px (Fixed) | |
+    | **Hub Tabs Font** | 14px (Bold) | 8px (Bold) | |
+    | **Hub Tabs Height** | 32px (Fixed) | 12px (Fixed) | |
+    | **Editor Tab Bar** | 30px (Fixed) | 20px (Fixed) | |
+    | **Editor Individual Tabs**| 8pt (Bold) | 6pt (Bold) | |
+    | **Editor Tab Height** | 20px (Fixed) | 14px (Fixed) | Prevents clipping of 'p', 'y' |
+    | **Run/Save Buttons** | 40px (Height) | 30px (Height) | 14px vs 10px font |
+    | **Console Body** | 14px | 8px | Consolas / Monospace |
+    | **Footer Labels** | 14px | 11px | Status and Timestamp |
+* **Known Issue**: Some deeply nested form labels and metric cards in Training Mode still require a minimum floor of 8px to ensure readability on small screens.
 
 ### 📂 Workspace & File System (Adaptive Mode)
 * **Smart Permissions**: 
@@ -328,3 +343,74 @@ A professional, education-focused Python development environment built with **Py
 * [x] **Phi-3 Removed**: Removed from model registry and combobox — too large (2.39 GB) for 2 GB GPU budget.
 * [x] **llama-cpp-python _internals.py fix**: Patched `LlamaModel.close()` to use `getattr()` for `sampler`/`_exit_stack` attributes — prevents `AttributeError` crash when model fails to load.
 * [ ] **Increase CMA for consistent GPU**: Add `cma=1536M` to `/boot/extlinux/extlinux.conf` APPEND line and reboot. Currently CMA=256MB is mostly consumed by Xorg/GNOME, forcing LLM to CPU fallback.
+
+### 📚 Expanded Function Library & Curriculum (V2)
+* **Status**: ✅ **COMPLETED**
+* **Scope**: Expanded from 25 function blocks across 6 categories to **45 blocks across 7 categories**, plus **35 new curriculum examples** (38 total).
+* **New Variables Category** (✏️ Teal `#14b8a6`):
+    | Block | Snippet | Returns |
+    |-------|---------|---------|
+    | **Create_Text** | `my_text = Create_Text(value = 'Hello')` | `Text (str)` |
+    | **Create_Number** | `my_number = Create_Number(value = '0')` | `Number` |
+    | **Create_Decimal** | `my_decimal = Create_Decimal(value = '0.0')` | `Number (float)` |
+    | **Create_Boolean** | `my_flag = Create_Boolean(value = 'True')` | `Boolean` |
+    | **Create_List** | `my_list = Create_List(value = None)` | `List` |
+* **New Camera Blocks**: `Save_Frame(camera_frame, file_path)` saves images to `projects/data/saved/` by default; `Load_Image(file_path)` loads from disk with error handling.
+* **New Image Processing Blocks**: `adjust_brightness`, `rotate_image`, `crop_image`, `draw_text`, `convert_to_hsv` — all return `Image (ndarray)` for type-chain compatibility.
+* **New Display & Dashboard Blocks**: `Show_FPS` (FPS overlay), `Show_Image` (streams frame via `IMG:` protocol), `Observe_Variable` (streams variable via `VAR:` protocol), `Draw_Rectangle`, `Draw_Circle`. `Show_Image` + `Observe_Variable` are granular alternatives to `Update_Dashboard` — new examples use the separated blocks.
+* **New Logic Blocks**: `Wait_Seconds` (time.sleep wrapper), `Repeat_N_Times` (for-loop snippet), `Print_Message` (console output).
+* **New Source Files**:
+    * `src/modules/library/functions/variables.py` — Identity functions for typed variable creation.
+    * `src/modules/library/functions/display_blocks.py` — FPS, Show_Image, Observe_Variable, Draw_Rectangle, Draw_Circle.
+    * `src/modules/library/functions/logic_blocks.py` — Wait_Seconds, Print_Message.
+* **Bilingual Function Descriptions**: Every function block in `definitions.py` now has `desc_vi`, `returns.desc_vi`, and `params[].desc_vi` fields for Vietnamese translations. The function library panel (`function_library.py`) and editor tooltips (`advanced_editor.py`) automatically switch based on `lang`.
+* **Hint System Compatibility**: All new blocks use the recognized type vocabulary (`Image`, `Image (ndarray)`, `Text (str)`, `Number`, `Number (float)`, `Boolean`, `List`, etc.) so `_scan_variable_types()` in `advanced_editor.py` correctly registers variables and shows "Connect Logic" / "Type Mismatch" hints.
+
+### 📚 Curriculum Examples (35 New, 38 Total)
+* **Status**: ✅ **COMPLETED**
+* **Progressive Difficulty**:
+    * **Beginner** (13 examples, #4–#16): Vision-only — camera basics, image filters, save/load, mirror mode, brightness, rotation, text overlay, shapes, edge detection, color spaces, cropping, blur, grayscale. **No AI blocks**.
+    * **Intermediate** (12 examples, #1–#2 original + #17–#26): AI detection + overlays — smart face counter, image processing pipeline, HSV explorer, face-triggered filter, object counter, FPS monitor, face annotations, timed capture, repeat series, custom detector.
+    * **Advanced** (13 examples, #3 original + #27–#38): Multi-category integration — security camera, smart photo booth, AI gallery, face-following robot, multi-model comparison, object tracker stats, smart doorbell, obstacle avoider, night vision, attendance logger, AI art filter, motor dashboard.
+* **Color Scheme**: Beginner = Green `#22c55e`, Intermediate = Yellow `#eab308`, Advanced = Orange `#f97316`.
+* **All new examples use `Show_Image` + `Observe_Variable`** instead of `Update_Dashboard` for separation of concerns.
+* **Robotics examples** (30, 34, 38) include `# ⚠️ WARNING: This example requires ORC Hub hardware` comment.
+* **File Format**: `{number}_{snake_case_name}.py` with metadata headers: TITLE, TITLE_VI, LEVEL, ICON, COLOR, DESC, DESC_VI.
+
+### 🎯 Level Navigation Bar (Examples Tab)
+* **Status**: ✅ **COMPLETED**
+* **Design**: Frosted purple-blue-cyan gradient pill bar (`QFrame#levelNavBar`) with 3 `LevelBadge` icon circles (⭐ Beginner, 🚀 Intermediate, 🏆 Advanced). Active badge gets a white frosted bubble; inactive badges show semi-transparent icons with hover glow.
+* **Widget**: `LevelBadge(QWidget)` with `setAttribute(Qt.WA_StyledBackground, True)` for stylesheet background rendering. Uses `QWidget#lvlActive` / `QWidget#lvlInactive` objectName selectors.
+* **Filtering**: `_apply_level_filter()` uses `setVisible(True/False)` on `(level, card)` tuples — no widget recreation. `_on_level_selected()` updates badge states and scrolls to top.
+* **Layout**: `_setup_level_navigation()` replaces the flat `hubContentLayout` with Level_Navigation_Bar + `QScrollArea` at runtime. Called after `hubStackedWidget` is found in `__init__`.
+* **Dual Resolution**: Nav bar height 36px (small) / 50px (normal). Badge circles 28px (small) / 40px (normal). Updated in `refresh_ui_resolution()`.
+* **Default**: Beginner level selected on launch.
+* **⚠️ Init Order**: `_setup_level_navigation()` MUST be called AFTER `hubStackedWidget` is assigned (line ~935), not before. Previous bug: calling it at line ~851 caused silent failure because `hubStackedWidget` was `None`.
+
+### 🎨 Hub Tab Unified Design (Examples / Functions / Workspace)
+* **Status**: ✅ **COMPLETED**
+* **Design**: Active tab gets frosted white bubble (`rgba(255,255,255,0.92)`) with purple text (`#6d28d9`); inactive tabs get semi-transparent background with white text and hover glow. Matches the level navigation bar aesthetic.
+* **Implementation**: `_switch_hub_tab(index)` calls `_update_hub_tab_styles(active_index)` which applies resolution-aware stylesheets. Connected via `tabExamples/tabFunctions/tabWorkspace` click signals.
+* **Resolution-aware**: Font sizes and padding scale with `is_small` flag in `_update_hub_tab_styles()`.
+
+### 🔧 Function Library Info Panel Resolution Scaling
+* **Status**: ✅ **COMPLETED**
+* **Fix**: `FunctionInfoPanel` now stores `self._is_small` and uses it for all label sizes, code block heights, and font sizes. Previously `_bold_label()` had `is_small=False` hardcoded.
+* **Scaling**: Section titles 10px/14px, param/return descriptions 10px/16px, snippet block 28-50px/42-84px height, source code block 120px/200px height with 5pt/7pt font.
+
+## Updated File Structure (New Files)
+* `src/modules/library/functions/variables.py`: Variable constructor blocks (Create_Text, Create_Number, Create_Decimal, Create_Boolean, Create_List).
+* `src/modules/library/functions/display_blocks.py`: Display blocks (Show_FPS, Show_Image, Observe_Variable, Draw_Rectangle, Draw_Circle).
+* `src/modules/library/functions/logic_blocks.py`: Logic utility blocks (Wait_Seconds, Print_Message).
+* `curriculum/4_my_first_camera.py` through `curriculum/38_motor_speed_dashboard.py`: 35 new curriculum example files.
+
+## Updated Next Steps
+* [x] **Expanded Function Library**: 20 new blocks across 7 categories (including new Variables ✏️ category).
+* [x] **35 New Curriculum Examples**: Progressive Beginner → Intermediate → Advanced path.
+* [x] **Level Navigation Bar**: Frosted gradient pill bar with animated badge filtering.
+* [x] **Hub Tab Unified Design**: Frosted white bubble active state for Examples/Functions/Workspace tabs.
+* [x] **Bilingual Function Descriptions**: All `desc_vi`, `returns.desc_vi`, `params[].desc_vi` fields in definitions.py.
+* [x] **Function Info Panel Resolution Scaling**: All section titles, descriptions, and code blocks scale with resolution mode.
+* [x] **Save_Frame Default Path**: Images saved to `projects/data/saved/` by default.
+* [x] **Editor Tooltip Translation**: `_lang` attribute on `AdvancedPythonEditor` synced from `set_language()`, "Returns" label translated.
+* [x] **Original Example Reclassification**: `1_face_detection.py` moved from Beginner to Intermediate (uses AI blocks). `3_llm_chatbot.py` color updated to orange.

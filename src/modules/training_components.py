@@ -107,15 +107,17 @@ class MultiClassTagPanel(QWidget):
 
     def set_small_mode(self, is_small):
         """Resize tag inputs for 16:9 small screen mode."""
-        _fs = 6 if is_small else 11
-        _pad = "1px" if is_small else "4px"
-        _hint_fs = 6 if is_small else 11
+        _fs = 8 if is_small else 11
+        _pad = "2px" if is_small else "4px"
+        _hint_fs = 8 if is_small else 11
+        
+        # Prevent layout overlap by enforcing a minimum height
+        self.setMinimumHeight(68 if is_small else 105)
+        
         for edit in self.tags:
             ss = re.sub(r"padding:\s*\d+px", f"padding: {_pad}", edit.styleSheet())
             ss = re.sub(r"font-size:\s*\d+px", f"font-size: {_fs}px", ss)
             edit.setStyleSheet(ss)
-            if is_small:
-                edit.setFixedHeight(18)
         self.lbl_hint.setStyleSheet(re.sub(r"font-size:\s*\d+px", f"font-size: {_hint_fs}px", self.lbl_hint.styleSheet()))
 
     def lock_classes(self):

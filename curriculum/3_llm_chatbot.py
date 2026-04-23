@@ -1,7 +1,7 @@
 # TITLE: LLM Chatbot
 # LEVEL: Advanced
 # ICON: 💬
-# COLOR: #ec4899
+# COLOR: #f97316
 # DESC: Build a chat AI that understands you. Explore NLP, prompt logic, and context.
 # ============================================================
 

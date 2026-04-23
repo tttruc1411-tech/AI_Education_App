@@ -12,6 +12,7 @@ class AdvancedPythonEditor(QsciScintilla):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
+        self._lang = "en"  # Current language for tooltips
         
         # Drag-and-drop state for Ghost Blocks
         self._drag_active = False
@@ -266,7 +267,7 @@ class AdvancedPythonEditor(QsciScintilla):
             # A. Is it a library function name? (Return-Type Info)
             if word in data["functions"]:
                 f_info = data["functions"][word]
-                tip_text_inner = f"{f_info['desc']}<br><br><i>Returns: {f_info['returns']['type']}</i>"
+                tip_text_inner = f"{f_info['desc']}<br><br><i>{'Giá trị của hàm' if self._lang == 'vi' else 'Returns'}: {f_info['returns']['type']}</i>"
                 is_func = True
                 break
             
