@@ -17,11 +17,11 @@ MODEL_REGISTRY = {
         "context_len": 2048,
         "gpu_layers":  999,           # Full GPU offload via subprocess worker
         "threads":     6,
-        "max_tokens":  512,
+        "max_tokens":  150,            # Short answers only — was 512, trimmed for concise tutoring
         "temperature": 0.2,
         "top_p":       0.9,
-        "repeat_penalty": 1.1,
-        "stop": ["<|im_end|>", "<|endoftext|>", "\n\nStudent:", "\n\nUser:"],
+        "repeat_penalty": 1.2,         # Slightly higher to reduce repetitive filler text
+        "stop": ["<|im_end|>", "<|endoftext|>", "\n\nStudent:", "\n\nUser:", "\n\n\n"],
     },
     "gemma3": {
         "name":        "Gemma-3-1B-IT",
@@ -31,11 +31,11 @@ MODEL_REGISTRY = {
         "context_len": 4096,           # 1B supports 32K but we cap at 4K for RAM
         "gpu_layers":  999,           # Full GPU offload via subprocess worker
         "threads":     6,
-        "max_tokens":  512,
+        "max_tokens":  150,            # Short answers only — was 512, trimmed for concise tutoring
         "temperature": 0.2,
         "top_p":       0.9,
-        "repeat_penalty": 1.1,
-        "stop": ["<end_of_turn>", "<eos>", "\n\nStudent:", "\n\nUser:"],
+        "repeat_penalty": 1.2,         # Slightly higher to reduce repetitive filler text
+        "stop": ["<end_of_turn>", "<eos>", "\n\nStudent:", "\n\nUser:", "\n\n\n"],
     },
 }
 

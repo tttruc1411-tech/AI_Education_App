@@ -1,7 +1,11 @@
 # Prompt builder — supports Qwen2.5 ChatML and Phi-3 chat formats
 
 import re
+import ast
 from . import model_config as _mcfg
+
+# ── Sentinel prefix for pre-built answers that skip LLM inference ──────────
+DIRECT_ANSWER_PREFIX = "DIRECT:"
 
 # ── Function library context for Ask/Explain modes ─────────────────────────
 # Lazy-loaded from definitions.py. Only injected into ask/explain prompts,
@@ -59,36 +63,26 @@ def _extract_func_context(text: str, max_funcs: int = 4) -> str:
     return "Function reference:\n" + "\n\n".join(found)
 
 SYSTEM_PROMPT = (
-    "You are a friendly Python tutor for kids in AI Code Lab.\n"
-    "The app uses drag-and-drop code blocks. Here are the available functions and how they connect:\n\n"
-    "WORKFLOW — A typical AI camera program follows this order:\n"
-    "1. Init_Camera() → get a camera handle\n"
-    "2. Get_Camera_Frame(capture_camera) → get a picture from camera\n"
-    "3. Load a model: Load_ONNX_Model() or Load_Engine_Model() or Load_YuNet_Model()\n"
-    "4. Run the model: Run_ONNX_Model() or Run_Engine_Model() or Run_YuNet_Model()\n"
-    "5. Draw results: Draw_Detections() or Draw_Detections_MultiClass() or Draw_Engine_Detections()\n"
-    "6. Update_Dashboard(camera_frame, var_name, var_value) → REQUIRED to display the camera feed and results on screen\n"
-    "7. Steps 2-6 go inside a 'while True:' loop\n\n"
-    "OTHER BLOCKS:\n"
-    "- Image: convert_to_gray(), resize_image(), apply_blur(), detect_edges(), flip_image()\n"
-    "- Robotics: DC_Run(pin, speed, time_ms), DC_Stop(pin), Get_Speed(pin), Set_Servo(pin, angle)\n"
-    "- Logic: while True (loop), if/else (condition)\n\n"
-    "IMPORTANT — Update_Dashboard() is the ONLY way to show the camera feed on screen. "
-    "Without it, the kid will not see anything in the Live Feed panel.\n\n"
-    "Rules:\n"
-    "- Use simple words a 10-year-old can understand.\n"
-    "- Keep answers short: 2-4 sentences max. NEVER output full scripts or code blocks.\n"
-    "- When suggesting a fix, just tell the kid which function to add and where, like: "
-    "'Add Update_Dashboard() at the end of your while loop.'\n"
-    "- If function details are provided below, use them to give accurate parameter info."
+    "You are a Python tutor for kids. Be ULTRA BRIEF.\n\n"
+    "WORKFLOW: Init_Camera → Get_Camera_Frame → Load Model → Run Model → Draw → Update_Dashboard (inside while True loop).\n"
+    "Update_Dashboard() is the ONLY way to show camera feed.\n\n"
+    "RULES:\n"
+    "- MAX 2 sentences. No code blocks. No full scripts.\n"
+    "- Just say WHAT to fix/add and WHERE (which line or position).\n"
+    "- Use simple words for kids.\n"
+    "- Example good answer: 'Add Update_Dashboard() at the end of your while loop.'"
 )
 
 FIX_SYSTEM_PROMPT_EN = (
-    "You are a coding tutor for kids. Explain this Python error simply."
+    "You are a coding tutor for kids. Output ONLY the fix — no extra explanation.\n"
+    "Use the EXACT format: Line N: [short reason] / Original: [code] / Fixed: [code].\n"
+    "Never write paragraphs. Never repeat the error message."
 )
 
 FIX_SYSTEM_PROMPT_VI = (
-    "Bạn là người hướng dẫn lập trình cho trẻ em. Giải thích lỗi Python này một cách dễ hiểu."
+    "Bạn là người hướng dẫn lập trình cho trẻ em. Chỉ xuất phần sửa — không giải thích thêm.\n"
+    "Dùng ĐÚNG định dạng: Dòng N: [lý do ngắn] / Gốc: [code] / Sửa: [code].\n"
+    "Không viết đoạn văn. Không lặp lại thông báo lỗi."
 )
 
 # Max characters of code to include in any prompt.
@@ -229,6 +223,7 @@ def build_prompt(user_question: str, editor_code: str = "",
     if console_output.strip():
         user_parts.append(f"Console:\n```\n{_trim_console(console_output)}\n```")
     user_parts.append(user_question.strip())
+    user_parts.append("Answer in 1-2 sentences only. No code blocks.")
     user_content = "\n\n".join(user_parts)
     return _wrap_prompt(system, user_content)
 
@@ -298,6 +293,138 @@ def _check_syntax(code: str):
         return (e.lineno, str(e))
 
 
+def _find_unclosed_bracket(editor_code: str, error_line: int):
+    """Scan backwards from error_line to find an unclosed bracket/paren/brace.
+    Returns (line_num, broken_line, bracket_char, fixed_line) or None.
+    Python reports 'invalid syntax' on the line AFTER an unclosed bracket,
+    so we scan the lines before the reported error."""
+    code_lines = editor_code.splitlines()
+    close_for = {'[': ']', '(': ')', '{': '}'}
+
+    def _count_outside_strings(line, char):
+        """Count occurrences of char that are NOT inside string literals."""
+        count = 0
+        in_single = False
+        in_double = False
+        i = 0
+        while i < len(line):
+            c = line[i]
+            if c == '\\' and i + 1 < len(line):
+                i += 2  # skip escaped char
+                continue
+            if c == "'" and not in_double:
+                in_single = not in_single
+            elif c == '"' and not in_single:
+                in_double = not in_double
+            elif c == char and not in_single and not in_double:
+                count += 1
+            i += 1
+        return count
+
+    # Scan from the error line backwards (up to 10 lines back)
+    start = min(error_line - 1, len(code_lines) - 1)
+    for i in range(start, max(start - 10, -1), -1):
+        line = code_lines[i]
+        for open_br, close_br in close_for.items():
+            open_count = _count_outside_strings(line, open_br)
+            close_count = _count_outside_strings(line, close_br)
+            if open_count > close_count:
+                # Found unclosed bracket on this line
+                stripped = line.rstrip()
+                fixed = stripped + close_br
+                return (i + 1, line, close_br, fixed)
+    return None
+
+
+# ── Known library functions/modules that students import ───────────────────
+# These are always available via `import camera`, `import ai_vision`, etc.
+# We don't flag them as "undefined" since they come from drag-and-drop blocks.
+_KNOWN_IMPORTS = {
+    "camera", "ai_vision", "drawing", "display", "image", "logic",
+    "variables", "robotics", "cv2", "time", "math", "os", "sys",
+}
+
+
+def check_undefined_vars(code: str):
+    """Lightweight static analysis: find variables used but never assigned.
+    Returns list of (line_num, var_name, usage_line_text) or empty list.
+    Only catches simple cases — not a full linter, just typo detection."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []  # can't parse — let compile() handle it
+
+    # Collect all assigned names (targets of assignments, for-loop vars, etc.)
+    assigned = set()
+    # Also collect imported names
+    imported = set(_KNOWN_IMPORTS)
+
+    for node in ast.walk(tree):
+        # Assignment targets: x = ..., x, y = ...
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            for target in (node.targets if isinstance(node, ast.Assign) else [node.target]):
+                if isinstance(target, ast.Name):
+                    assigned.add(target.id)
+                elif isinstance(target, ast.Tuple):
+                    for elt in target.elts:
+                        if isinstance(elt, ast.Name):
+                            assigned.add(elt.id)
+        # AugAssign: x += ...
+        elif isinstance(node, ast.AugAssign):
+            if isinstance(node.target, ast.Name):
+                assigned.add(node.target.id)
+        # For loop: for x in ...
+        elif isinstance(node, ast.For):
+            if isinstance(node.target, ast.Name):
+                assigned.add(node.target.id)
+        # Function defs and class defs
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            assigned.add(node.name)
+            for arg in node.args.args:
+                assigned.add(arg.arg)
+        elif isinstance(node, ast.ClassDef):
+            assigned.add(node.name)
+        # Imports
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                imported.add(alias.asname or alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                imported.add(alias.asname or alias.name)
+        # With statement: with X as y
+        elif isinstance(node, ast.With):
+            for item in node.items:
+                if item.optional_vars and isinstance(item.optional_vars, ast.Name):
+                    assigned.add(item.optional_vars.id)
+        # Except handler: except E as e
+        elif isinstance(node, ast.ExceptHandler):
+            if node.name:
+                assigned.add(node.name)
+
+    # Python builtins we should never flag
+    import builtins
+    builtin_names = set(dir(builtins))
+
+    # Now find Name nodes in Load context that aren't assigned or imported
+    code_lines = code.splitlines()
+    issues = []
+    seen = set()  # avoid duplicate reports for same var
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            name = node.id
+            if (name not in assigned
+                    and name not in imported
+                    and name not in builtin_names
+                    and name not in seen):
+                seen.add(name)
+                ln = node.lineno
+                line_text = code_lines[ln - 1] if ln <= len(code_lines) else ""
+                issues.append((ln, name, line_text))
+
+    return issues
+
+
 def build_fix_prompt(error_text: str, editor_code: str, lang: str = "en") -> str:
     """Translator Pattern: Python finds the error, LLM just explains it for kids."""
 
@@ -312,6 +439,36 @@ def build_fix_prompt(error_text: str, editor_code: str, lang: str = "en") -> str
             code_lines = editor_code.splitlines()
             if line_num and 1 <= line_num <= len(code_lines):
                 broken_line = code_lines[line_num - 1]
+
+    # ── Step 2b: Unclosed bracket detection ────────────────────────────
+    # Python reports "invalid syntax" on the line AFTER an unclosed [ ( {.
+    # The reported line is often fine — the real error is the missing bracket.
+    # Python 3.10+ may also say "was never closed" or "unexpected EOF".
+    if error_type and line_num and isinstance(line_num, int):
+        is_generic_syntax = ("invalid syntax" in error_type.lower()
+                             or "expected" in error_type.lower()
+                             or "was never closed" in error_type.lower()
+                             or "unexpected eof" in error_type.lower())
+        if is_generic_syntax:
+            bracket_info = _find_unclosed_bracket(editor_code, line_num)
+            if bracket_info:
+                real_line, real_broken, bracket_char, fixed_line = bracket_info
+                bracket_names = {']': ('ngoặc vuông ]', 'closing bracket ]'),
+                                 ')': ('ngoặc tròn )', 'closing parenthesis )'),
+                                 '}': ('ngoặc nhọn }', 'closing brace }')}
+                vi_name, en_name = bracket_names.get(bracket_char, (bracket_char, bracket_char))
+                if lang == "vi":
+                    return DIRECT_ANSWER_PREFIX + (
+                        f"Dòng {real_line}: thêm {vi_name} ở cuối dòng\n"
+                        f"Gốc: {real_broken.strip()}\n"
+                        f"Sửa: {fixed_line}"
+                    )
+                else:
+                    return DIRECT_ANSWER_PREFIX + (
+                        f"Line {real_line}: add {en_name} at the end\n"
+                        f"Original: {real_broken.strip()}\n"
+                        f"Fixed: {fixed_line}"
+                    )
 
     # ── Step 3: Handle "expected indented block" or "unexpected indent" ──
     # When the previous line has code after a colon (while True:code_here),
@@ -339,28 +496,19 @@ def build_fix_prompt(error_text: str, editor_code: str, lang: str = "en") -> str
                 indent = "    "
                 # Override error type — this is NOT a normal indent error
                 error_type = f"Two statements on one line — '{after_colon}' should be on the next line"
-                # Build the prompt directly and return — don't fall through
+                # Bypass LLM — we already know the exact fix
                 if lang == "vi":
-                    system = FIX_SYSTEM_PROMPT_VI
-                    user_content = (
-                        f"Thông báo lỗi: Hai lệnh trên cùng một dòng\n"
-                        f"Dòng code bị lỗi: `{broken_line.strip()}`\n\n"
-                        f"Chỉ xuất ĐÚNG 3 dòng:\n"
-                        f"Dòng {line_num}: [giải thích rằng code sau dấu hai chấm phải xuống dòng mới]\n"
+                    return DIRECT_ANSWER_PREFIX + (
+                        f"Dòng {line_num}: code sau dấu ':' phải xuống dòng mới\n"
                         f"Gốc: {broken_line.strip()}\n"
                         f"Sửa: Nhấn Enter sau '{before_colon.strip()}' rồi viết '{after_colon}' ở dòng mới (thụt vào 4 dấu cách)"
                     )
                 else:
-                    system = FIX_SYSTEM_PROMPT_EN
-                    user_content = (
-                        f"Error message: Two statements on one line\n"
-                        f"Broken code: `{broken_line.strip()}`\n\n"
-                        f"Output EXACTLY 3 lines:\n"
-                        f"Line {line_num}: [explain that code after the colon must go on the next line]\n"
+                    return DIRECT_ANSWER_PREFIX + (
+                        f"Line {line_num}: press Enter after the colon\n"
                         f"Original: {broken_line.strip()}\n"
-                        f"Fixed: Press Enter after '{before_colon.strip()}' then write '{after_colon}' on the next line (with 4 spaces)"
+                        f"Fixed: Press Enter after '{before_colon.strip()}' then write '{after_colon}' on next line (with 4 spaces)"
                     )
-                return _wrap_prompt(system, user_content)
 
     # ── Step 4: Detect runtime errors (NameError, ImportError, etc.) ───
     # These pass compile() but fail at runtime. The console has the answer.
@@ -378,78 +526,108 @@ def build_fix_prompt(error_text: str, editor_code: str, lang: str = "en") -> str
     is_indent_err = "indent" in error_type.lower()
 
     # ── Step 5: Build the micro-prompt ─────────────────────────────────
-    if is_runtime:
-        # Runtime error — just ask the model to explain and suggest a fix
+
+    # ── Indentation errors: bypass LLM entirely ───────────────────────
+    # Python already knows the fix (strip spaces). No need for LLM.
+    if is_indent_err and broken_line:
+        fixed_line = broken_line.strip()
         if lang == "vi":
-            system = FIX_SYSTEM_PROMPT_VI
-            user_content = (
-                f"Thông báo lỗi: {error_type}\n"
-                f"{'Dòng ' + str(line_num) + ': `' + broken_line.strip() + '`' if broken_line else ''}\n\n"
-                f"Giải thích lỗi này bằng 1-2 câu đơn giản cho trẻ em và nói cách sửa."
-            )
-        else:
-            system = FIX_SYSTEM_PROMPT_EN
-            user_content = (
-                f"Error message: {error_type}\n"
-                f"{'Line ' + str(line_num) + ': `' + broken_line.strip() + '`' if broken_line else ''}\n\n"
-                f"Explain this error in 1-2 simple sentences for kids and tell them how to fix it."
-            )
-    elif is_indent_err:
-        if lang == "vi":
-            system = FIX_SYSTEM_PROMPT_VI
-            user_content = (
-                f"Thông báo lỗi: {error_type}\n"
-                f"Dòng code bị lỗi (chú ý dấu cách ở đầu): `{broken_line}`\n\n"
-                f"Chỉ xuất ĐÚNG 3 dòng theo định dạng sau:\n"
-                f"Dòng {line_num}: [giải thích lỗi thụt lề bằng từ ngữ đơn giản]\n"
+            desc = "xóa khoảng trắng thừa ở đầu dòng"
+            return DIRECT_ANSWER_PREFIX + (
+                f"Dòng {line_num}: {desc}\n"
                 f"Gốc: {broken_line}\n"
-                f"Sửa: {broken_line.strip()}"
+                f"Sửa: {fixed_line}"
+            )
+        else:
+            desc = "remove extra spaces at the start"
+            return DIRECT_ANSWER_PREFIX + (
+                f"Line {line_num}: {desc}\n"
+                f"Original: {broken_line}\n"
+                f"Fixed: {fixed_line}"
+            )
+
+    # ── Missing colon: bypass LLM only for clear keyword lines ──────────
+    # Only trigger if the broken line starts with a known keyword and has no colon
+    if broken_line and error_type:
+        stripped = broken_line.strip()
+        is_colon_keyword = any(stripped.startswith(kw) for kw in
+                               ["while ", "while(", "if ", "if(", "else",
+                                "elif ", "elif(", "for ", "for(", "def ", "try", "except "])
+        has_no_colon = not stripped.endswith(":")
+        is_colon_err = ("expected ':'" in error_type.lower()
+                        or ("invalid syntax" in error_type.lower() and is_colon_keyword and has_no_colon))
+        if is_colon_keyword and has_no_colon and is_colon_err:
+            fixed_line = stripped + ":"
+            if lang == "vi":
+                return DIRECT_ANSWER_PREFIX + (
+                    f"Dòng {line_num}: thêm dấu hai chấm ':' ở cuối dòng\n"
+                    f"Gốc: {stripped}\n"
+                    f"Sửa: {fixed_line}"
+                )
+            else:
+                return DIRECT_ANSWER_PREFIX + (
+                    f"Line {line_num}: add a colon ':' at the end\n"
+                    f"Original: {stripped}\n"
+                    f"Fixed: {fixed_line}"
+                )
+
+    if is_runtime:
+        # Runtime error — concise fix only
+        if lang == "vi":
+            system = FIX_SYSTEM_PROMPT_VI
+            user_content = (
+                f"Lỗi: {error_type}\n"
+                f"{'Dòng ' + str(line_num) + ': `' + broken_line.strip() + '`' if broken_line else ''}\n\n"
+                f"Xuất ĐÚNG 1 dòng: nguyên nhân + cách sửa. Tối đa 15 từ."
             )
         else:
             system = FIX_SYSTEM_PROMPT_EN
             user_content = (
-                f"Error message: {error_type}\n"
-                f"Broken code (notice the extra spaces at the start): `{broken_line}`\n\n"
-                f"Output EXACTLY 3 lines in this format:\n"
-                f"Line {line_num}: [explain the indentation error in simple words]\n"
-                f"Original: {broken_line}\n"
-                f"Fixed: {broken_line.strip()}"
+                f"Error: {error_type}\n"
+                f"{'Line ' + str(line_num) + ': `' + broken_line.strip() + '`' if broken_line else ''}\n\n"
+                f"Output EXACTLY 1 line: cause + how to fix. Max 15 words."
             )
     else:
         # Normal syntax error
         if lang == "vi":
             system = FIX_SYSTEM_PROMPT_VI
             user_content = (
-                f"Thông báo lỗi: {error_type}\n"
-                f"Dòng code bị lỗi: `{broken_line.strip() if broken_line else 'Unknown'}`\n\n"
-                f"Chỉ xuất ĐÚNG 3 dòng theo định dạng sau:\n"
-                f"Dòng {line_num}: [giải thích lỗi bằng từ ngữ đơn giản cho trẻ em]\n"
+                f"Lỗi: {error_type}\n"
+                f"Dòng lỗi: `{broken_line.strip() if broken_line else 'Unknown'}`\n\n"
+                f"Xuất ĐÚNG 3 dòng:\n"
+                f"Dòng {line_num}: [hành động cần làm, ví dụ: thêm dấu hai chấm, sửa tên hàm]\n"
                 f"Gốc: {broken_line.strip() if broken_line else 'Unknown'}\n"
-                f"Sửa: [viết lại dòng code cho đúng]"
+                f"Sửa: [dòng code đã sửa]"
             )
         else:
             system = FIX_SYSTEM_PROMPT_EN
             user_content = (
-                f"Error message: {error_type}\n"
+                f"Error: {error_type}\n"
                 f"Broken code: `{broken_line.strip() if broken_line else 'Unknown'}`\n\n"
-                f"Output EXACTLY 3 lines in this format:\n"
-                f"Line {line_num}: [explain the error in simple words for kids]\n"
+                f"Output EXACTLY 3 lines:\n"
+                f"Line {line_num}: [action to take, e.g. add a colon, fix the function name]\n"
                 f"Original: {broken_line.strip() if broken_line else 'Unknown'}\n"
-                f"Fixed: [write the corrected code line]"
+                f"Fixed: [corrected code line]"
             )
 
     return _wrap_prompt(system, user_content)
 
 
 def build_explain_prompt(editor_code: str, lang: str = "en") -> str:
-    system = SYSTEM_PROMPT + _lang_instruction(lang)
+    sys_prompt = SYSTEM_PROMPT + _lang_instruction(lang)
 
     # Inject function definitions for any library functions in the code
     func_ctx = _extract_func_context(editor_code)
     ctx_block = f"\n\n{func_ctx}" if func_ctx else ""
 
-    user_content = (
-        f"Explain this code simply for a beginner:{ctx_block}\n\n"
-        f"```python\n{_trim_code(editor_code)}\n```"
-    )
-    return _wrap_prompt(system, user_content)
+    if lang == "vi":
+        user_content = (
+            f"Giải thích code này cho người mới bắt đầu. Tối đa 3 dòng, mỗi dòng mô tả 1 bước chính.{ctx_block}\n\n"
+            f"```python\n{_trim_code(editor_code)}\n```"
+        )
+    else:
+        user_content = (
+            f"Explain this code for a beginner. Max 3 bullet points, one per key step. No code blocks in reply.{ctx_block}\n\n"
+            f"```python\n{_trim_code(editor_code)}\n```"
+        )
+    return _wrap_prompt(sys_prompt, user_content)

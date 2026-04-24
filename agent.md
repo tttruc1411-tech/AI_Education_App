@@ -254,7 +254,13 @@ A professional, education-focused Python development environment built with **Py
     * First launch: no delay, instant "ready" message.
 
 * **🟢 FIXED — Response truncated mid-sentence/Empty response on large code**:
-    * Raised `max_tokens` to **512**. Implemented `_trim_code()` (lines > 300 chars truncated, total code 1500 chars max).
+    * `max_tokens` set to **150** (was 512). Implemented `_trim_code()` (lines > 300 chars truncated, total code 1500 chars max).
+
+* **🟢 OPTIMIZED — Concise LLM responses for student readability**:
+    * Reduced `max_tokens` 512 → 150, `repeat_penalty` 1.1 → 1.2, added `"\n\n\n"` stop token.
+    * All system/user prompts rewritten with explicit brevity constraints (word/sentence limits).
+    * Fix: "EXACTLY 3 lines" format. Runtime errors: "1 line, max 15 words." Ask: "1-2 sentences." Explain: "Max 3 bullet points."
+    * Added `_postprocess_trim()` in `assistant.py` — hard trims ask (3 sentences) and explain (4 bullets) even if model ignores prompt.
 
 * **🟢 FIXED — Blank response bubble**: Replaced `QTextEdit` with `QLabel` + `_BubbleBox` to bypass QScintilla stylesheet cascade.
 

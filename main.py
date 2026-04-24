@@ -1517,8 +1517,29 @@ class AICodingLab(QMainWindow):
         if not error_text.strip() and code.strip():
             try:
                 compile(code, "<student>", "exec")
-                # Code is valid — no need to waste LLM inference
                 s = STRINGS[self.current_lang]
+                # Code compiles — but check for undefined variable names (typos)
+                from src.modules.LLM.prompt_builder import check_undefined_vars
+                undef = check_undefined_vars(code)
+                if undef:
+                    # Found undefined variable(s) — show the first one
+                    ln, var_name, line_text = undef[0]
+                    if self.current_lang == "vi":
+                        msg = (
+                            f"Dòng {ln}: '{var_name}' chưa được tạo — kiểm tra lỗi đánh máy\n"
+                            f"Dòng lỗi: {line_text.strip()}"
+                        )
+                    else:
+                        msg = (
+                            f"Line {ln}: '{var_name}' is not defined — check for typos\n"
+                            f"Code: {line_text.strip()}"
+                        )
+                    self._chat_panel.add_user_message(s["BOT_FIX_MSG"])
+                    bubble = self._chat_panel.start_assistant_message()
+                    bubble.set_text(msg)
+                    self._chat_panel.finish_streaming()
+                    return
+                # Code is valid and no undefined vars — truly no errors
                 no_err = "Tuyệt vời! Không tìm thấy lỗi nào. 🎉" if self.current_lang == "vi" else "Great job! No errors found. 🎉"
                 self._chat_panel.add_user_message(s["BOT_FIX_MSG"])
                 bubble = self._chat_panel.start_assistant_message()

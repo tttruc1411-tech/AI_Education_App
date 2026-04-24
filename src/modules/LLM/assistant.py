@@ -12,7 +12,7 @@ import threading
 from typing import Callable, Optional
 
 from . import model_config as _mcfg
-from .prompt_builder import build_prompt, build_fix_prompt, build_explain_prompt
+from .prompt_builder import build_prompt, build_fix_prompt, build_explain_prompt, DIRECT_ANSWER_PREFIX
 
 
 # ── Path to the worker script ─────────────────────────────────────────────
@@ -26,8 +26,39 @@ _RE_ORIG = re.compile(r"(?:Original|Gốc)\s*[:：]\s*`?(.*?)`?\s*$", re.IGNOREC
 _RE_FIXED = re.compile(r"(?:Fixed|Sửa)\s*[:：]\s*`?(.*?)`?\s*$", re.IGNORECASE | re.MULTILINE)
 
 
+def _postprocess_trim(response: str, max_sentences: int = 4) -> str:
+    """Trim verbose ask/explain responses to max_sentences.
+    Keeps bullet points intact but caps total output."""
+    text = response.strip()
+    if not text:
+        return text
+
+    # If response has bullet points, keep up to max_sentences bullets
+    lines = [l for l in text.splitlines() if l.strip()]
+    bullet_lines = [l for l in lines if l.strip().startswith(("-", "•", "*", "–"))]
+    if len(bullet_lines) >= 2:
+        # Bullet-style response — keep header + up to max bullets
+        result = []
+        bullet_count = 0
+        for l in lines:
+            if l.strip().startswith(("-", "•", "*", "–")):
+                bullet_count += 1
+                if bullet_count > max_sentences:
+                    break
+            result.append(l)
+        return "\n".join(result).strip()
+
+    # Sentence-based trimming — split on period/exclamation/question mark
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    if len(sentences) > max_sentences:
+        return " ".join(sentences[:max_sentences]).strip()
+
+    return text
+
+
 def _postprocess_fix(response: str) -> str:
-    """Validate and enforce the Line/Original/Fixed (or Dòng/Gốc/Sửa) format."""
+    """Validate and enforce the Line/Original/Fixed (or Dòng/Gốc/Sửa) format.
+    Also deduplicates repeated blocks from model hallucination."""
     text = response.strip()
     if not text:
         return text
@@ -38,6 +69,8 @@ def _postprocess_fix(response: str) -> str:
     lbl_orig = "Gốc" if is_vi else "Original"
     lbl_fix = "Sửa" if is_vi else "Fixed"
 
+    # ── Deduplication: take only the FIRST occurrence of each label ─────
+    # The model often repeats Original/Fixed multiple times.
     m_line = _RE_LINE.search(text)
     m_orig = _RE_ORIG.search(text)
     m_fixed = _RE_FIXED.search(text)
@@ -45,9 +78,11 @@ def _postprocess_fix(response: str) -> str:
     if m_line and m_orig and m_fixed:
         orig_val = m_orig.group(1).strip()
         fixed_val = m_fixed.group(1).strip()
-        if orig_val and fixed_val and orig_val != fixed_val:
-            line_num = m_line.group(1)
-            desc = m_line.group(2).strip()
+        line_num = m_line.group(1)
+        desc = m_line.group(2).strip()
+        # Clean up desc — remove any trailing "Original:" that got merged
+        desc = re.split(r'(?:Original|Gốc|Fixed|Sửa)\s*[:：]', desc)[0].strip()
+        if orig_val and fixed_val:
             return (
                 f"{lbl_line} {line_num}: {desc}\n"
                 f"{lbl_orig}: {orig_val}\n"
@@ -57,6 +92,7 @@ def _postprocess_fix(response: str) -> str:
     if m_line:
         line_num = m_line.group(1)
         desc = m_line.group(2).strip() or ("lỗi" if is_vi else "error")
+        desc = re.split(r'(?:Original|Gốc|Fixed|Sửa)\s*[:：]', desc)[0].strip()
         orig = m_orig.group(1).strip() if m_orig else ""
         fixed = m_fixed.group(1).strip() if m_fixed else ""
         if orig or fixed:
@@ -65,6 +101,11 @@ def _postprocess_fix(response: str) -> str:
                 f"{lbl_orig}: {orig}\n"
                 f"{lbl_fix}: {fixed}"
             )
+
+    # ── Fallback: just take the first 3 non-empty lines ────────────────
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if len(lines) > 3:
+        return "\n".join(lines[:3])
 
     return text
 
@@ -177,7 +218,13 @@ class LLMAssistant:
             on_done: Optional[Callable[[str], None]] = None,
             on_error: Optional[Callable[[str], None]] = None):
         prompt = build_prompt(question, editor_code, console_output, lang=lang)
-        self._run(prompt, on_token, on_done, on_error)
+
+        def _wrapped_done(raw: str):
+            processed = _postprocess_trim(raw, max_sentences=3)
+            if on_done:
+                on_done(processed)
+
+        self._run(prompt, on_token, _wrapped_done, on_error)
 
     def fix_error(self,
                   error_text: str,
@@ -187,6 +234,13 @@ class LLMAssistant:
                   on_done: Optional[Callable[[str], None]] = None,
                   on_error: Optional[Callable[[str], None]] = None):
         prompt = build_fix_prompt(error_text, editor_code, lang=lang)
+
+        # Direct answer — Python already knows the fix, skip LLM entirely
+        if prompt.startswith(DIRECT_ANSWER_PREFIX):
+            answer = prompt[len(DIRECT_ANSWER_PREFIX):]
+            if on_done:
+                on_done(answer)
+            return
 
         def _wrapped_done(raw: str):
             processed = _postprocess_fix(raw)
@@ -202,7 +256,13 @@ class LLMAssistant:
                      on_done: Optional[Callable[[str], None]] = None,
                      on_error: Optional[Callable[[str], None]] = None):
         prompt = build_explain_prompt(editor_code, lang=lang)
-        self._run(prompt, on_token, on_done, on_error)
+
+        def _wrapped_done(raw: str):
+            processed = _postprocess_trim(raw, max_sentences=4)
+            if on_done:
+                on_done(processed)
+
+        self._run(prompt, on_token, _wrapped_done, on_error)
 
     def cancel(self):
         """Invalidate any in-flight inference. Non-blocking."""
