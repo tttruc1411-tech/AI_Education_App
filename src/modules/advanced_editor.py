@@ -529,11 +529,16 @@ class AdvancedPythonEditor(QsciScintilla):
                                     s_line, s_col = self.lineIndexFromPosition(byte_start)
                                     e_line, e_col = self.lineIndexFromPosition(byte_end)
                                     self.fillIndicatorRange(s_line, s_col, e_line, e_col, self.BLANK_INDICATOR)
-                                    
-                                    # 🔒 LOCK the 'Key =' part
-                                    key_match = p_match.group(1) + "="
-                                    key_len_bytes = len(key_match.encode('utf-8'))
-                                    self.fillIndicatorRange(s_line, s_col, s_line, s_col + len(key_match), self.PROTECTED_INDICATOR)
+
+                            # 🔒 LOCK the 'param_name =' part — ALWAYS, regardless of value validity
+                            arg_in_full = args_str[current_offset:]
+                            p_start_in_arg = arg_in_full.find(p_match.group(0))
+                            if p_start_in_arg >= 0:
+                                global_char_start = args_start_pos + current_offset + p_start_in_arg
+                                byte_start = len(content_str[:global_char_start].encode('utf-8'))
+                                s_line, s_col = self.lineIndexFromPosition(byte_start)
+                                key_text = p_match.group(1) + " ="
+                                self.fillIndicatorRange(s_line, s_col, s_line, s_col + len(key_text), self.PROTECTED_INDICATOR)
 
                         # New: Lock assignments like 'cap = '
                         prefix_match = re.search(rf"\b([a-zA-Z_]\w*)\s*=\s*(?:\w+\.)?{f_name}\b", content_str[:f_match.start()])
