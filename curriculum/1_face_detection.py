@@ -7,31 +7,31 @@
 # DESC_VI: Nhận diện khuôn mặt trong thời gian thực bằng mô hình YuNet ONNX.
 # ============================================================
 
-import cv2
-from src.modules.library.functions.ai_blocks import (
-    Init_Camera, Get_Camera_Frame, Load_YuNet_Model, Run_YuNet_Model, Draw_Detections, Update_Dashboard
-)
+
+import ai_vision
+import camera
+import drawing
 
 # 1. Setup specialized AI Face Model
-detector = Load_YuNet_Model('projects/model/face_detection_yunet_2023mar.onnx')
+detector = ai_vision.Load_YuNet_Model('projects/model/face_detection_yunet_2023mar.onnx')
 
 # 2. Initialize Camera
-cap = Init_Camera()
+cap = camera.Init_Camera()
 print("[OK] Starting AI Face Detection...")
 
 while True:
     # Read frame from camera
-    frame = Get_Camera_Frame(cap)        
+    frame = camera.Get_Camera_Frame(cap)        
     # 3. Prepare AI Inference
-    Run_YuNet_Model(detector, frame)    
+    ai_vision.Run_YuNet_Model(detector, frame)    
     # 4. Run AI Model
     _, faces = detector.detect(frame)
     
     # 5. Draw Boxes & Labels (Returns face count)
-    face_count = Draw_Detections(frame, faces, label="Face")
+    face_count = drawing.Draw_Detections(frame, faces, label="Face")
     
     # 6. Stream Live Feed to App & Track Count
-    Update_Dashboard(frame, var_name="Faces Found", var_value=face_count)
+    drawing.Update_Dashboard(frame, var_name="Faces Found", var_value=face_count)
 
 cap.release()
 print("[OK] Session Ended.")

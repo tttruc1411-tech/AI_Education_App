@@ -54,11 +54,12 @@ A professional, education-focused Python development environment built with **Py
 * **Logic Operations**: Dedicated block category for `while True` and `if/else` control flow, using structural anchors (`# [START] / # [END]`) to teach Python scope.
 
 ### 📚 Function Library & Learning Hub
-* **Categorical UI**: Functions are grouped into professional, color-coded categories (Camera, Image Processing, AI Vision, Display, Logic, Robotics).
-* **Categorical Icons**: Unique 20px icons (📸, 🖼️, 🧠, 🎨, ⚡, 🤖) are used for each group header and function block, providing clear visual hierarchy and accessibility.
+* **Categorical UI**: Functions are grouped into professional, color-coded categories (Camera, Image Processing, AI Vision, Display, Logic, Robotics, Variables).
+* **Categorical Icons**: Unique 20px icons (📸, 🖼️, 🧠, 🎨, ⚡, 🤖, ✏️) are used for each group header and function block, providing clear visual hierarchy and accessibility.
 * **Zen Mode Startup**: Categories are collapsed by default on application launch to keep the student workspace organized and focused.
 * **Rich Definitions**: The `definitions.py` registry manages snippet injection, automatic imports, and source-code previews for every individual block.
-* **Custom Color Themes**: Categories use modern HSL-inspired colors (Amber for Camera, Blue for Processing, Mint for AI, Indigo for Display, Pink for Logic, Violet for Robotics) for high-contrast usability.
+* **Custom Color Themes**: Categories use modern HSL-inspired colors (Amber for Camera, Blue for Processing, Mint for AI, Indigo for Display, Pink for Logic, Violet for Robotics, Teal for Variables) for high-contrast usability.
+* **Clean Module Import System (V3)**: Drag-and-drop generates a single `import module` line per module (e.g., `import camera`). Functions are called with module prefix (e.g., `camera.Init_Camera()`). See **"📦 Clean Module Import System"** section below for full details.
 
 ### 🤖 Robotics (ORC Hub) — Motor Driver V2 Integration
 * **Status**: ✅ **COMPLETED**
@@ -284,7 +285,10 @@ A professional, education-focused Python development environment built with **Py
 * `src/modules/training/trainer.py`: Backend YOLOv8 training script (QProcess). Handles dataset split, YAML generation, training loop with epoch/metric reporting, local model copy.
 * `src/modules/training/validator.py`: Standalone post-training validation script (QProcess). Live camera inference with bounding box drawing and `IMG:` frame streaming.
 * `src/modules/training/detection/`: Internal training workspace (auto-generated train/val splits + `dataset.yaml`).
-* `src/modules/library/functions/ai_blocks.py`: Functional block scripts (Camera, YuNet, ONNX, TensorRT inference).
+* `src/modules/library/functions/ai_blocks.py`: **LEGACY** — Original monolithic block (Camera, YuNet, ONNX, TensorRT, Drawing). Kept for backward compatibility with existing student projects in `projects/code/`. New code uses the split modules below.
+* `src/modules/library/functions/camera_blocks.py`: Camera functions (Init_Camera, Get_Camera_Frame, Close_Camera, Save_Frame, Load_Image).
+* `src/modules/library/functions/ai_vision_blocks.py`: AI model loading & inference (Load_YuNet_Model, Run_YuNet_Model, Load/Run_ONNX_Model, Load/Run_Engine_Model).
+* `src/modules/library/functions/drawing_blocks.py`: Detection drawing & dashboard (Draw_Detections, Draw_Detections_MultiClass, Draw_Engine_Detections, Update_Dashboard).
 * `src/modules/library/functions/robotics.py`: Student-facing robotics blocks (DC_Run, DC_Stop, Get_Speed, Set_Servo).
 * `src/modules/library/functions/motor_driver_v2.py`: Low-level I2C driver for OhStem Motor Driver V2 + `check_orc_hub()` probe.
 * `src/modules/library/functions/motor.py`: Brain layer with async motor control (DCMotor class, run_time, run_until_stalled).
@@ -398,7 +402,59 @@ A professional, education-focused Python development environment built with **Py
 * **Fix**: `FunctionInfoPanel` now stores `self._is_small` and uses it for all label sizes, code block heights, and font sizes. Previously `_bold_label()` had `is_small=False` hardcoded.
 * **Scaling**: Section titles 10px/14px, param/return descriptions 10px/16px, snippet block 28-50px/42-84px height, source code block 120px/200px height with 5pt/7pt font.
 
+### 📦 Clean Module Import System (V3)
+* **Status**: ✅ **COMPLETED**
+* **Problem**: Drag-and-drop generated verbose per-function imports like `from src.modules.library.functions.ai_blocks import Init_Camera` — one line per function, cluttering student code.
+* **Solution**: Replaced with clean `import module` style. Each module is a short, descriptive name. Functions are called with module prefix (e.g., `camera.Init_Camera()`).
+* **Architecture**: Thin shortcut modules at the project root re-export from the actual source files in `src/modules/library/functions/`. The project root is on `PYTHONPATH` (set by `QProcess` in `main.py`), so `import camera` resolves to `camera.py` at root.
+* **Module Mapping**:
+    | Shortcut Module | Source File | Contents |
+    |-----------------|-------------|----------|
+    | `camera.py` | `camera_blocks.py` | Init_Camera, Get_Camera_Frame, Close_Camera, Save_Frame, Load_Image |
+    | `ai_vision.py` | `ai_vision_blocks.py` | Load_YuNet_Model, Run_YuNet_Model, Load/Run_ONNX_Model, Load/Run_Engine_Model |
+    | `drawing.py` | `drawing_blocks.py` | Draw_Detections, Draw_Detections_MultiClass, Draw_Engine_Detections, Update_Dashboard |
+    | `display.py` | `display_blocks.py` | Show_FPS, Show_Image, Observe_Variable, Draw_Rectangle, Draw_Circle |
+    | `image.py` | `image_processing.py` | convert_to_gray, resize_image, apply_blur, detect_edges, flip_image, adjust_brightness, rotate_image, crop_image, draw_text, convert_to_hsv |
+    | `logic.py` | `logic_blocks.py` | Wait_Seconds, Print_Message |
+    | `variables.py` | `variables.py` | Create_Text, Create_Number, Create_Decimal, Create_Boolean, Create_List |
+    | `robotics.py` | `robotics.py` | DC_Run, DC_Stop, Get_Speed, Set_Servo |
+* **Student Code Example**:
+    ```python
+    import camera
+    import ai_vision
+    import drawing
+
+    detector = ai_vision.Load_YuNet_Model('projects/model/face_detection_yunet_2023mar.onnx')
+    cap = camera.Init_Camera()
+
+    while True:
+        frame = camera.Get_Camera_Frame(cap)
+        ai_vision.Run_YuNet_Model(detector, frame)
+        _, faces = detector.detect(frame)
+        count = drawing.Draw_Detections(frame, faces, label="Face")
+        drawing.Update_Dashboard(frame, var_name="Faces", var_value=count)
+    ```
+* **definitions.py Changes**: Every function entry's `import_statement` is now `"import camera"` / `"import ai_vision"` / etc. The `usage` field includes the module prefix (e.g., `"camera.Init_Camera()"`). The `source_module` field points to the actual source file (e.g., `"src.modules.library.functions.camera_blocks"`).
+* **Hint System Update**: All regex patterns in `advanced_editor.py` (`_scan_variable_types`, `scan_for_blanks`) now use `(?:\w+\.)?` optional prefix before function names to match both `Init_Camera(...)` and `camera.Init_Camera(...)`. Substring checks in `_show_assistance` and `prompt_builder.py` work naturally since `camera.Init_Camera` contains `Init_Camera`.
+* **Backward Compatibility**: The original `ai_blocks.py` source file is preserved — existing student projects in `projects/code/` that use the old `from src.modules.library.functions.ai_blocks import ...` style continue to work.
+* **All 38 curriculum examples** updated to use the new module names.
+
+### 🎨 Editor Selection Color Fix
+* **Status**: ✅ **COMPLETED**
+* **Fix**: Changed `setSelectionForegroundColor` from `white` to navy `#1e293b` in `advanced_editor.py`. Selected text now shows dark navy against the light purple (`#c4b5fd`) selection background for better readability.
+
 ## Updated File Structure (New Files)
+* `camera.py`: Root-level shortcut module → `import camera` for student scripts.
+* `ai_vision.py`: Root-level shortcut module → `import ai_vision` for student scripts.
+* `drawing.py`: Root-level shortcut module → `import drawing` for student scripts.
+* `display.py`: Root-level shortcut module → `import display` for student scripts.
+* `image.py`: Root-level shortcut module → `import image` for student scripts.
+* `logic.py`: Root-level shortcut module → `import logic` for student scripts.
+* `variables.py`: Root-level shortcut module → `import variables` for student scripts.
+* `robotics.py`: Root-level shortcut module → `import robotics` for student scripts.
+* `src/modules/library/functions/camera_blocks.py`: Camera functions (split from ai_blocks.py).
+* `src/modules/library/functions/ai_vision_blocks.py`: AI model loading & inference (split from ai_blocks.py).
+* `src/modules/library/functions/drawing_blocks.py`: Detection drawing & dashboard (split from ai_blocks.py).
 * `src/modules/library/functions/variables.py`: Variable constructor blocks (Create_Text, Create_Number, Create_Decimal, Create_Boolean, Create_List).
 * `src/modules/library/functions/display_blocks.py`: Display blocks (Show_FPS, Show_Image, Observe_Variable, Draw_Rectangle, Draw_Circle).
 * `src/modules/library/functions/logic_blocks.py`: Logic utility blocks (Wait_Seconds, Print_Message).
@@ -414,3 +470,5 @@ A professional, education-focused Python development environment built with **Py
 * [x] **Save_Frame Default Path**: Images saved to `projects/data/saved/` by default.
 * [x] **Editor Tooltip Translation**: `_lang` attribute on `AdvancedPythonEditor` synced from `set_language()`, "Returns" label translated.
 * [x] **Original Example Reclassification**: `1_face_detection.py` moved from Beginner to Intermediate (uses AI blocks). `3_llm_chatbot.py` color updated to orange.
+* [x] **Clean Module Import System (V3)**: Split `ai_blocks.py` into `camera`, `ai_vision`, `drawing`. Renamed `display_blocks` → `display`, `image_processing` → `image`, `logic_blocks` → `logic`. All 38 curriculum examples and `definitions.py` updated. Hint system regex patterns updated with `(?:\w+\.)?` optional module prefix.
+* [x] **Editor Selection Color Fix**: Changed selection foreground from white to navy `#1e293b` for better readability against purple selection background.

@@ -87,6 +87,7 @@ STRINGS = {
         "CAT_DISPLAY_DASHBOARD": "Display & Dashboard",
         "CAT_LOGIC_OPERATIONS": "Logic Operations",
         "CAT_ROBOTICS": "Robotics",
+        "CAT_VARIABLES": "Variables",
         "CAT_OTHER": "Other",
 
         # Level Navigation
@@ -248,6 +249,7 @@ STRINGS = {
         "CAT_DISPLAY_DASHBOARD": "Hiển thị",
         "CAT_LOGIC_OPERATIONS": "Khối lệnh Logic",
         "CAT_ROBOTICS": "Điều khiển Robot",
+        "CAT_VARIABLES": "Khai báo biến",
         "CAT_OTHER": "Khác",
 
         # Level Navigation

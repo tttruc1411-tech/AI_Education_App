@@ -25,14 +25,14 @@ import base64
 import re
 from datetime import datetime
 from pathlib import Path
-from PyQt5.QtCore import Qt, QDir, QProcess, QProcessEnvironment, QTimer, QEvent, QPoint, QPropertyAnimation, QEasingCurve
-from PyQt5.QtGui import QColor, QFont, QImage, QPixmap
+from PyQt5.QtCore import Qt, QDir, QProcess, QSize, QProcessEnvironment, QTimer, QEvent, QPoint, QPropertyAnimation, QEasingCurve
+from PyQt5.QtGui import QColor, QFont, QImage, QPixmap, QIcon, QPainter
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QStackedWidget, QPushButton, QFrame,
                              QTextEdit, QPlainTextEdit, QInputDialog, QMessageBox, QWidget,
                              QHBoxLayout, QTreeView, QLabel, QVBoxLayout, QSplitter, QSizePolicy,
                              QLineEdit, QFileDialog, QScrollArea, QGridLayout, QRubberBand,
                              QProgressBar, QSpinBox, QDoubleSpinBox, QComboBox, QFileSystemModel,
-                             QShortcut)
+                             QShortcut, QListWidget, QListWidgetItem, QStyle)
 from PyQt5.QtGui import QKeySequence
 from PyQt5.uic import loadUi
 from src.modules.translations import STRINGS
@@ -104,6 +104,77 @@ class TrainingCanvas(FigureCanvas):
             self.draw_idle()
         except Exception:
             pass
+
+
+# ────────────────────────────────────────────────────────────
+#  Workspace Gallery Item Widget (for Data Folder)
+# ────────────────────────────────────────────────────────────
+
+class GalleryItemWidget(QWidget):
+    """Custom widget for Data gallery items with a floating delete button."""
+    def __init__(self, file_path, icon_pixmap, theme, on_delete, is_dir=False):
+        super().__init__()
+        self.setFixedSize(125, 140)
+        self.file_path = file_path
+        self.is_dir = is_dir
+        
+        # Main layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 8)
+        layout.setSpacing(6)
+        
+        # Icon/Thumbnail slot (90x90)
+        self.icon_lbl = QLabel()
+        self.icon_lbl.setFixedSize(90, 90)
+        self.icon_lbl.setPixmap(icon_pixmap)
+        self.icon_lbl.setAlignment(Qt.AlignCenter)
+        self.icon_lbl.setStyleSheet("background: transparent;")
+        
+        # Centering the icon label
+        icon_layout = QHBoxLayout()
+        icon_layout.setContentsMargins(0, 0, 0, 0)
+        icon_layout.addStretch()
+        icon_layout.addWidget(self.icon_lbl)
+        icon_layout.addStretch()
+        layout.addLayout(icon_layout)
+        
+        # Name label
+        self.name_lbl = QLabel(file_path.name)
+        self.name_lbl.setAlignment(Qt.AlignCenter)
+        self.name_lbl.setStyleSheet(f"color: {theme['text']}; font-size: 11px; font-weight: 500; background: transparent;")
+        self.name_lbl.setWordWrap(True)
+        self.name_lbl.setMaximumHeight(36)
+        layout.addWidget(self.name_lbl)
+        
+        # Delete Button (Red Circle with White X)
+        # Rule: Do not allow removing 'classes.txt', but allow removing folders and other files
+        can_delete = True
+        if not is_dir and file_path.name == "classes.txt":
+            can_delete = False
+            
+        if can_delete:
+            self.btn_del = QPushButton("×", self)
+            self.btn_del.setFixedSize(24, 24)
+            # Position precisely at top-right of the 125x140 area
+            self.btn_del.move(96, 4)
+            self.btn_del.setCursor(Qt.PointingHandCursor)
+            self.btn_del.setToolTip("Delete folder" if is_dir else "Delete file")
+            self.btn_del.setStyleSheet("""
+                QPushButton {
+                    background-color: #ef4444;
+                    color: white;
+                    border-radius: 12px;
+                    font-weight: bold;
+                    font-size: 18px;
+                    border: 2px solid white;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background-color: #dc2626;
+                    border: 2px solid #fee2e2;
+                }
+            """)
+            self.btn_del.clicked.connect(lambda: on_delete(str(file_path)))
 
 # ────────────────────────────────────────────────────────────
 #  Annotation Label for Detection Mode
@@ -2443,20 +2514,17 @@ class AICodingLab(QMainWindow):
         for card, count_name, title, icon, color, bg, border in cards_config:
             if not card:
                 continue
-            # Hide ALL existing child widgets from the .ui file first
+            # Hide and clear ALL existing child widgets from the .ui file first
             for child in card.findChildren(QWidget):
                 child.setVisible(False)
                 child.setMaximumHeight(0)
-            for child in card.findChildren(QLabel):
-                child.setVisible(False)
-                child.setMaximumHeight(0)
+                child.setObjectName("") # CRITICAL: Clear name so findChild doesn't find the hidden ones
+                child.deleteLater()
+            
             # Remove old layout
             old = card.layout()
             if old:
-                while old.count():
-                    child = old.takeAt(0)
-                    if child.widget():
-                        child.widget().setVisible(False)
+                # Properly detach and delete old layout
                 QWidget().setLayout(old)
 
             # Card styling
@@ -2512,14 +2580,66 @@ class AICodingLab(QMainWindow):
 
     def update_workspace_counts(self):
         """Sync card numbers with physical folders."""
+        if not hasattr(self, 'file_manager'):
+            return
+
+        # Improved counting logic:
+        # Code: .py files in projects/ AND projects/code/
+        code_files = list(self.file_manager.files_dir.glob("*.py"))
+        code_files += list(self.file_manager.code_dir.glob("*.py"))
+        # Remove duplicates if any (e.g. if code_dir == files_dir)
+        code_count = len(set(str(f) for f in code_files))
+
+        # Data: Count total images (*.jpg, *.png, *.jpeg) recursively
+        data_count = 0
+        for ext in ["*.jpg", "*.jpeg", "*.png", "*.bmp"]:
+            data_count += len(list(self.file_manager.data_dir.rglob(ext)))
+        
+        # If no images found, fallback to counting subfolders (projects)
+        if data_count == 0:
+            data_count = len([d for d in self.file_manager.data_dir.iterdir() if d.is_dir()])
+
+        # Model: files in projects/model/
+        model_count = len(list(self.file_manager.model_dir.glob("*")))
+        
         counts = {
-            "Code": len(list(self.file_manager.code_dir.glob("*"))),
-            "Data": len(list(self.file_manager.data_dir.glob("*"))),
-            "Model": len(list(self.file_manager.model_dir.glob("*")))
+            "Code": code_count,
+            "Data": data_count,
+            "Model": model_count
         }
-        self.running_mode_widget.findChild(QLabel, "countCode").setText(str(counts["Code"]))
-        self.running_mode_widget.findChild(QLabel, "countData").setText(str(counts["Data"]))
-        self.running_mode_widget.findChild(QLabel, "countModel").setText(str(counts["Model"]))
+        
+        # Update UI labels
+        for key, val in counts.items():
+            lbl = self.running_mode_widget.findChild(QLabel, f"count{key}")
+            if lbl:
+                lbl.setText(str(val))
+
+    def _delete_data_file(self, file_path_str, folder_type, subpath):
+        """Delete a data file or folder, with special paired-deletion logic for images and annotations."""
+        import shutil
+        p = Path(file_path_str)
+        if not p.exists():
+            return
+        
+        try:
+            if p.is_dir():
+                # Delete whole folder (project)
+                shutil.rmtree(p)
+            elif p.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.webp']:
+                # Find matching .txt
+                txt_p = p.with_suffix('.txt')
+                if txt_p.exists():
+                    txt_p.unlink()
+                p.unlink()
+            else:
+                # Just delete the file (.txt or other)
+                p.unlink()
+            
+            # Refresh the view and update global counts
+            self.show_folder_contents(folder_type, subpath)
+            self.update_workspace_counts()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not delete item: {e}")
 
     def show_folder_contents(self, folder_type, subpath=None):
         """Load Open/Rename/Delete list for specific folder with a vibrant, kid-friendly card design."""
@@ -2563,10 +2683,6 @@ class AICodingLab(QMainWindow):
         
         # ─── DATA FOLDER (Image Gallery / Icon Mode) ───
         if folder_type == "Data":
-            from PyQt5.QtWidgets import QListWidget, QListWidgetItem, QSizePolicy
-            from PyQt5.QtCore import QSize
-            from PyQt5.QtGui import QIcon
-            
             list_widget = QListWidget()
             list_widget.setViewMode(QListWidget.ViewMode.IconMode)
             list_widget.setFlow(QListWidget.Flow.LeftToRight)
@@ -2586,47 +2702,59 @@ class AICodingLab(QMainWindow):
                     padding: 4px;
                 }}
             """)
-            
-            # Ensure the gallery takes up all available vertical space
             list_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             
+            # Deletion callback
+            def on_delete_clicked(f_path_str):
+                fname = os.path.basename(f_path_str)
+                reply = QMessageBox.question(self, 'Delete File', 
+                                            f"Are you sure you want to delete this file?\n{fname}",
+                                            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                if reply == QMessageBox.Yes:
+                    self._delete_data_file(f_path_str, folder_type, subpath)
+
             for file_path in sorted(path.iterdir()):
-                item = QListWidgetItem()
+                item = QListWidgetItem(list_widget)
+                item.setSizeHint(QSize(125, 140))
                 item.setData(Qt.ItemDataRole.UserRole, str(file_path))
                 
+                icon_pix = QPixmap(90, 90)
+                icon_pix.fill(Qt.GlobalColor.transparent)
+                
                 if file_path.is_file():
-                    pixmap = QPixmap(str(file_path))
-                    if not pixmap.isNull():
-                        # We use 90x90 as the new bounded size to fit 2 across
-                        item.setIcon(QIcon(pixmap.scaled(90, 90, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)))
+                    is_img = file_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.webp']
+                    if is_img:
+                        pix = QPixmap(str(file_path))
+                        if not pix.isNull():
+                            icon_pix = pix.scaled(90, 90, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                        else:
+                            # Fallback paper icon if image corrupt
+                            std_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
+                            painter = QPainter(icon_pix)
+                            std_icon.paint(painter, 22, 22, 46, 46)
+                            painter.end()
                     else:
-                        item.setText("📄") # Fallback for non-images
+                        # Paper icon for txt or non-images
+                        std_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
+                        painter = QPainter(icon_pix)
+                        std_icon.paint(painter, 22, 22, 46, 46)
+                        painter.end()
                 elif file_path.is_dir():
-                    # Render a standard beautiful directory icon at 1/4 area scale
-                    from PyQt5.QtWidgets import QApplication, QStyle
-                    from PyQt5.QtGui import QPainter
+                    # Directory icon
                     std_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-                    
-                    folder_bg = QPixmap(90, 90)
-                    folder_bg.fill(Qt.GlobalColor.transparent)
-                    painter = QPainter(folder_bg)
-                    # Centers a 46x46 folder inside a 90x90 icon box
+                    painter = QPainter(icon_pix)
                     std_icon.paint(painter, 22, 22, 46, 46)
                     painter.end()
-                    
-                    item.setIcon(QIcon(folder_bg))
                 
-                # We place the filename at the bottom
-                item.setText(file_path.name)
-                item.setForeground(QColor(theme['text']))
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                # Create custom widget
+                widget = GalleryItemWidget(file_path, icon_pix, theme, on_delete_clicked, is_dir=file_path.is_dir())
                 list_widget.addItem(item)
+                list_widget.setItemWidget(item, widget)
             
             # Handle click recursively
             def on_item_clicked(list_item):
                 clicked_path = list_item.data(Qt.ItemDataRole.UserRole)
-                import pathlib
-                p = pathlib.Path(clicked_path)
+                p = Path(clicked_path)
                 if p.is_dir():
                     try:
                         rel_path = p.relative_to(base_path)

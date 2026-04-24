@@ -21,6 +21,7 @@ _CAT_KEY_MAP = {
     "AI Vision Core": "CAT_AI_VISION_CORE",
     "Display & Dashboard": "CAT_DISPLAY_DASHBOARD",
     "Logic Operations": "CAT_LOGIC_OPERATIONS",
+    "Variables": "CAT_VARIABLES",
     "Robotics": "CAT_ROBOTICS",
 }
 

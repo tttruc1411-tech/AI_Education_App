@@ -7,8 +7,11 @@
 # DESC_VI: Nhận diện hơn 80 loại vật thể khác nhau bằng mô hình YOLOv10.
 # ============================================================
 
+
 import cv2
-from src.modules.library.functions.ai_blocks import Init_Camera, Update_Dashboard, Draw_Detections_MultiClass, Load_ONNX_Model, Run_ONNX_Model, Get_Camera_Frame
+import ai_vision
+import camera
+import drawing
 
 # 1. Full COCO Labels
 CLASSES = [
@@ -26,20 +29,20 @@ CLASSES = [
 
 # 2. Load the AI Model
 model_path = "projects/model/yolov10n.onnx"
-session = Load_ONNX_Model(model_path)
+session = ai_vision.Load_ONNX_Model(model_path)
 if session is None: exit()
 
-cap = Init_Camera(0)
+cap = camera.Init_Camera(0)
 print("[OK] Starting Real-time Object Detection!")
 
 while True:
-    frame = Get_Camera_Frame(cap)    
+    frame = camera.Get_Camera_Frame(cap)    
         
     # 3. Process the Image directly through the Brain
-    outputs = Run_ONNX_Model(session, frame, img_size=640)
+    outputs = ai_vision.Run_ONNX_Model(session, frame, img_size=640)
     
     # 4. Draw AI Detections (Multi-Class)
-    count = Draw_Detections_MultiClass(frame, outputs, CLASSES, 0.50)
+    count = drawing.Draw_Detections_MultiClass(frame, outputs, CLASSES, 0.50)
 
     # 6. Send frame to Dashboard API
-    Update_Dashboard(frame, var_name="Detections", var_value=count)
+    drawing.Update_Dashboard(frame, var_name="Detections", var_value=count)

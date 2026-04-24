@@ -50,7 +50,7 @@ class AdvancedPythonEditor(QsciScintilla):
         self.setLexer(self.lexer)
         self.setCaretForegroundColor(QColor("#1e293b"))
         self.setSelectionBackgroundColor(QColor("#c4b5fd"))
-        self.setSelectionForegroundColor(QColor("white"))
+        self.setSelectionForegroundColor(QColor("#1e293b"))
         
         # 3. Line Numbers on Left Border
         self.setMarginType(0, QsciScintilla.NumberMargin)
@@ -439,9 +439,9 @@ class AdvancedPythonEditor(QsciScintilla):
         # 2. Iterate through all categories and functions in our library
         for category, data in LIBRARY_FUNCTIONS.items():
             for f_name, f_info in data["functions"].items():
-                # Regex: find 'FunctionName(args)'
+                # Regex: find 'module.FunctionName(args)' or 'FunctionName(args)'
                 # This ensures we only look INSIDE function calls!
-                pattern = rf"\b{f_name}\s*\(([^)]*)\)"
+                pattern = rf"(?:\w+\.)?{f_name}\s*\(([^)]*)\)"
                 
                 for f_match in re.finditer(pattern, content_str):
                     args_str = f_match.group(1)
@@ -527,13 +527,13 @@ class AdvancedPythonEditor(QsciScintilla):
                                     self.fillIndicatorRange(s_line, s_col, s_line, s_col + len(key_match), self.PROTECTED_INDICATOR)
 
                         # New: Lock assignments like 'cap = '
-                        prefix_match = re.search(rf"\b([a-zA-Z_]\w*)\s*=\s*{f_name}\b", content_str[:f_match.start()])
+                        prefix_match = re.search(rf"\b([a-zA-Z_]\w*)\s*=\s*(?:\w+\.)?{f_name}\b", content_str[:f_match.start()])
                         if prefix_match:
                              p_start = len(content_str[:f_match.start() - (len(f_match.group(0)) + 50)].encode('utf-8')) # safe range
                              # Finding the actual match in the line
                              l_line, _ = self.lineIndexFromPosition(f_match.start())
                              l_text = self.text(l_line)
-                             l_match = re.search(rf"\b([a-zA-Z_]\w*)\s*=\s*{f_name}\b", l_text)
+                             l_match = re.search(rf"\b([a-zA-Z_]\w*)\s*=\s*(?:\w+\.)?{f_name}\b", l_text)
                              if l_match:
                                  # Lock the result variable + equals sign
                                  lock_text = l_match.group(1) + " ="
@@ -676,10 +676,10 @@ class AdvancedPythonEditor(QsciScintilla):
         registry = {}
         content = self.text()
         
-        # Pass 1: Library Function Outputs (e.g. model_session = Load_ONNX_Model(...))
+        # Pass 1: Library Function Outputs (e.g. model_session = camera.Init_Camera(...))
         for category, data in LIBRARY_FUNCTIONS.items():
             for f_name, f_info in data["functions"].items():
-                pattern = rf"\b([a-zA-Z_]\w*)\s*=\s*{f_name}\b"
+                pattern = rf"\b([a-zA-Z_]\w*)\s*=\s*(?:\w+\.)?{f_name}\b"
                 for match in re.finditer(pattern, content):
                     var_name = match.group(1)
                     registry[var_name] = {

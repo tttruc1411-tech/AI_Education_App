@@ -7,23 +7,23 @@
 # DESC_VI: Học những kiến thức cơ bản về lập trình camera.
 # ============================================================
 
-# Import camera blocks
-from src.modules.library.functions.ai_blocks import Init_Camera, Get_Camera_Frame, Close_Camera
-# Import display block to show the live feed
-from src.modules.library.functions.display_blocks import Show_Image
+
+
+import camera
+import display
 
 # Step 1: Start the camera
-capture_camera = Init_Camera()
+capture_camera = camera.Init_Camera()
 print("[OK] Camera is ready!")
 
 # Step 2: Show live video in a loop
 while True:
     # Grab one frame (picture) from the camera
-    camera_frame = Get_Camera_Frame(capture_camera = capture_camera)
+    camera_frame = camera.Get_Camera_Frame(capture_camera = capture_camera)
 
     # Send the frame to the Live Feed panel
-    Show_Image(camera_frame = camera_frame)
+    display.Show_Image(camera_frame = camera_frame)
 
 # Step 3: Clean up when done
-Close_Camera(capture_camera = capture_camera)
+camera.Close_Camera(capture_camera = capture_camera)
 print("[OK] Camera closed.")
