@@ -476,7 +476,9 @@ class AdvancedPythonEditor(QsciScintilla):
                                 is_number = (stripped_val.replace('.', '', 1).isdigit() if stripped_val else False)
                                 # Boolean/None-like constants
                                 is_constant = val_text in ("True", "False", "None", "0")
-                                if not is_string and not is_number and not is_constant:
+                                # Expressions: contains operators like +, -, *, /, %, //, **
+                                is_expression = bool(re.search(r'[\+\-\*/%]', val_text)) and not is_string
+                                if not is_string and not is_number and not is_constant and not is_expression:
                                     if val_text not in registry:
                                         # Unknown Variable
                                         should_highlight = True
