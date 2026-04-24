@@ -467,9 +467,16 @@ class AdvancedPythonEditor(QsciScintilla):
                                 should_highlight = True
                             else:
                                 # 🧬 CASE 2: Type Flow & Nonsense Check
-                                is_string = (val_text.startswith("'") or val_text.startswith('"'))
-                                is_number = val_text.replace('.', '', 1).isdigit()
-                                if not is_string and not is_number:
+                                is_string = (val_text.startswith("'") or val_text.startswith('"')
+                                             or val_text.startswith("f'") or val_text.startswith('f"')
+                                             or val_text.startswith("r'") or val_text.startswith('r"')
+                                             or val_text.startswith("b'") or val_text.startswith('b"'))
+                                # Numbers: int, float, negative, or bare digits
+                                stripped_val = val_text.lstrip('-')
+                                is_number = (stripped_val.replace('.', '', 1).isdigit() if stripped_val else False)
+                                # Boolean/None-like constants
+                                is_constant = val_text in ("True", "False", "None", "0")
+                                if not is_string and not is_number and not is_constant:
                                     if val_text not in registry:
                                         # Unknown Variable
                                         should_highlight = True
@@ -710,6 +717,18 @@ class AdvancedPythonEditor(QsciScintilla):
                 "start": len(content[:match.start(1)].encode('utf-8')),
                 "end": len(content[:match.end(1)].encode('utf-8'))
             }
+
+        # Pass 4: General assignments not yet registered (e.g. _, faces = detector.detect(frame))
+        # This catches variables from non-library calls so they aren't flagged as "unknown"
+        general_pattern = r"\b([a-zA-Z_]\w*)\s*="
+        for match in re.finditer(general_pattern, content):
+            var_name = match.group(1)
+            if var_name not in registry and var_name != "_":
+                registry[var_name] = {
+                    "type": "Any",
+                    "start": len(content[:match.start(1)].encode('utf-8')),
+                    "end": len(content[:match.end(1)].encode('utf-8'))
+                }
         
         return registry
         
