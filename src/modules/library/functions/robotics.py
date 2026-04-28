@@ -166,3 +166,45 @@ def Set_Servo(pin, angle):
         return
     idx = _resolve_servo(pin)
     md.set_servo(idx, int(angle))
+
+
+def Sweep_Servo(pin='S1', start_angle=0, end_angle=180, step=10, delay=0.05):
+    """
+    Smoothly sweep a servo motor across an angle range.
+
+    Iterates from start_angle to end_angle in increments of step,
+    calling Set_Servo at each position with a delay pause between steps.
+
+    Parameters
+    ----------
+    pin : str
+        Servo port — 'S1', 'S2', 'S3', or 'S4'.
+    start_angle : int
+        Starting angle (0–180).
+    end_angle : int
+        Ending angle (0–180).
+    step : int
+        Angle increment per step.
+    delay : float
+        Seconds to pause between each step.
+
+    Returns
+    -------
+    None
+    """
+    try:
+        md = _get_driver()
+        if md is None:
+            print("[Robotics] ORC Hub not connected. Sweep cancelled.")
+            return
+        start_angle = int(start_angle)
+        end_angle = int(end_angle)
+        step = int(step)
+        if step <= 0:
+            print("[Robotics] Step must be positive.")
+            return
+        for angle in range(start_angle, end_angle + 1, step):
+            Set_Servo(pin, angle)
+            time.sleep(float(delay))
+    except Exception as e:
+        print(f"[Robotics] Error in Sweep_Servo: {e}")

@@ -8,4 +8,5 @@ from src.modules.library.functions.robotics import (
     DC_Stop,
     Get_Speed,
     Set_Servo,
+    Sweep_Servo,
 )

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KDI Hatchling - Pixel Art Style Preview</title>
+    <style>
+        body {
+            background-color: #0f172a; /* Navy background */
+            color: #f8fafc;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            background-image: 
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 20px 20px; /* Pixel grid background effect */
+        }
+
+        h1 {
+            color: #eab308;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        p.subtitle {
+            color: #94a3b8;
+            margin-bottom: 30px;
+        }
+
+        .mascot-container {
+            width: 320px;
+            height: 320px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        /* SVG Object Base */
+        #hatchling-svg {
+            width: 100%;
+            height: 100%;
+            transition: all 0.2s ease;
+            transform-origin: center center;
+            /* Render crisply like pixel art */
+            shape-rendering: geometricPrecision;
+        }
+
+        /* --- Mood Groups Visibility --- */
+        .mood-group { 
+            opacity: 0; 
+            transition: opacity 0.1s ease; 
+        }
+        
+        /* Show active mood */
+        #hatchling-svg:not(.svg-happy):not(.svg-questioning):not(.svg-sad):not(.svg-error) .mood-neutral { opacity: 1; }
+        #hatchling-svg.svg-neutral .mood-neutral { opacity: 1; }
+        #hatchling-svg.svg-happy .mood-happy { opacity: 1; }
+        #hatchling-svg.svg-questioning .mood-questioning { opacity: 1; }
+        #hatchling-svg.svg-sad .mood-sad { opacity: 1; }
+        #hatchling-svg.svg-error .mood-error { opacity: 1; }
+
+        /* --- SVG Container Animations --- */
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-6px); }
+        }
+
+        @keyframes bounceHappy {
+            0%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-15px); }
+            60% { transform: translateY(-4px); }
+            80% { transform: translateY(-10px); }
+        }
+
+        @keyframes tiltQuestion {
+            0%, 100% { transform: rotate(5deg); }
+            50% { transform: rotate(8deg) translateY(-2px); }
+        }
+
+        @keyframes sagSad {
+            0%, 100% { transform: translateY(8px) scaleY(0.97); }
+            50% { transform: translateY(12px) scaleY(0.95); }
+        }
+
+        @keyframes shakeError {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-6px) rotate(-2deg); }
+            40%, 80% { transform: translateX(6px) rotate(2deg); }
+        }
+
+        /* Apply container animations based on class */
+        .svg-neutral { animation: float 3s infinite ease-in-out; }
+        .svg-happy { animation: bounceHappy 1.5s infinite ease-in-out; }
+        .svg-questioning { animation: tiltQuestion 3s infinite ease-in-out; }
+        .svg-sad { animation: sagSad 3s infinite ease-in-out; }
+        .svg-error { animation: shakeError 0.4s infinite ease-in-out; }
+
+        /* --- Controls --- */
+        .controls {
+            margin-top: 30px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        button {
+            background: #1e293b;
+            color: #94a3b8;
+            border: 2px solid #334155;
+            padding: 10px 18px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            font-family: 'Courier New', Courier, monospace;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+        }
+
+        button:hover {
+            background: #334155;
+            color: #f8fafc;
+        }
+
+        button.active {
+            background: #eab308;
+            color: #0f172a;
+            border-color: #eab308;
+            box-shadow: 0 4px 12px rgba(234, 179, 8, 0.3);
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Pixel Mascot Core</h1>
+    <p class="subtitle">Anatomy matching the 2D Pixel Art Reference</p>
+
+    <div class="mascot-container">
+        <!-- Embedded SVG -->
+        <svg id="hatchling-svg" class="svg-neutral" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+            <!-- Core Sphere -->
+            <circle cx="100" cy="100" r="52" fill="#1e3a8a" stroke="#0f172a" stroke-width="8" />
+            <!-- Highlight -->
+            <path d="M 105 55 Q 120 50 135 65 Q 145 80 145 95 Q 120 70 105 55 Z" fill="#3b82f6" opacity="0.6"/>
+
+            <!-- Arms Layer (Before Shells) -->
+            <g id="arms">
+                <!-- Neutral (Resting down) -->
+                <g class="mood-group mood-neutral">
+                    <g stroke="#0f172a" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                        <path d="M 40 100 L 25 125 L 35 145" />
+                        <path d="M 160 100 L 175 125 L 165 145" />
+                    </g>
+                    <g stroke="#1e3a8a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                        <path d="M 40 100 L 25 125 L 35 145" />
+                        <path d="M 160 100 L 175 125 L 165 145" />
+                    </g>
+                </g>
+                
+                <!-- Happy (Arms raised) -->
+                <g class="mood-group mood-happy">
+                    <g stroke="#0f172a" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                        <path d="M 40 100 L 20 75 L 30 55" />
+                        <path d="M 160 100 L 180 75 L 170 55" />
+                    </g>
+                    <g stroke="#1e3a8a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                        <path d="M 40 100 L 20 75 L 30 55" />
+                        <path d="M 160 100 L 180 75 L 170 55" />
+                    </g>
+                    <!-- Sparkles -->
+                    <path d="M 20 25 L 20 45 M 10 35 L 30 35" stroke="#22c55e" stroke-width="4" stroke-linecap="round" />
+                    <path d="M 170 15 L 170 35 M 160 25 L 180 25" stroke="#22c55e" stroke-width="4" stroke-linecap="round" />
+                </g>
+
+                <!-- Questioning (Hand on chin) -->
+                <g class="mood-group mood-questioning">
+                    <g stroke="#0f172a" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                        <path d="M 40 100 L 25 125 L 35 145" />
+                        <path d="M 160 100 L 145 135 L 115 125" />
+                    </g>
+                    <g stroke="#1e3a8a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                        <path d="M 40 100 L 25 125 L 35 145" />
+                        <path d="M 160 100 L 145 135 L 115 125" />
+                    </g>
+                </g>
+
+                <!-- Sad (Hand on face) -->
+                <g class="mood-group mood-sad">
+                    <g stroke="#0f172a" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                        <path d="M 40 100 L 25 125 L 35 145" />
+                        <path d="M 160 100 L 145 140 L 125 130" />
+                    </g>
+                    <g stroke="#1e3a8a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                        <path d="M 40 100 L 25 125 L 35 145" />
+                        <path d="M 160 100 L 145 140 L 125 130" />
+                    </g>
+                </g>
+                
+                <!-- Error (Flailing) -->
+                <g class="mood-group mood-error">
+                    <g stroke="#0f172a" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                        <path d="M 40 100 L 15 90" />
+                        <path d="M 160 100 L 185 90" />
+                    </g>
+                    <g stroke="#1e3a8a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                        <path d="M 40 100 L 15 90" />
+                        <path d="M 160 100 L 185 90" />
+                    </g>
+                </g>
+            </g>
+
+            <!-- Outer Shells -->
+            <g id="shells" stroke="#0f172a" stroke-width="8" stroke-linejoin="round">
+                <!-- Bottom Shell -->
+                <path d="M 30 105 L 50 105 L 60 135 L 140 135 L 150 105 L 170 105 L 175 135 L 155 175 L 100 190 L 45 175 L 25 135 Z" fill="#eab308" />
+                <path d="M 38 112 L 48 112 L 56 138 L 144 138 L 152 112 L 162 112 L 166 135 L 148 168 L 100 180 L 52 168 L 34 135 Z" fill="none" stroke="#fde047" stroke-width="4" opacity="0.6"/>
+                
+                <!-- Center KDI Text -->
+                <text x="100" y="167" font-family="'Courier New', monospace" font-weight="900" font-size="34" fill="#fde047" stroke="none" text-anchor="middle" opacity="0.5" letter-spacing="2">KDI</text>
+                <text x="100" y="165" font-family="'Courier New', monospace" font-weight="900" font-size="34" fill="#1e3a8a" stroke="none" text-anchor="middle" letter-spacing="2">KDI</text>
+
+                <!-- Top Left Shell -->
+                <path d="M 25 85 L 45 85 L 60 45 L 90 35 L 90 15 L 55 20 L 30 45 L 20 65 Z" fill="#eab308" />
+
+                <!-- Top Right Shell -->
+                <path d="M 175 85 L 155 85 L 140 45 L 110 35 L 110 15 L 145 20 L 170 45 L 180 65 Z" fill="#eab308" />
+            </g>
+
+            <!-- Antenna Container -->
+            <g id="antenna">
+                <path d="M 100 45 L 100 10" stroke="#0f172a" stroke-width="12" stroke-linecap="round" />
+                <path d="M 100 45 L 100 10" stroke="#334155" stroke-width="6" stroke-linecap="round" />
+                <g class="mood-group mood-neutral"><circle cx="100" cy="8" r="8" fill="#fbbf24" /></g>
+                <g class="mood-group mood-happy"><circle cx="100" cy="8" r="8" fill="#22c55e" /></g>
+                <g class="mood-group mood-questioning"><circle cx="100" cy="8" r="8" fill="#a78bfa" /></g>
+                <g class="mood-group mood-sad"><circle cx="100" cy="8" r="8" fill="#64748b" /></g>
+                <g class="mood-group mood-error"><circle cx="100" cy="8" r="8" fill="#ef4444" /></g>
+            </g>
+
+            <!-- Eyes / Face Container -->
+            <g id="face" fill="#22d3ee">
+                <!-- NEUTRAL (Friendly) -->
+                <g class="mood-group mood-neutral">
+                    <rect x="75" y="82" width="16" height="16" rx="6" />
+                    <rect x="109" y="82" width="16" height="16" rx="6" />
+                    <path d="M 95 104 Q 100 108 105 104" fill="none" stroke="#22d3ee" stroke-width="4" stroke-linecap="round" />
+                </g>
+
+                <!-- HAPPY (^ ^) -->
+                <g class="mood-group mood-happy">
+                    <path d="M 72 90 Q 83 75 94 90" fill="none" stroke="#22d3ee" stroke-width="6" stroke-linecap="round" />
+                    <path d="M 106 90 Q 117 75 128 90" fill="none" stroke="#22d3ee" stroke-width="6" stroke-linecap="round" />
+                    <rect x="92" y="102" width="16" height="4" rx="1" />
+                    <!-- Blush -->
+                    <rect x="65" y="95" width="12" height="6" rx="2" fill="#fbbf24" opacity="0.8" />
+                    <rect x="123" y="95" width="12" height="6" rx="2" fill="#fbbf24" opacity="0.8" />
+                </g>
+
+                <!-- QUESTIONING (O o) -->
+                <g class="mood-group mood-questioning">
+                    <rect x="75" y="82" width="18" height="15" rx="2" />
+                    <rect x="110" y="88" width="12" height="8" rx="1" />
+                    <rect x="94" y="108" width="8" height="4" rx="1" />
+                    <!-- Question Bubble -->
+                    <g transform="translate(140, 15)">
+                        <path d="M 0 0 L 30 0 L 30 25 L 15 25 L 10 35 L 10 25 L 0 25 Z" fill="#0f172a" stroke="#eab308" stroke-width="3" stroke-linejoin="round"/>
+                        <text x="15" y="19" font-family="'Courier New', monospace" font-weight="900" font-size="18" fill="#eab308" text-anchor="middle">?</text>
+                    </g>
+                </g>
+
+                <!-- SAD ( \ / ) -->
+                <g class="mood-group mood-sad">
+                    <path d="M 75 88 L 90 95" fill="none" stroke="#22d3ee" stroke-width="7" stroke-linecap="round" />
+                    <path d="M 125 88 L 110 95" fill="none" stroke="#22d3ee" stroke-width="7" stroke-linecap="round" />
+                    <path d="M 92 110 Q 100 102 108 110" fill="none" stroke="#22d3ee" stroke-width="4" stroke-linecap="round" />
+                </g>
+
+                <!-- ERROR (Surprised + !) -->
+                <g class="mood-group mood-error">
+                    <!-- Surprised Eyes -->
+                    <rect x="75" y="80" width="16" height="20" rx="8" />
+                    <rect x="109" y="80" width="16" height="20" rx="8" />
+                    <!-- '-' Mouth -->
+                    <rect x="94" y="110" width="12" height="4" rx="2" />
+                    <!-- Exclamation Bubble -->
+                    <g transform="translate(140, 15)">
+                        <path d="M 0 0 L 30 0 L 30 25 L 15 25 L 10 35 L 10 25 L 0 25 Z" fill="#0f172a" stroke="#ef4444" stroke-width="3" stroke-linejoin="round"/>
+                        <text x="15" y="19" font-family="'Courier New', monospace" font-weight="900" font-size="18" fill="#ef4444" stroke="none" text-anchor="middle">!</text>
+                    </g>
+                </g>
+            </g>
+        </svg>
+    </div>
+
+    <div class="controls" id="btn-container">
+        <button onclick="setMood('neutral')" class="active">[Neutral]</button>
+        <button onclick="setMood('happy')">[Happy]</button>
+        <button onclick="setMood('questioning')">[Question]</button>
+        <button onclick="setMood('sad')">[Sad]</button>
+        <button onclick="setMood('error')">[Error]</button>
+    </div>
+
+    <script>
+        function setMood(mood) {
+            // Update SVG Class
+            const svg = document.getElementById('hatchling-svg');
+            svg.className = `svg-${mood}`;
+            
+            // Force reflow for animation restart
+            void svg.offsetWidth;
+
+            // Update Active Button
+            const buttons = document.querySelectorAll('button');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+        }
+    </script>
+</body>
+</html>

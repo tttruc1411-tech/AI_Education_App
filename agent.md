@@ -464,7 +464,7 @@ A professional, education-focused Python development environment built with **Py
 * `src/modules/library/functions/variables.py`: Variable constructor blocks (Create_Text, Create_Number, Create_Decimal, Create_Boolean, Create_List).
 * `src/modules/library/functions/display_blocks.py`: Display blocks (Show_FPS, Show_Image, Observe_Variable, Draw_Rectangle, Draw_Circle).
 * `src/modules/library/functions/logic_blocks.py`: Logic utility blocks (Wait_Seconds, Print_Message).
-* `curriculum/4_my_first_camera.py` through `curriculum/38_motor_speed_dashboard.py`: 35 new curriculum example files.
+* `curriculum/my_first_camera.py` through `curriculum/motor_speed_dashboard.py`: 38 curriculum example files (numeric prefixes removed, ORDER metadata added).
 
 ## Updated Next Steps
 * [x] **Expanded Function Library**: 20 new blocks across 7 categories (including new Variables ✏️ category).
@@ -475,6 +475,7 @@ A professional, education-focused Python development environment built with **Py
 * [x] **Function Info Panel Resolution Scaling**: All section titles, descriptions, and code blocks scale with resolution mode.
 * [x] **Save_Frame Default Path**: Images saved to `projects/data/saved/` by default.
 * [x] **Editor Tooltip Translation**: `_lang` attribute on `AdvancedPythonEditor` synced from `set_language()`, "Returns" label translated.
-* [x] **Original Example Reclassification**: `1_face_detection.py` moved from Beginner to Intermediate (uses AI blocks). `3_llm_chatbot.py` color updated to orange.
+* [x] **Original Example Reclassification**: `face_detection.py` moved from Beginner to Intermediate (uses AI blocks). `llm_chatbot.py` color updated to orange.
 * [x] **Clean Module Import System (V3)**: Split `ai_blocks.py` into `camera`, `ai_vision`, `drawing`. Renamed `display_blocks` → `display`, `image_processing` → `image`, `logic_blocks` → `logic`. All 38 curriculum examples and `definitions.py` updated. Hint system regex patterns updated with `(?:\w+\.)?` optional module prefix.
 * [x] **Editor Selection Color Fix**: Changed selection foreground from white to navy `#1e293b` for better readability against purple selection background.
+* [x] **KDI App Mascot (Hatchling)**: Created high-quality SVG assets for the KDI Mascot in 5 distinct emotional states (Neutral, Happy, Questioning, Sad, Error) for interactive app feedback, saved to `src/modules/courses/`.

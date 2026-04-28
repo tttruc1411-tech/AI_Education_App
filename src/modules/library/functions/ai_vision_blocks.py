@@ -139,3 +139,82 @@ def Run_Engine_Model(engine_model, camera_frame, img_size=640):
         return results[0].boxes.data.tolist()
 
     return []
+
+
+def Get_Detection_Count(results):
+    """
+    Extract the number of detections from AI model results.
+
+    Handles multiple result formats:
+    - None → 0
+    - numpy array → len(results)
+    - tuple (retval, faces) → len(faces) if faces is not None else 0
+
+    Parameters
+    ----------
+    results : various
+        Raw detection results from an AI model.
+
+    Returns
+    -------
+    int
+        The number of detections found.
+    """
+    try:
+        if results is None:
+            return 0
+        if isinstance(results, np.ndarray):
+            return len(results)
+        if isinstance(results, tuple):
+            # YuNet format: (retval, faces)
+            if len(results) >= 2:
+                faces = results[1]
+                return len(faces) if faces is not None else 0
+            return 0
+        # List of detections (ONNX/Engine format)
+        return len(results)
+    except Exception as e:
+        print(f"[AI Vision] Error in Get_Detection_Count: {e}")
+        return 0
+
+
+def Crop_Detection(camera_frame, results, index=0):
+    """
+    Crop a detected object region from the camera frame.
+
+    Extracts the bounding box at the given index from results and returns
+    the cropped region. The first 4 values of each detection are x, y, w, h.
+
+    Parameters
+    ----------
+    camera_frame : ndarray
+        The source image to crop from.
+    results : array-like
+        Detection results where each item has [x, y, w, h, ...].
+    index : int
+        Which detection to crop (0-based).
+
+    Returns
+    -------
+    ndarray or None
+        The cropped image region, or None if index is out of bounds.
+    """
+    try:
+        if results is None or camera_frame is None:
+            return None
+        if index >= len(results):
+            print(f"[AI Vision] Detection index {index} out of range (only {len(results)} detections found).")
+            return None
+        det = results[index]
+        x, y, w, h = int(det[0]), int(det[1]), int(det[2]), int(det[3])
+        # Clamp to frame boundaries
+        x = max(0, x)
+        y = max(0, y)
+        h_frame, w_frame = camera_frame.shape[:2]
+        x2 = min(x + w, w_frame)
+        y2 = min(y + h, h_frame)
+        cropped = camera_frame[y:y2, x:x2]
+        return cropped
+    except Exception as e:
+        print(f"[AI Vision] Error in Crop_Detection: {e}")
+        return None

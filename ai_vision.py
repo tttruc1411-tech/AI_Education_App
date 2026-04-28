@@ -9,4 +9,6 @@ from src.modules.library.functions.ai_vision_blocks import (
     Run_ONNX_Model,
     Load_Engine_Model,
     Run_Engine_Model,
+    Get_Detection_Count,
+    Crop_Detection,
 )

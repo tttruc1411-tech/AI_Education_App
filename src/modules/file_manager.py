@@ -89,7 +89,7 @@ class FileManager:
         # Fallback to legacy locations if not found in new location
         legacy_files = [
             ('main.py', self.project_root / 'main.py'),
-            ('1_face_detection.py', self.project_root / 'curriculum' / '1_face_detection.py')
+            ('face_detection.py', self.project_root / 'curriculum' / 'face_detection.py')
         ]
         
         for name, file_path in legacy_files:
@@ -252,8 +252,8 @@ class FileManager:
                 # Fallback to legacy locations
                 if filename == 'main.py':
                     file_path = self.project_root / 'main.py'
-                elif filename == '1_face_detection.py':
-                    file_path = self.project_root / 'curriculum' / '1_face_detection.py'
+                elif filename == 'face_detection.py':
+                    file_path = self.project_root / 'curriculum' / 'face_detection.py'
         else:
             file_path = self.files_dir / filename
         

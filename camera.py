@@ -8,4 +8,6 @@ from src.modules.library.functions.camera_blocks import (
     Close_Camera,
     Save_Frame,
     Load_Image,
+    Set_Camera_Resolution,
+    Capture_Snapshot,
 )

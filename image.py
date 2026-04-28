@@ -13,4 +13,9 @@ from src.modules.library.functions.image_processing import (
     crop_image,
     draw_text,
     convert_to_hsv,
+    threshold_image,
+    blend_images,
+    split_channels,
+    equalize_histogram,
+    detect_contours,
 )

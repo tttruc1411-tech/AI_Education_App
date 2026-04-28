@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "packs": {
+    "ai_vision": {
+      "unlocked_lessons": [
+        "lesson_1_the_ai_brain"
+      ],
+      "active_lesson": null,
+      "lessons": {
+        "lesson_1_the_ai_brain": {
+          "rounds": {
+            "guided": {
+              "completed": true,
+              "best_stars": 3,
+              "attempts": 1
+            },
+            "explore": {
+              "completed": true,
+              "best_stars": 3,
+              "attempts": 1
+            },
+            "challenge": {
+              "completed": false,
+              "best_stars": 0,
+              "attempts": 0
+            }
+          }
+        }
+      }
+    },
+    "camera_basics": {
+      "unlocked_lessons": [
+        "lesson_1_hello_camera"
+      ],
+      "active_lesson": null,
+      "lessons": {}
+    },
+    "image_processing": {
+      "unlocked_lessons": [
+        "lesson_1_grayscale_magic"
+      ],
+      "active_lesson": null,
+      "lessons": {}
+    },
+    "robot_control": {
+      "unlocked_lessons": [
+        "lesson_1_connecting_robot"
+      ],
+      "active_lesson": null,
+      "lessons": {}
+    }
+  }
+}

@@ -3102,30 +3102,39 @@ class AICodingLab(QMainWindow):
 
         counts = {"Beginner": 0, "Intermediate": 0, "Advanced": 0}
 
-        for name in sorted(os.listdir(curr_dir)):
+        # Collect all entries with metadata
+        entries = []
+        for name in os.listdir(curr_dir):
             if name.endswith(".py"):
                 file_path = os.path.join(curr_dir, name)
                 metadata = self._parse_lesson_metadata(file_path)
-
-                title = metadata.get(f"TITLE_{self.current_lang.upper()}", metadata.get("TITLE", name))
-                desc = metadata.get(f"DESC_{self.current_lang.upper()}", metadata.get("DESC", "Custom curriculum script."))
                 level = metadata.get("LEVEL", "Beginner")
+                order = metadata.get("ORDER", 999)
+                entries.append((name, metadata, level, order))
 
-                card = CurriculumCard(
-                    filename=name,
-                    title=title,
-                    level=level,
-                    icon=metadata.get("ICON", "📄"),
-                    color=metadata.get("COLOR", "#7c3aed"),
-                    desc=desc,
-                    on_load_click=self.load_curriculum_example,
-                    is_small=self.is_small_screen
-                )
-                self._curriculum_cards.append((level, card))
-                self._cards_layout.addWidget(card)
+        # Sort: primary by LEVEL group, secondary by ORDER ascending, tertiary by filename
+        level_priority = {"Beginner": 0, "Intermediate": 1, "Advanced": 2}
+        entries.sort(key=lambda e: (level_priority.get(e[2], 99), e[3], e[0]))
 
-                if level in counts:
-                    counts[level] += 1
+        for name, metadata, level, order in entries:
+            title = metadata.get(f"TITLE_{self.current_lang.upper()}", metadata.get("TITLE", name))
+            desc = metadata.get(f"DESC_{self.current_lang.upper()}", metadata.get("DESC", "Custom curriculum script."))
+
+            card = CurriculumCard(
+                filename=name,
+                title=title,
+                level=level,
+                icon=metadata.get("ICON", "📄"),
+                color=metadata.get("COLOR", "#7c3aed"),
+                desc=desc,
+                on_load_click=self.load_curriculum_example,
+                is_small=self.is_small_screen
+            )
+            self._curriculum_cards.append((level, card))
+            self._cards_layout.addWidget(card)
+
+            if level in counts:
+                counts[level] += 1
 
         # Add spacer
         self._cards_layout.addStretch()
@@ -3156,7 +3165,7 @@ class AICodingLab(QMainWindow):
             card.setVisible(level == self._active_level)
 
     def _parse_lesson_metadata(self, path):
-        """Extract # TITLE, # LEVEL, # ICON, # COLOR, # DESC from file header."""
+        """Extract # TITLE, # LEVEL, # ICON, # COLOR, # DESC, # ORDER from file header."""
         meta = {}
         try:
             with open(path, "r", encoding="utf-8") as f:
@@ -3165,13 +3174,18 @@ class AICodingLab(QMainWindow):
                     line = f.readline()
                     if not line: break
                     # Match pattern like: # TITLE: Face Detection or # TITLE_VI: Phát hiện khuôn mặt
-                    match = re.search(r"^#\s*(TITLE|LEVEL|ICON|COLOR|DESC|TITLE_VI|DESC_VI)\s*:\s*(.*)$", line, re.I)
+                    match = re.search(r"^#\s*(TITLE|LEVEL|ICON|COLOR|DESC|TITLE_VI|DESC_VI|ORDER)\s*:\s*(.*)$", line, re.I)
                     if match:
                         key = match.group(1).upper()
                         val = match.group(2).strip()
                         meta[key] = val
         except:
             pass
+        # Parse ORDER as integer, default to 999 if missing or invalid
+        try:
+            meta["ORDER"] = int(meta.get("ORDER", 999))
+        except (ValueError, TypeError):
+            meta["ORDER"] = 999
         return meta
 
     # --- Tab & File Operations ---
@@ -3188,8 +3202,8 @@ class AICodingLab(QMainWindow):
             display_name = filename.replace(".py", "").replace("_", " ").title()
             self.log_to_console(f"Successfully loaded {display_name} example.")
             
-            # Switch to 'main.py' logic for easy tab management if we want it as a new tab?
-            # Actually, let's just let it be for now since it works as a direct editor load.
+            # Persist to projects/code/ so the tab system can re-read it
+            self.file_manager.save_file(filename, code_content, folder='Code')
             self.add_tab(filename, is_code=True)
             
         except FileNotFoundError:

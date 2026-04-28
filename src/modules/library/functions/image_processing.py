@@ -228,3 +228,169 @@ def convert_to_hsv(input_image):
         HSV image (H x W x 3).
     """
     return cv2.cvtColor(input_image, cv2.COLOR_BGR2HSV)
+
+
+# ============================================================
+#  V3 Expansion — New Image Processing Functions
+# ============================================================
+
+
+def threshold_image(input_image, threshold=127, max_value=255):
+    """
+    Apply binary thresholding to an image, converting pixels to
+    black or white based on a cutoff value.
+
+    Parameters
+    ----------
+    input_image : ndarray
+        A color (BGR) or grayscale image.
+    threshold : int, optional
+        Cutoff value (0–255). Pixels above become max_value (default 127).
+    max_value : int, optional
+        Value assigned to pixels above the threshold (default 255).
+
+    Returns
+    -------
+    ndarray or None
+        A single-channel binary image, or None on error.
+    """
+    try:
+        if len(input_image.shape) == 3:
+            gray = cv2.cvtColor(input_image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = input_image
+        _, result = cv2.threshold(gray, int(threshold), int(max_value), cv2.THRESH_BINARY)
+        return result
+    except Exception as e:
+        print(f"[Image] Error in threshold_image: {e}")
+        return None
+
+
+def blend_images(image1, image2, alpha=0.5):
+    """
+    Blend two images together with a transparency weight.
+
+    Parameters
+    ----------
+    image1 : ndarray
+        The base image (color or grayscale).
+    image2 : ndarray
+        The overlay image. Auto-resized to match image1 if needed.
+    alpha : float, optional
+        Weight of image1 (0.0–1.0). image2 weight is 1 - alpha (default 0.5).
+
+    Returns
+    -------
+    ndarray or None
+        The blended image, or None on error.
+    """
+    try:
+        # Auto-resize image2 to match image1 dimensions
+        h1, w1 = image1.shape[:2]
+        h2, w2 = image2.shape[:2]
+        if (h1, w1) != (h2, w2):
+            print("[Image] Resizing image2 to match image1 dimensions.")
+            image2 = cv2.resize(image2, (w1, h1))
+
+        # Match channel counts
+        if len(image1.shape) == 3 and len(image2.shape) == 2:
+            image2 = cv2.cvtColor(image2, cv2.COLOR_GRAY2BGR)
+        elif len(image1.shape) == 2 and len(image2.shape) == 3:
+            image2 = cv2.cvtColor(image2, cv2.COLOR_BGR2GRAY)
+
+        alpha = float(alpha)
+        return cv2.addWeighted(image1, alpha, image2, 1.0 - alpha, 0)
+    except Exception as e:
+        print(f"[Image] Error in blend_images: {e}")
+        return None
+
+
+def split_channels(input_image):
+    """
+    Split a color image into its 3 individual color channel images.
+
+    Parameters
+    ----------
+    input_image : ndarray
+        A color (BGR) or grayscale image. Grayscale images are
+        converted to BGR first so 3 channels are always returned.
+
+    Returns
+    -------
+    list or []
+        A list of 3 single-channel ndarray images [B, G, R],
+        or an empty list on error.
+    """
+    try:
+        if len(input_image.shape) == 2:
+            input_image = cv2.cvtColor(input_image, cv2.COLOR_GRAY2BGR)
+        channels = cv2.split(input_image)
+        return list(channels)
+    except Exception as e:
+        print(f"[Image] Error in split_channels: {e}")
+        return []
+
+
+def equalize_histogram(input_image):
+    """
+    Enhance image contrast via histogram equalization.
+
+    For grayscale images, equalizes directly. For color images,
+    equalizes each channel independently and merges back.
+
+    Parameters
+    ----------
+    input_image : ndarray
+        A color (BGR) or grayscale image.
+
+    Returns
+    -------
+    ndarray or None
+        The contrast-enhanced image, or None on error.
+    """
+    try:
+        if len(input_image.shape) == 2:
+            return cv2.equalizeHist(input_image)
+        # Color: equalize each channel separately
+        channels = cv2.split(input_image)
+        eq_channels = [cv2.equalizeHist(ch) for ch in channels]
+        return cv2.merge(eq_channels)
+    except Exception as e:
+        print(f"[Image] Error in equalize_histogram: {e}")
+        return None
+
+
+def detect_contours(input_image):
+    """
+    Find and draw object contours/outlines on the image.
+
+    Converts to grayscale, applies binary thresholding, finds
+    contours, and draws them in green on a copy of the original.
+
+    Parameters
+    ----------
+    input_image : ndarray
+        A color (BGR) or grayscale image.
+
+    Returns
+    -------
+    ndarray or None
+        A copy of the image with contours drawn in green,
+        or None on error.
+    """
+    try:
+        # Prepare grayscale for contour detection
+        if len(input_image.shape) == 3:
+            gray = cv2.cvtColor(input_image, cv2.COLOR_BGR2GRAY)
+            output = input_image.copy()
+        else:
+            gray = input_image
+            output = cv2.cvtColor(input_image, cv2.COLOR_GRAY2BGR)
+
+        _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(output, contours, -1, (0, 255, 0), 2)
+        return output
+    except Exception as e:
+        print(f"[Image] Error in detect_contours: {e}")
+        return None

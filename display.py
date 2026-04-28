@@ -8,4 +8,7 @@ from src.modules.library.functions.display_blocks import (
     Observe_Variable,
     Draw_Rectangle,
     Draw_Circle,
+    Draw_Line,
+    Draw_Text_Box,
+    Stack_Images,
 )

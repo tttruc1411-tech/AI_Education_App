@@ -78,3 +78,69 @@ def Load_Image(file_path="image.jpg"):
         return None
     print(f"[OK] Image loaded from {file_path}")
     return img
+
+import time
+
+
+def Set_Camera_Resolution(capture_camera, width=640, height=480):
+    """
+    Set the camera capture resolution.
+
+    Parameters
+    ----------
+    capture_camera : cv2.VideoCapture
+        The camera capture object from Init_Camera.
+    width : int
+        Desired frame width in pixels.
+    height : int
+        Desired frame height in pixels.
+
+    Returns
+    -------
+    None
+    """
+    try:
+        if capture_camera is None:
+            print("[Camera] No camera initialized.")
+            return
+        capture_camera.set(cv2.CAP_PROP_FRAME_WIDTH, int(width))
+        capture_camera.set(cv2.CAP_PROP_FRAME_HEIGHT, int(height))
+        print(f"[OK] Camera resolution set to {int(width)}x{int(height)}")
+    except Exception as e:
+        print(f"[Camera] Error in Set_Camera_Resolution: {e}")
+
+
+def Capture_Snapshot(capture_camera, countdown=0):
+    """
+    Capture a single frame from the camera with an optional countdown.
+
+    Parameters
+    ----------
+    capture_camera : cv2.VideoCapture
+        The camera capture object from Init_Camera.
+    countdown : int
+        Number of seconds to count down before capturing. 0 = immediate.
+
+    Returns
+    -------
+    ndarray or None
+        The captured frame, or None on failure.
+    """
+    try:
+        if capture_camera is None:
+            print("[Camera] No camera initialized.")
+            return None
+        countdown = int(countdown)
+        if countdown > 0:
+            for i in range(countdown, 0, -1):
+                print(f"[Camera] Capturing in {i}...")
+                time.sleep(1)
+        ret, camera_frame = capture_camera.read()
+        if not ret:
+            print("[Camera] Failed to capture snapshot.")
+            return None
+        print("[OK] Snapshot captured!")
+        return camera_frame
+    except Exception as e:
+        print(f"[Camera] Error in Capture_Snapshot: {e}")
+        return None
