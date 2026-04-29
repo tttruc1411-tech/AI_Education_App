@@ -1,7 +1,17 @@
 import sys
 import os
+import io
+
+# Bulletproof UTF-8 stdout/stderr encoding wrapper for Windows console operations
+if sys.platform.startswith('win'):
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
 # Suppress noisy C-library warnings on Jetson (must be set before imports)
+
 os.environ["ORT_LOG_LEVEL"] = "ERROR"
 os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.xcb.xcbclipboard=false"
@@ -25,14 +35,14 @@ import base64
 import re
 from datetime import datetime
 from pathlib import Path
-from PyQt5.QtCore import Qt, QDir, QProcess, QSize, QProcessEnvironment, QTimer, QEvent, QPoint, QPropertyAnimation, QEasingCurve
-from PyQt5.QtGui import QColor, QFont, QImage, QPixmap, QIcon, QPainter
+from PyQt5.QtCore import Qt, QDir, QProcess, QProcessEnvironment, QTimer, QEvent, QPoint, QPropertyAnimation, QEasingCurve
+from PyQt5.QtGui import QColor, QFont, QImage, QPixmap
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QStackedWidget, QPushButton, QFrame,
                              QTextEdit, QPlainTextEdit, QInputDialog, QMessageBox, QWidget,
                              QHBoxLayout, QTreeView, QLabel, QVBoxLayout, QSplitter, QSizePolicy,
                              QLineEdit, QFileDialog, QScrollArea, QGridLayout, QRubberBand,
                              QProgressBar, QSpinBox, QDoubleSpinBox, QComboBox, QFileSystemModel,
-                             QShortcut, QListWidget, QListWidgetItem, QStyle)
+                             QShortcut)
 from PyQt5.QtGui import QKeySequence
 from PyQt5.uic import loadUi
 from src.modules.translations import STRINGS
@@ -104,77 +114,6 @@ class TrainingCanvas(FigureCanvas):
             self.draw_idle()
         except Exception:
             pass
-
-
-# ────────────────────────────────────────────────────────────
-#  Workspace Gallery Item Widget (for Data Folder)
-# ────────────────────────────────────────────────────────────
-
-class GalleryItemWidget(QWidget):
-    """Custom widget for Data gallery items with a floating delete button."""
-    def __init__(self, file_path, icon_pixmap, theme, on_delete, is_dir=False):
-        super().__init__()
-        self.setFixedSize(125, 140)
-        self.file_path = file_path
-        self.is_dir = is_dir
-        
-        # Main layout
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 8)
-        layout.setSpacing(6)
-        
-        # Icon/Thumbnail slot (90x90)
-        self.icon_lbl = QLabel()
-        self.icon_lbl.setFixedSize(90, 90)
-        self.icon_lbl.setPixmap(icon_pixmap)
-        self.icon_lbl.setAlignment(Qt.AlignCenter)
-        self.icon_lbl.setStyleSheet("background: transparent;")
-        
-        # Centering the icon label
-        icon_layout = QHBoxLayout()
-        icon_layout.setContentsMargins(0, 0, 0, 0)
-        icon_layout.addStretch()
-        icon_layout.addWidget(self.icon_lbl)
-        icon_layout.addStretch()
-        layout.addLayout(icon_layout)
-        
-        # Name label
-        self.name_lbl = QLabel(file_path.name)
-        self.name_lbl.setAlignment(Qt.AlignCenter)
-        self.name_lbl.setStyleSheet(f"color: {theme['text']}; font-size: 11px; font-weight: 500; background: transparent;")
-        self.name_lbl.setWordWrap(True)
-        self.name_lbl.setMaximumHeight(36)
-        layout.addWidget(self.name_lbl)
-        
-        # Delete Button (Red Circle with White X)
-        # Rule: Do not allow removing 'classes.txt', but allow removing folders and other files
-        can_delete = True
-        if not is_dir and file_path.name == "classes.txt":
-            can_delete = False
-            
-        if can_delete:
-            self.btn_del = QPushButton("×", self)
-            self.btn_del.setFixedSize(24, 24)
-            # Position precisely at top-right of the 125x140 area
-            self.btn_del.move(96, 4)
-            self.btn_del.setCursor(Qt.PointingHandCursor)
-            self.btn_del.setToolTip("Delete folder" if is_dir else "Delete file")
-            self.btn_del.setStyleSheet("""
-                QPushButton {
-                    background-color: #ef4444;
-                    color: white;
-                    border-radius: 12px;
-                    font-weight: bold;
-                    font-size: 18px;
-                    border: 2px solid white;
-                    padding: 0px;
-                }
-                QPushButton:hover {
-                    background-color: #dc2626;
-                    border: 2px solid #fee2e2;
-                }
-            """)
-            self.btn_del.clicked.connect(lambda: on_delete(str(file_path)))
 
 # ────────────────────────────────────────────────────────────
 #  Annotation Label for Detection Mode
@@ -586,14 +525,801 @@ class LevelBadge(QWidget):
 
 
 # ────────────────────────────────────────────────────────────
+#  Success Dialog - Congratulations popup
+# ────────────────────────────────────────────────────────────
+
+from PyQt5.QtWidgets import QDialog
+
+class SuccessDialog(QDialog):
+    """Beautiful success dialog with animation."""
+    
+    def __init__(self, parent=None, hearts_earned=1.0, current_hearts=0, max_hearts=5, lang="en"):
+        super().__init__(parent)
+        s = STRINGS[lang]
+        self.setWindowTitle(s.get("SUCCESS_DIALOG_TITLE", "Congratulations!"))
+        self.setModal(True)
+        self.setFixedSize(500, 350)
+        
+        # Center on parent
+        if parent:
+            parent_geo = parent.geometry()
+            x = parent_geo.x() + (parent_geo.width() - 500) // 2
+            y = parent_geo.y() + (parent_geo.height() - 350) // 2
+            self.move(x, y)
+        
+        # Main layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(20)
+        layout.setAlignment(Qt.AlignCenter)
+        
+        # Success icon
+        icon_label = QLabel("🎉")
+        icon_label.setAlignment(Qt.AlignCenter)
+        icon_label.setStyleSheet("font-size: 64px; background: transparent;")
+        layout.addWidget(icon_label)
+        
+        # Title
+        title = QLabel(s.get("SUCCESS_TITLE", "✅ Great job!"))
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("font-size: 22px; font-weight: bold; color: white;")
+        layout.addWidget(title)
+        
+        # Hearts earned message
+        if hearts_earned > 0:
+            hearts_msg = QLabel(s.get("SUCCESS_HEARTS_EARNED", "You earned +{} ❤️").format(hearts_earned))
+            hearts_msg.setAlignment(Qt.AlignCenter)
+            hearts_msg.setStyleSheet("font-size: 18px; color: white;")
+            layout.addWidget(hearts_msg)
+        
+        # Current hearts display
+        hearts_display = QLabel(s.get("SUCCESS_HEARTS_TOTAL", "Total hearts: {}/{} ❤️").format(current_hearts, max_hearts))
+        hearts_display.setAlignment(Qt.AlignCenter)
+        hearts_display.setStyleSheet("font-size: 16px; color: #cbd5e1;")
+        layout.addWidget(hearts_display)
+        
+        # Instruction message
+        instruction = QLabel(s.get("SUCCESS_INSTRUCTION", "Now click the <b>Run ▶</b> button to test your code!"))
+        instruction.setAlignment(Qt.AlignCenter)
+        instruction.setWordWrap(True)
+        instruction.setStyleSheet("font-size: 15px; color: white;")
+        layout.addWidget(instruction)
+        
+        layout.addSpacing(10)
+        
+        # OK button
+        btn_ok = QPushButton("OK")
+        btn_ok.setFixedSize(200, 45)
+        btn_ok.setCursor(Qt.PointingHandCursor)
+        btn_ok.setStyleSheet("""
+            QPushButton {
+                background: #3b82f6;
+                color: white;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: 16px;
+                border: none;
+            }
+            QPushButton:hover {
+                background: #2563eb;
+            }
+            QPushButton:pressed {
+                background: #1d4ed8;
+            }
+        """)
+        btn_ok.clicked.connect(self.accept)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        btn_layout.addWidget(btn_ok)
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+        
+        # Style the dialog with green gradient background
+        self.setStyleSheet("""
+            QDialog {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #10b981, stop:1 #059669);
+                border-radius: 12px;
+            }
+            QLabel {
+                background: transparent;
+            }
+        """)
+    
+    def keyPressEvent(self, event):
+        """Close on Enter or Escape."""
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Escape):
+            self.accept()
+        super().keyPressEvent(event)
+
+
+# ────────────────────────────────────────────────────────────
+#  Lesson Progress Bar with Hearts System
+# ────────────────────────────────────────────────────────────
+
+class LessonProgressBar(QWidget):
+    """Gamification widget showing lesson progress and hearts - DEPRECATED, kept for compatibility."""
+    
+    def __init__(self, parent=None, lang="en"):
+        super().__init__(parent)
+        self.lang = lang
+        self.max_hearts = 9  # For compatibility
+        self.setVisible(False)  # Hidden by default, replaced by StepProgressBar
+    
+    def update_display(self):
+        """Dummy method for compatibility."""
+        pass
+    
+    def set_lesson(self, lesson_num):
+        """Dummy method for compatibility."""
+        pass
+    
+    def add_heart(self):
+        """Dummy method for compatibility."""
+        return False
+    
+    def remove_heart(self, amount=1):
+        """Dummy method for compatibility."""
+        return True
+    
+    def mark_hint_used(self):
+        """Dummy method for compatibility."""
+        pass
+    
+    def mark_solution_used(self):
+        """Dummy method for compatibility."""
+        pass
+
+
+# ────────────────────────────────────────────────────────────
+#  Step Progress Bar (Between Editor and Console)
+# ────────────────────────────────────────────────────────────
+
+class StepProgressBar(QWidget):
+    """Compact progress bar showing steps and hearts for current lesson."""
+    
+    def __init__(self, parent=None, lang="en"):
+        super().__init__(parent)
+        self.current_step = 1
+        self.total_steps = 5  # Will be updated based on lesson
+        self.hearts = 0
+        self.max_hearts = 5  # Will be updated based on lesson
+        self.lang = lang
+        self.lesson_id = None
+        self.step_status = {}  # Track step completion: {step_num: 'correct'/'incorrect'/None}
+        
+        self.setStyleSheet("background: transparent;")
+        self.setVisible(False)  # Hidden by default
+        self.setMaximumHeight(52)  # Initially locked to row height
+        
+        # Main vertical layout to stack requirements and progress
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(8, 4, 8, 4)
+        main_layout.setSpacing(4)
+        
+        # Requirements panel (top) - with scroll area
+        self.requirements_panel = QFrame()
+        self.requirements_panel.setObjectName("requirementsPanel")
+        self.requirements_panel.setStyleSheet("""
+            QFrame#requirementsPanel {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 rgba(139, 92, 246, 0.25),
+                    stop:1 rgba(59, 130, 246, 0.25));
+                border-left: 4px solid #8b5cf6;
+                border-radius: 4px;
+                border: 2px solid #8b5cf6;
+            }
+        """)
+        self.requirements_panel.setMinimumHeight(140)
+        self.requirements_panel.setMaximumHeight(220)
+        self.requirements_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        req_layout = QVBoxLayout(self.requirements_panel)
+        req_layout.setContentsMargins(8, 4, 8, 4)
+        req_layout.setSpacing(4)
+        
+        # Header with icon
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(8)
+        req_icon = QLabel("📝")
+        req_icon.setStyleSheet("font-size: 18px;")
+        header_layout.addWidget(req_icon)
+        
+        header_label = QLabel("Yêu cầu / Requirements")
+        header_label.setStyleSheet("""
+            font-size: 12px;
+            color: #ffffff;
+            font-weight: bold;
+        """)
+        header_layout.addWidget(header_label)
+        header_layout.addStretch()
+        req_layout.addLayout(header_layout)
+        
+        # Scroll area for requirements content
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                background: transparent;
+                border: none;
+            }
+            QScrollBar:vertical {
+                background: rgba(255, 255, 255, 0.1);
+                width: 8px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(255, 255, 255, 0.3);
+                border-radius: 4px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: rgba(255, 255, 255, 0.5);
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
+        
+        # Content widget inside scroll area
+        scroll_content = QWidget()
+        scroll_content.setStyleSheet("background: transparent;")
+        scroll_content_layout = QVBoxLayout(scroll_content)
+        scroll_content_layout.setContentsMargins(4, 0, 4, 0)
+        
+        self.requirements_label = QLabel("Chọn một lesson để bắt đầu")
+        self.requirements_label.setWordWrap(True)
+        self.requirements_label.setStyleSheet("""
+            font-size: 13px;
+            color: #ffffff;
+            font-weight: 500;
+            padding: 4px;
+            line-height: 1.4;
+        """)
+        self.requirements_label.setTextFormat(Qt.RichText)
+        scroll_content_layout.addWidget(self.requirements_label)
+        scroll_content_layout.addStretch()
+        
+        scroll_area.setWidget(scroll_content)
+        req_layout.addWidget(scroll_area)
+        
+        main_layout.addWidget(self.requirements_panel)
+        
+        # Progress bar container (bottom)
+        progress_container = QWidget()
+        progress_layout = QHBoxLayout(progress_container)
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        progress_layout.setSpacing(12)
+        
+        # Step indicators container
+        self.steps_container = QWidget()
+        steps_layout = QHBoxLayout(self.steps_container)
+        steps_layout.setContentsMargins(0, 0, 0, 0)
+        steps_layout.setSpacing(6)
+        
+        self.step_indicators = []
+        # Will be populated dynamically
+        
+        progress_layout.addWidget(self.steps_container)
+        
+        # Navigation buttons
+        self.btn_prev = QPushButton("<<<")
+        self.btn_prev.setFixedSize(60, 36)
+        self.btn_prev.setCursor(Qt.PointingHandCursor)
+        self.btn_prev.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #8b5cf6, stop:1 #6d28d9);
+                color: white;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: 16px;
+                border: 2px solid rgba(139, 92, 246, 0.5);
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #7c3aed, stop:1 #5b21b6);
+                border: 2px solid #8b5cf6;
+            }
+            QPushButton:pressed {
+                background: #5b21b6;
+            }
+            QPushButton:disabled {
+                background: #cbd5e1;
+                color: #94a3b8;
+                border: 2px solid #e2e8f0;
+            }
+        """)
+        progress_layout.addWidget(self.btn_prev)
+        
+        # Submit button - for checking code
+        self.btn_submit = QPushButton("Submit")
+        self.btn_submit.setFixedSize(85, 36)
+        self.btn_submit.setCursor(Qt.PointingHandCursor)
+        self.btn_submit.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #10b981, stop:1 #059669);
+                color: white;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: 15px;
+                border: 2px solid rgba(16, 185, 129, 0.5);
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #059669, stop:1 #047857);
+                border: 2px solid #10b981;
+            }
+            QPushButton:pressed {
+                background: #047857;
+            }
+            QPushButton:disabled {
+                background: #cbd5e1;
+                color: #94a3b8;
+                border: 2px solid #e2e8f0;
+            }
+        """)
+        progress_layout.addWidget(self.btn_submit)
+        
+        self.btn_next = QPushButton(">>>")
+        self.btn_next.setFixedSize(60, 36)
+        self.btn_next.setCursor(Qt.PointingHandCursor)
+        self.btn_next.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #8b5cf6, stop:1 #6d28d9);
+                color: white;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: 16px;
+                border: 2px solid rgba(139, 92, 246, 0.5);
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #7c3aed, stop:1 #5b21b6);
+                border: 2px solid #8b5cf6;
+            }
+            QPushButton:pressed {
+                background: #5b21b6;
+            }
+            QPushButton:disabled {
+                background: #cbd5e1;
+                color: #94a3b8;
+                border: 2px solid #e2e8f0;
+            }
+        """)
+        progress_layout.addWidget(self.btn_next)
+        
+        # Instruction toggle button
+        self.btn_instruction = QPushButton("?")
+        self.btn_instruction.setFixedSize(36, 36)
+        self.btn_instruction.setCursor(Qt.PointingHandCursor)
+        self.btn_instruction.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #0ea5e9, stop:1 #0284c7);
+                color: white;
+                border-radius: 18px;
+                font-weight: bold;
+                font-size: 18px;
+                border: 2px solid rgba(14, 165, 233, 0.5);
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #0284c7, stop:1 #0369a1);
+                border: 2px solid #0ea5e9;
+            }
+            QPushButton:pressed {
+                background: #0369a1;
+            }
+        """)
+        self.btn_instruction.setToolTip("Show Instructions")
+        progress_layout.addWidget(self.btn_instruction)
+        
+        progress_layout.addStretch()
+        
+        # Hearts display
+        self.hearts_label = QLabel()
+        self.hearts_label.setFixedHeight(36)
+        self.hearts_label.setAlignment(Qt.AlignCenter)
+        self.hearts_label.setStyleSheet("""
+            font-size: 18px;
+            font-weight: bold;
+            color: #dc2626;
+            padding: 0px 16px;
+            background: rgba(220, 38, 38, 0.1);
+            border-radius: 8px;
+            border: 2px solid rgba(220, 38, 38, 0.3);
+        """)
+        progress_layout.addWidget(self.hearts_label)
+        
+        main_layout.addWidget(progress_container)
+        
+        self.update_display()
+        
+        # Apply initial resolution sizing
+        if parent and hasattr(parent, 'is_small_screen'):
+            self.set_small_mode(parent.is_small_screen)
+
+        
+    def set_small_mode(self, is_small):
+        """Update sizing and scaling for smaller screen constraints."""
+        _req_fs = 6 if is_small else 10
+        _btn_fs = 11 if is_small else 16
+        _sub_fs = 10 if is_small else 15
+        _btn_w = 40 if is_small else 60
+        _sub_w = 55 if is_small else 85
+        _btn_h = 24 if is_small else 36
+        _inst_sz = 24 if is_small else 36
+        
+        # Requirements scaling
+        self.requirements_label.setStyleSheet(f"""
+            font-size: {_req_fs}px;
+            color: #ffffff;
+            font-weight: 500;
+            padding: 4px;
+            line-height: 1.3;
+        """)
+        
+        # Buttons scaling
+        self.btn_prev.setFixedSize(_btn_w, _btn_h)
+        self.btn_prev.setStyleSheet(f"""
+            QPushButton {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #8b5cf6, stop:1 #6d28d9);
+                color: white;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: {_btn_fs}px;
+                border: 1.5px solid rgba(139, 92, 246, 0.5);
+            }}
+            QPushButton:hover {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #7c3aed, stop:1 #5b21b6);
+                border: 1.5px solid #8b5cf6;
+            }}
+            QPushButton:pressed {{ background: #5b21b6; }}
+            QPushButton:disabled {{
+                background: #cbd5e1;
+                color: #94a3b8;
+                border: 1.5px solid #e2e8f0;
+            }}
+        """)
+        
+        self.btn_submit.setFixedSize(_sub_w, _btn_h)
+        self.btn_submit.setStyleSheet(f"""
+            QPushButton {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #10b981, stop:1 #059669);
+                color: white;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: {_sub_fs}px;
+                border: 1.5px solid rgba(16, 185, 129, 0.5);
+            }}
+            QPushButton:hover {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #059669, stop:1 #047857);
+                border: 1.5px solid #10b981;
+            }}
+            QPushButton:pressed {{ background: #047857; }}
+            QPushButton:disabled {{
+                background: #cbd5e1;
+                color: #94a3b8;
+                border: 1.5px solid #e2e8f0;
+            }}
+        """)
+        
+        self.btn_next.setFixedSize(_btn_w, _btn_h)
+        self.btn_next.setStyleSheet(f"""
+            QPushButton {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #8b5cf6, stop:1 #6d28d9);
+                color: white;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: {_btn_fs}px;
+                border: 1.5px solid rgba(139, 92, 246, 0.5);
+            }}
+            QPushButton:hover {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #7c3aed, stop:1 #5b21b6);
+                border: 1.5px solid #8b5cf6;
+            }}
+            QPushButton:pressed {{ background: #5b21b6; }}
+            QPushButton:disabled {{
+                background: #cbd5e1;
+                color: #94a3b8;
+                border: 1.5px solid #e2e8f0;
+            }}
+        """)
+        
+        self.btn_instruction.setFixedSize(_inst_sz, _inst_sz)
+        self.btn_instruction.setStyleSheet(f"""
+            QPushButton {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #0ea5e9, stop:1 #0284c7);
+                color: white;
+                border-radius: {_inst_sz // 2}px;
+                font-weight: bold;
+                font-size: {_btn_fs}px;
+                border: 1.5px solid rgba(14, 165, 233, 0.5);
+            }}
+            QPushButton:hover {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #0284c7, stop:1 #0369a1);
+                border: 1.5px solid #0ea5e9;
+            }}
+            QPushButton:pressed {{ background: #0369a1; }}
+        """)
+        
+        _hearts_fs = 13 if is_small else 18
+        self.hearts_label.setFixedHeight(_btn_h)
+        self.hearts_label.setStyleSheet(f"""
+            font-size: {_hearts_fs}px;
+            font-weight: bold;
+            color: #dc2626;
+            padding: 0px 10px;
+            background: rgba(220, 38, 38, 0.1);
+            border-radius: 6px;
+            border: 1.5px solid rgba(220, 38, 38, 0.3);
+        """)
+        self.update_height_constraints()
+
+    def update_height_constraints(self):
+        """Dynamically adjust height limit based on panel visibility and screen mode."""
+        is_small = getattr(self, '_is_small', False)
+        if self.requirements_panel.isVisible():
+            self.setMaximumHeight(220 if is_small else 280)
+        else:
+            self.setMaximumHeight(40 if is_small else 52)
+    
+    def load_requirements(self, lesson_id, step_num):
+        """Load and display requirements for a specific step."""
+        # Determine language folder (vi or en)
+        lang_folder = "vi" if self.lang == "vi" else "en"
+        
+        tutorial_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "tutorials",
+            lang_folder,
+            f"lesson{lesson_id}_step{step_num}.md"
+        )
+        
+        if os.path.exists(tutorial_file):
+            try:
+                with open(tutorial_file, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                
+                # Convert markdown to simple HTML for better formatting
+                # Replace markdown headers with HTML
+                content = content.replace('# ', '<h3 style="color: #ffffff; margin: 8px 0 4px 0;">')
+                content = content.replace('## ', '<h4 style="color: #e0e0e0; margin: 6px 0 3px 0;">')
+                content = content.replace('\n\n', '</p><p style="margin: 4px 0;">')
+                content = content.replace('- ', '<br>• ')
+                content = content.replace('`', '<code style="background: rgba(255,255,255,0.1); padding: 2px 4px; border-radius: 3px;">')
+                
+                # Wrap in paragraph
+                formatted_content = f'<p style="margin: 4px 0;">{content}</p>'
+                
+                self.requirements_label.setText(formatted_content)
+                self.requirements_panel.setVisible(True)
+                self.requirements_panel.update()
+                self.requirements_label.update()
+            except Exception as e:
+                self.requirements_label.setText(f"<p style='color: #ff6b6b;'>Lỗi: {str(e)}</p>")
+                self.requirements_panel.setVisible(True)
+        else:
+            self.requirements_label.setText(f"Step {step_num} - Lesson {lesson_id}: File không tồn tại")
+            self.requirements_panel.setVisible(True)
+    
+    def hide_requirements(self):
+        """Hide requirements panel (for challenge mode)."""
+        self.requirements_panel.setVisible(False)
+        self.update_height_constraints()
+    
+    def show_requirements(self):
+        """Show requirements panel."""
+        self.requirements_panel.setVisible(True)
+        self.update_height_constraints()
+        self.update_display()
+    
+    def set_lesson(self, lesson_id, total_steps):
+        """Set current lesson and create step indicators."""
+        self.lesson_id = lesson_id
+        self.total_steps = total_steps
+        self.max_hearts = total_steps
+        self.current_step = 1
+        self.hearts = 0
+        self.step_status = {}  # Reset step status
+        
+        # Clear old indicators
+        for indicator in self.step_indicators:
+            indicator.deleteLater()
+        self.step_indicators.clear()
+        
+        # Create new indicators
+        steps_layout = self.steps_container.layout()
+        for i in range(total_steps):
+            indicator = QLabel(str(i + 1))
+            indicator.setAlignment(Qt.AlignCenter)
+            indicator.setFixedSize(32, 32)
+            indicator.setStyleSheet("""
+                background: #e2e8f0;
+                color: #94a3b8;
+                border-radius: 16px;
+                font-size: 14px;
+                font-weight: bold;
+            """)
+            self.step_indicators.append(indicator)
+            steps_layout.addWidget(indicator)
+        
+        # Add challenge indicator (!!!)
+        challenge_indicator = QLabel("!!!")
+        challenge_indicator.setAlignment(Qt.AlignCenter)
+        challenge_indicator.setFixedSize(40, 32)
+        challenge_indicator.setStyleSheet("""
+            background: #fef3c7;
+            color: #d97706;
+            border-radius: 16px;
+            font-size: 14px;
+            font-weight: bold;
+        """)
+        self.step_indicators.append(challenge_indicator)
+        steps_layout.addWidget(challenge_indicator)
+        
+        # We no longer use the inline requirements panel
+        self.requirements_panel.setVisible(False)
+        self.update_height_constraints()
+        
+        self.update_display()
+        self.setVisible(True)
+    
+    def set_step(self, step_num):
+        """Set current step (1-based)."""
+        self.current_step = step_num
+        self.update_display()
+    
+    def update_display(self):
+        """Update visual state of all indicators."""
+        # Update step indicators
+        for i, indicator in enumerate(self.step_indicators[:-1]):  # Exclude challenge
+            step_num = i + 1
+            status = self.step_status.get(step_num, None)
+            
+            if status == 'correct':
+                # Correct answer - Green
+                indicator.setStyleSheet("""
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #10b981, stop:1 #059669);
+                    color: white;
+                    border-radius: 16px;
+                    font-size: 14px;
+                    font-weight: bold;
+                """)
+            elif status == 'incorrect':
+                # Incorrect answer - Red
+                indicator.setStyleSheet("""
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #ef4444, stop:1 #dc2626);
+                    color: white;
+                    border-radius: 16px;
+                    font-size: 14px;
+                    font-weight: bold;
+                """)
+            elif i == self.current_step - 1:
+                # Current step - Blue
+                indicator.setStyleSheet("""
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #3b82f6, stop:1 #2563eb);
+                    color: white;
+                    border-radius: 16px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    border: 3px solid #60a5fa;
+                """)
+            else:
+                # Locked/Not attempted - Gray
+                indicator.setStyleSheet("""
+                    background: #e2e8f0;
+                    color: #94a3b8;
+                    border-radius: 16px;
+                    font-size: 14px;
+                    font-weight: bold;
+                """)
+        
+        # Update challenge indicator
+        if len(self.step_indicators) > 0:
+            challenge = self.step_indicators[-1]
+            if self.current_step > self.total_steps:
+                # Challenge active
+                challenge.setStyleSheet("""
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #dc2626, stop:1 #991b1b);
+                    color: white;
+                    border-radius: 16px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    border: 3px solid #f87171;
+                """)
+            elif self.current_step == self.total_steps:
+                # Challenge unlocked
+                challenge.setStyleSheet("""
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #f59e0b, stop:1 #d97706);
+                    color: white;
+                    border-radius: 16px;
+                    font-size: 14px;
+                    font-weight: bold;
+                """)
+            else:
+                # Challenge locked
+                challenge.setStyleSheet("""
+                    background: #fef3c7;
+                    color: #d97706;
+                    border-radius: 16px;
+                    font-size: 14px;
+                    font-weight: bold;
+                """)
+        
+        # Update hearts
+        self.hearts_label.setText(f"❤️ {self.hearts}/{self.max_hearts}")
+    
+    def add_heart(self):
+        """Add one heart."""
+        if self.hearts < self.max_hearts:
+            self.hearts += 1
+            self.update_display()
+            return True
+        return False
+    
+    def mark_step_status(self, step_num, is_correct):
+        """Mark a step as correct or incorrect.
+        
+        Args:
+            step_num: Step number (1-based)
+            is_correct: True for correct (green), False for incorrect (red)
+        """
+        self.step_status[step_num] = 'correct' if is_correct else 'incorrect'
+        self.update_display()
+    
+    def remove_heart(self, amount=1):
+        """Remove hearts."""
+        self.hearts = max(0, self.hearts - amount)
+        self.update_display()
+        return self.hearts > 0
+    
+    def reset(self):
+        """Reset to initial state."""
+        self.current_step = 1
+        self.hearts = 0
+        self.update_display()
+    
+    def hide_bar(self):
+        """Hide the progress bar."""
+        self.setVisible(False)
+
+
+# ────────────────────────────────────────────────────────────
 #  Dynamic Curriculum Card Widget
 # ────────────────────────────────────────────────────────────
 
 
 class CurriculumCard(QFrame):
-    def __init__(self, filename, title, level, icon, color, desc, on_load_click, is_small=False):
+    def __init__(self, filename, title, level, icon, color, desc, on_load_click, is_small=False, is_lesson_card=False, on_stop_click=None, start_text="▶ Start", stop_text="⏹ Stop"):
         super().__init__()
         self.filename = filename
+        self._is_lesson_card = is_lesson_card
+        self._on_load_click = on_load_click
+        self._on_stop_click = on_stop_click
+        self._is_active = False  # Track if this lesson is currently active
+        self._is_small = is_small
+        self._start_text = start_text
+        self._stop_text = stop_text
         card_h = 50 if is_small else 90
         self.setMinimumHeight(card_h)
         self.setMaximumHeight(card_h + 20)
@@ -628,7 +1354,7 @@ class CurriculumCard(QFrame):
         icon_size = 24 if is_small else 40
         icon_font = 12 if is_small else 24
         icon_str = icon.strip('"\' ')
-        icon_lbl = QLabel()
+        self.icon_label = QLabel()  # Store as instance variable
         from PyQt5.QtGui import QPixmap, QFont
         import os
         
@@ -638,16 +1364,16 @@ class CurriculumCard(QFrame):
             if not pixmap.isNull():
                 # Scale smoothly to fit the icon slot
                 pixmap = pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                icon_lbl.setPixmap(pixmap)
+                self.icon_label.setPixmap(pixmap)
             else:
-                icon_lbl.setText("❓")
-                icon_lbl.setFont(QFont("Segoe UI", 24))
+                self.icon_label.setText("❓")
+                self.icon_label.setFont(QFont("Segoe UI", 24))
         else:
             # Render standard emoji
-            icon_lbl.setText(icon_str)
-        icon_lbl.setAlignment(Qt.AlignCenter)
-        icon_lbl.setFont(QFont("Segoe UI", icon_font))
-        layout.addWidget(icon_lbl)
+            self.icon_label.setText(icon_str)
+        self.icon_label.setAlignment(Qt.AlignCenter)
+        self.icon_label.setFont(QFont("Segoe UI", icon_font))
+        layout.addWidget(self.icon_label)
         
         # 2. Body Container (V-Box to hold the two horizontal rows)
         body_vbox = QVBoxLayout()
@@ -685,19 +1411,32 @@ class CurriculumCard(QFrame):
         desc_lbl.setMinimumWidth(0)
         desc_lbl.setWordWrap(True)
         
-        # Load Button
-        btn_load = QPushButton("Load")
-        btn_load.setCursor(Qt.PointingHandCursor)
+        # Action Button (Start/Stop for lessons, Load for examples)
+        self.btn_action = QPushButton(start_text if is_lesson_card else "Load")
+        self.btn_action.setCursor(Qt.PointingHandCursor)
         btn_w, btn_h = (52, 14) if is_small else (80, 28)
-        btn_load.setFixedSize(btn_w, btn_h)
-        btn_load.setStyleSheet(f"""
+        if is_lesson_card:
+            btn_w = 60 if is_small else 90  # Slightly wider for Start/Stop text
+        self.btn_action.setFixedSize(btn_w, btn_h)
+        self._apply_start_style(desc_font, btn_h)
+        self.btn_action.clicked.connect(self._on_action_clicked)
+        
+        row2.addWidget(desc_lbl, 1)
+        row2.addWidget(self.btn_action)
+        body_vbox.addLayout(row2)
+        
+        layout.addLayout(body_vbox)
+
+    def _apply_start_style(self, font_size, btn_h):
+        """Apply the Start/Load style (blue-purple gradient)."""
+        self.btn_action.setStyleSheet(f"""
             QPushButton {{ 
                 background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, 
                                           stop:0 #3b82f6, stop:1 #7c3aed); 
                 color: white; 
                 border-radius: {btn_h//2}px; 
                 font-weight: bold; 
-                font-size: {desc_font+2}px; 
+                font-size: {font_size+2}px; 
                 border: none;
                 padding: 2px;
             }}
@@ -706,13 +1445,50 @@ class CurriculumCard(QFrame):
                                           stop:0 #2563eb, stop:1 #6d28d9);
             }}
         """)
-        btn_load.clicked.connect(lambda: on_load_click(filename))
-        
-        row2.addWidget(desc_lbl, 1)
-        row2.addWidget(btn_load)
-        body_vbox.addLayout(row2)
-        
-        layout.addLayout(body_vbox)
+
+    def _apply_stop_style(self, font_size, btn_h):
+        """Apply the Stop style (red gradient)."""
+        self.btn_action.setStyleSheet(f"""
+            QPushButton {{ 
+                background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, 
+                                          stop:0 #ef4444, stop:1 #dc2626); 
+                color: white; 
+                border-radius: {btn_h//2}px; 
+                font-weight: bold; 
+                font-size: {font_size+2}px; 
+                border: none;
+                padding: 2px;
+            }}
+            QPushButton:hover {{
+                background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, 
+                                          stop:0 #dc2626, stop:1 #b91c1c);
+            }}
+        """)
+
+    def _on_action_clicked(self):
+        """Handle Start/Stop toggle click."""
+        if self._is_lesson_card and self._is_active:
+            # Currently active → Stop
+            if self._on_stop_click:
+                self._on_stop_click(self.filename)
+        else:
+            # Not active → Start/Load
+            if self._on_load_click:
+                self._on_load_click(self.filename)
+
+    def set_active(self, active):
+        """Toggle the card between active (Stop) and inactive (Start) states."""
+        if not self._is_lesson_card:
+            return
+        self._is_active = active
+        desc_font = 6 if self._is_small else 13
+        btn_h = 14 if self._is_small else 28
+        if active:
+            self.btn_action.setText(self._stop_text)
+            self._apply_stop_style(desc_font, btn_h)
+        else:
+            self.btn_action.setText(self._start_text)
+            self._apply_start_style(desc_font, btn_h)
 
 # ────────────────────────────────────────────────────────────
 
@@ -812,6 +1588,14 @@ class AICodingLab(QMainWindow):
         self.current_lang = "en" # Default to English
         self.is_small_screen = True
         self.current_open_file = None
+        
+        # Gamification state
+        self.current_lesson_number = 1
+        self.lesson_hearts = 0
+        self.lesson_hint_used = False
+        self.lesson_solution_used = False
+        self._active_lesson_id = None  # Track which lesson is currently active (Start/Stop toggle)
+        
         print(STRINGS[self.current_lang]["HINT_DIR_INITIALIZED"])
         
         # 2. Load the Main Shell
@@ -899,6 +1683,67 @@ class AICodingLab(QMainWindow):
                 QPushButton:hover {{ background: #059669; }}
                 QPushButton:pressed {{ background: #047857; }}
             """)
+        
+        # Create Hint and Solution buttons dynamically (initially disabled)
+        s = STRINGS[self.current_lang]
+        self.btnHint = QPushButton(s.get("BTN_HINT", "Hint"))
+        self.btnHint.clicked.connect(self._on_lesson_hint_clicked)
+        self.btnHint.setCursor(Qt.PointingHandCursor)
+        self.btnHint.setEnabled(False)  # Start disabled
+        self.btnHint.setVisible(False)  # Hidden until lesson starts
+        _hint_h = 30 if self.is_small_screen else 40
+        _hint_fs = 10 if self.is_small_screen else 16
+        self.btnHint.setFixedHeight(_hint_h)
+        self.btnHint.setStyleSheet(f"""
+            QPushButton {{ 
+                background: #9ca3af;
+                color: #6b7280;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: {_hint_fs}px;
+                padding: 0 16px;
+            }}
+        """)
+        
+        self.btnSolution = QPushButton(s.get("BTN_SOLUTION", "Solution"))
+        self.btnSolution.clicked.connect(self._on_lesson_solution_clicked)
+        self.btnSolution.setCursor(Qt.PointingHandCursor)
+        self.btnSolution.setEnabled(False)  # Start disabled
+        self.btnSolution.setVisible(False)  # Hidden until lesson starts
+        _sol_h = 30 if self.is_small_screen else 40
+        _sol_fs = 10 if self.is_small_screen else 16
+        self.btnSolution.setFixedHeight(_sol_h)
+        self.btnSolution.setStyleSheet(f"""
+            QPushButton {{ 
+                background: #9ca3af;
+                color: #6b7280;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: {_sol_fs}px;
+                padding: 0 16px;
+            }}
+        """)
+        
+        # Add Hint and Solution buttons to editorHeader
+        editorHeader = self.running_mode_widget.findChild(QFrame, "editorHeader")
+        if editorHeader and editorHeader.layout():
+            # Find the position of btnRunCode in the layout
+            layout = editorHeader.layout()
+            run_index = -1
+            for i in range(layout.count()):
+                item = layout.itemAt(i)
+                if item and item.widget() == self.btnRunCode:
+                    run_index = i
+                    break
+            
+            # Insert Hint and Solution buttons after Run button
+            if run_index >= 0:
+                layout.insertWidget(run_index + 1, self.btnHint)
+                layout.insertWidget(run_index + 2, self.btnSolution)
+            else:
+                # Fallback: add at the end
+                layout.addWidget(self.btnHint)
+                layout.addWidget(self.btnSolution)
         if self.tabPlus: self.tabPlus.clicked.connect(self.create_new_tab)
 
         self.btnSaveFile = self.running_mode_widget.findChild(QPushButton, "btnSaveFile")
@@ -932,23 +1777,43 @@ class AICodingLab(QMainWindow):
             if isinstance(parent_widget, QSplitter):
                 idx = parent_widget.indexOf(old_running_editor)
             
+            from src.modules.game_lesson_widget import GameLessonWidget
+            
+            self.editorStack = QStackedWidget()
+            self.editorStack.setObjectName("editorStack")
+            
             self.monacoPlaceholder = AdvancedPythonEditor()
             self.monacoPlaceholder.setObjectName("monacoPlaceholder")
             
+            self.gameLessonWidget = GameLessonWidget()
+            self.gameLessonWidget.setObjectName("gameLessonWidget")
+            
+            self.editorStack.addWidget(self.monacoPlaceholder)
+            self.editorStack.addWidget(self.gameLessonWidget)
+            self.editorStack.setCurrentWidget(self.monacoPlaceholder)
+            
             if idx != -1 and isinstance(parent_widget, QSplitter):
-                parent_widget.insertWidget(idx, self.monacoPlaceholder)
+                parent_widget.insertWidget(idx, self.editorStack)
                 old_running_editor.setParent(None)
                 old_running_editor.deleteLater()
             elif parent_widget.layout():
-                parent_widget.layout().replaceWidget(old_running_editor, self.monacoPlaceholder)
+                parent_widget.layout().replaceWidget(old_running_editor, self.editorStack)
                 old_running_editor.deleteLater()
             else:
-                self.monacoPlaceholder.setParent(parent_widget)
+                self.editorStack.setParent(parent_widget)
                 old_running_editor.deleteLater()
             
             self.monacoPlaceholder.setAcceptDrops(True)
             self.monacoPlaceholder.functionDropped.connect(self.on_function_dropped)
             self.monacoPlaceholder.show()
+            
+            # Monkey-patch toPlainText to route to gameLessonWidget when visible
+            self._original_to_plain_text = self.monacoPlaceholder.toPlainText
+            def custom_to_plain_text():
+                if hasattr(self, 'gameLessonWidget') and hasattr(self, 'editorStack') and self.editorStack.currentWidget() == self.gameLessonWidget:
+                    return self.gameLessonWidget.toPlainText()
+                return self._original_to_plain_text()
+            self.monacoPlaceholder.toPlainText = custom_to_plain_text
 
         # 2a) Find Splitters for Styling
         self.mainSplitter = self.running_mode_widget.findChild(QSplitter, "mainSplitter")
@@ -977,6 +1842,7 @@ class AICodingLab(QMainWindow):
         # Setup Level Navigation (must be after hubStackedWidget is found)
         self._setup_level_navigation()
         self.populate_curriculum_hub()
+        self.populate_lessons()
 
         # C) CONSOLE TERMINAL SETUP
         self.consoleContainer = self.running_mode_widget.findChild(QWidget, "consoleContainer")
@@ -988,6 +1854,36 @@ class AICodingLab(QMainWindow):
         if self.btnCollapseConsole: self.btnCollapseConsole.clicked.connect(lambda: self.set_console_expanded(False))
         if self.collapsedConsoleBar: self.collapsedConsoleBar.mousePressEvent = lambda e: self.set_console_expanded(True)
         if self.btnClearConsole: self.btnClearConsole.clicked.connect(self.clear_console)
+        
+        # D) STEP PROGRESS BAR (Between Editor and Console)
+        self._step_progress_bar = StepProgressBar(lang=self.current_lang)
+        self._step_progress_bar.setVisible(False)  # Hidden until a lesson starts
+        # Connect navigation buttons
+        self._step_progress_bar.btn_prev.clicked.connect(self.previous_step)
+        self._step_progress_bar.btn_submit.clicked.connect(self.submit_step)
+        self._step_progress_bar.btn_next.clicked.connect(self.next_step)
+        
+        # Insert into editorSplitter between editor and console
+        if self.runningEditorSplitter and self.runningEditorSplitter.count() >= 2:
+            # Get console widget (should be at index 1)
+            console_widget = self.runningEditorSplitter.widget(1)
+            if console_widget:
+                # Remove console temporarily
+                console_widget.setParent(None)
+                # Add progress bar
+                self.runningEditorSplitter.addWidget(self._step_progress_bar)
+                # Add console back
+                self.runningEditorSplitter.addWidget(console_widget)
+                # Set sizes: Editor (large), Progress (hidden=0), Console (medium)
+                self.runningEditorSplitter.setSizes([600, 0, 200])
+
+        # E) FLOATING INSTRUCTION CARD (overlays the editor)
+        from src.modules.instruction_card import FloatingInstructionCard
+        self._instruction_card = FloatingInstructionCard(parent=self.editorStack, is_small=self.is_small_screen)
+        
+        # Connect the progress bar instruction button to show the card again
+        if hasattr(self._step_progress_bar, 'btn_instruction'):
+            self._step_progress_bar.btn_instruction.clicked.connect(self._instruction_card.show_card)
 
         # Labels for Translation
         self.hubTitle = self.running_mode_widget.findChild(QLabel, "hubTitle")
@@ -1070,9 +1966,10 @@ class AICodingLab(QMainWindow):
         # Middle Column: Editor (top) vs Console (bottom) -> Ratio 3:1
         if self.runningEditorSplitter:
             self.runningEditorSplitter.setChildrenCollapsible(False)
-            self.runningEditorSplitter.setStretchFactor(0, 3)
-            self.runningEditorSplitter.setStretchFactor(1, 1)
-            self.runningEditorSplitter.setSizes([600, 200])
+            self.runningEditorSplitter.setStretchFactor(0, 3)  # Editor
+            self.runningEditorSplitter.setStretchFactor(1, 0)  # Progress bar (hidden)
+            self.runningEditorSplitter.setStretchFactor(2, 1)  # Console
+            self.runningEditorSplitter.setSizes([600, 0, 200])
             # Reduce console minimum height so it doesn't fight the splitter
             console = self.running_mode_widget.findChild(QFrame, "consoleContainer")
             if console: console.setMinimumHeight(30)
@@ -1517,29 +2414,8 @@ class AICodingLab(QMainWindow):
         if not error_text.strip() and code.strip():
             try:
                 compile(code, "<student>", "exec")
+                # Code is valid — no need to waste LLM inference
                 s = STRINGS[self.current_lang]
-                # Code compiles — but check for undefined variable names (typos)
-                from src.modules.LLM.prompt_builder import check_undefined_vars
-                undef = check_undefined_vars(code)
-                if undef:
-                    # Found undefined variable(s) — show the first one
-                    ln, var_name, line_text = undef[0]
-                    if self.current_lang == "vi":
-                        msg = (
-                            f"Dòng {ln}: '{var_name}' chưa được tạo — kiểm tra lỗi đánh máy\n"
-                            f"Dòng lỗi: {line_text.strip()}"
-                        )
-                    else:
-                        msg = (
-                            f"Line {ln}: '{var_name}' is not defined — check for typos\n"
-                            f"Code: {line_text.strip()}"
-                        )
-                    self._chat_panel.add_user_message(s["BOT_FIX_MSG"])
-                    bubble = self._chat_panel.start_assistant_message()
-                    bubble.set_text(msg)
-                    self._chat_panel.finish_streaming()
-                    return
-                # Code is valid and no undefined vars — truly no errors
                 no_err = "Tuyệt vời! Không tìm thấy lỗi nào. 🎉" if self.current_lang == "vi" else "Great job! No errors found. 🎉"
                 self._chat_panel.add_user_message(s["BOT_FIX_MSG"])
                 bubble = self._chat_panel.start_assistant_message()
@@ -1670,6 +2546,7 @@ class AICodingLab(QMainWindow):
                 badge.retranslate(s)
         # Full refresh of dynamic content
         self.populate_curriculum_hub()
+        self.populate_lessons()
         self.update_workspace_counts()
         # Refresh function library with new language
         try:
@@ -1784,11 +2661,11 @@ class AICodingLab(QMainWindow):
         if is_transition:
             if is_small:
                 if self.mainSplitter: self.mainSplitter.setSizes([180, 564, 280])
-                if self.runningEditorSplitter: self.runningEditorSplitter.setSizes([380, 150])
+                if self.runningEditorSplitter: self.runningEditorSplitter.setSizes([380, 0, 150])
                 if self.rightSplitter: self.rightSplitter.setSizes([300, 300])
             else:
                 if self.mainSplitter: self.mainSplitter.setSizes([280, 720, 280])
-                if self.runningEditorSplitter: self.runningEditorSplitter.setSizes([600, 200])
+                if self.runningEditorSplitter: self.runningEditorSplitter.setSizes([600, 0, 200])
                 if self.rightSplitter: self.rightSplitter.setSizes([400, 400])
                 
         # Override minimum widths from .ui files to allow more aggressive shrinking
@@ -1817,6 +2694,7 @@ class AICodingLab(QMainWindow):
         if hasattr(self, '_cards_layout'):
             # Small delay to allow layout engine to settle before re-populating complex widgets
             QTimer.singleShot(100, self.populate_curriculum_hub)
+            QTimer.singleShot(100, self.populate_lessons)
         
         # Update Level Navigation badges for resolution
         if hasattr(self, '_level_badges'):
@@ -1841,6 +2719,64 @@ class AICodingLab(QMainWindow):
                         border: 1.5px solid rgba(139, 92, 246, 0.3);
                     }}
                 """)
+        
+        # Update Lessons and Examples header font sizes
+        header_font = 12 if is_small else 16
+        header_style = f"""
+            font-size: {header_font}px;
+            font-weight: bold;
+            color: #1e293b;
+            padding: 8px;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 rgba(139, 92, 246, 0.15),
+                stop:1 rgba(59, 130, 246, 0.15));
+            border-radius: 8px;
+        """
+        if hasattr(self, '_lessons_header') and self._lessons_header:
+            self._lessons_header.setStyleSheet(header_style)
+        if hasattr(self, '_examples_header') and self._examples_header:
+            self._examples_header.setStyleSheet(header_style)
+            
+        # Update Hint and Solution buttons scaling
+        _hint_h = 24 if is_small else 40
+        _hint_fs = 11 if is_small else 16
+        if hasattr(self, 'btnHint') and self.btnHint:
+            self.btnHint.setFixedHeight(_hint_h)
+            bg_color = "#9ca3af" if not self.btnHint.isEnabled() else "#f59e0b"
+            text_color = "#6b7280" if not self.btnHint.isEnabled() else "#ffffff"
+            self.btnHint.setStyleSheet(f"""
+                QPushButton {{ 
+                    background: {bg_color};
+                    color: {text_color};
+                    border-radius: 8px;
+                    font-weight: bold;
+                    font-size: {_hint_fs}px;
+                    padding: 0 16px;
+                }}
+            """)
+        if hasattr(self, 'btnSolution') and self.btnSolution:
+            self.btnSolution.setFixedHeight(_hint_h)
+            bg_color = "#9ca3af" if not self.btnSolution.isEnabled() else "#3b82f6"
+            text_color = "#6b7280" if not self.btnSolution.isEnabled() else "#ffffff"
+            self.btnSolution.setStyleSheet(f"""
+                QPushButton {{ 
+                    background: {bg_color};
+                    color: {text_color};
+                    border-radius: 8px;
+                    font-weight: bold;
+                    font-size: {_hint_fs}px;
+                    padding: 0 16px;
+                }}
+            """)
+            
+        # Update StepProgressBar scaling
+        if hasattr(self, '_step_progress_bar') and self._step_progress_bar:
+            self._step_progress_bar.set_small_mode(is_small)
+
+        # Update Floating Instruction Card scaling
+        if hasattr(self, '_instruction_card'):
+            self._instruction_card.set_small_mode(is_small)
+
         
         # Refresh Training charts if they exist
         if hasattr(self, '_charts') and self._charts:
@@ -2343,6 +3279,35 @@ class AICodingLab(QMainWindow):
                 r_size = 10 if is_small else 14
                 self.btnRunCode.setFixedHeight(30 if is_small else 40)
                 self.btnRunCode.setStyleSheet(f"background-color: #12b54d; color: white; border-radius: 4px; font-size: {r_size}px; font-weight: bold; padding: {'3px 6px' if is_small else '6px 15px'};")
+            
+            if hasattr(self, 'gameLessonWidget') and self.gameLessonWidget:
+                self.gameLessonWidget.set_small_mode(is_small)
+                
+            # Update Hint and Solution buttons
+            if hasattr(self, 'btnHint') and self.btnHint:
+                h_size = 10 if is_small else 14
+                self.btnHint.setFixedHeight(30 if is_small else 40)
+                self.btnHint.setStyleSheet(f"""
+                    QPushButton {{ 
+                        background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #f59e0b, stop:1 #d97706);
+                        color: white; border-radius: 8px; font-weight: bold; font-size: {h_size}px; padding: {'3px 6px' if is_small else '0 16px'};
+                    }}
+                    QPushButton:hover {{ background: #d97706; }}
+                    QPushButton:pressed {{ background: #b45309; }}
+                """)
+            
+            if hasattr(self, 'btnSolution') and self.btnSolution:
+                sol_size = 10 if is_small else 14
+                self.btnSolution.setFixedHeight(30 if is_small else 40)
+                self.btnSolution.setStyleSheet(f"""
+                    QPushButton {{ 
+                        background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #ef4444, stop:1 #dc2626);
+                        color: white; border-radius: 8px; font-weight: bold; font-size: {sol_size}px; padding: {'3px 6px' if is_small else '0 16px'};
+                    }}
+                    QPushButton:hover {{ background: #dc2626; }}
+                    QPushButton:pressed {{ background: #b91c1c; }}
+                """)
+            
             if hasattr(self, 'btnSaveFile') and self.btnSaveFile:
                 s_size = 10 if is_small else 14
                 self.btnSaveFile.setFixedHeight(30 if is_small else 40)
@@ -2366,6 +3331,13 @@ class AICodingLab(QMainWindow):
             if hasattr(self, '_chat_panel') and self._chat_panel:
                 self._chat_panel.set_small_mode(is_small)
                 QTimer.singleShot(60, self._reposition_chat_panel)
+
+        # Adjust hub splitter sizes for small mode
+        if hasattr(self, '_hub_splitter') and self._hub_splitter:
+            if is_small:
+                self._hub_splitter.setSizes([400, 200])
+            else:
+                self._hub_splitter.setSizes([650, 350])
 
     def retranslate_ui(self):
         """Update all core UI strings from the translation dictionary."""
@@ -2399,6 +3371,12 @@ class AICodingLab(QMainWindow):
             # Check actual process state rather than comparing strings which can mismatch with .ui versions
             is_running = self._run_process is not None
             self.btnRunCode.setText(s["BTN_STOP_CODE"] if is_running else s["BTN_RUN_CODE"])
+        
+        # Update Hint and Solution buttons
+        if hasattr(self, 'btnHint') and self.btnHint:
+            self.btnHint.setText(s.get("BTN_HINT", "Hint"))
+        if hasattr(self, 'btnSolution') and self.btnSolution:
+            self.btnSolution.setText(s.get("BTN_SOLUTION", "Solution"))
             
         if hasattr(self, 'btnSaveFile') and self.btnSaveFile:
             self.btnSaveFile.setText(s["BTN_SAVE_FILE"])
@@ -2437,6 +3415,82 @@ class AICodingLab(QMainWindow):
             self.btnOrcRefresh.setToolTip(s.get("ORC_REFRESH_TIP", "Re-check ORC Hub connection"))
         if hasattr(self, '_orc_connected'):
             self._update_orc_indicator()
+
+        # Update Lessons and Examples headers
+        if hasattr(self, '_lessons_header') and self._lessons_header:
+            self._lessons_header.setText(s.get("LESSONS_HEADER", "📚 Lessons" if self.current_lang == "en" else "📚 Bài học"))
+        if hasattr(self, '_examples_header') and self._examples_header:
+            self._examples_header.setText(s.get("EXAMPLES_HEADER", "🎯 Examples" if self.current_lang == "en" else "🎯 Ví dụ"))
+        
+        # Update Lesson Progress Bar (deprecated, now using Step Progress Bar)
+        if hasattr(self, '_lesson_progress_bar') and self._lesson_progress_bar:
+            self._lesson_progress_bar.lang = self.current_lang
+            self._lesson_progress_bar.update_display()
+        
+        # Update Step Progress Bar
+        if hasattr(self, '_step_progress_bar') and self._step_progress_bar:
+            self._step_progress_bar.lang = self.current_lang
+            self._step_progress_bar.update_display()
+            
+            # Reload current lesson/step with new language
+            if hasattr(self, 'current_lesson_data') and hasattr(self, 'current_step'):
+                lesson = self.current_lesson_data
+                steps = lesson.get('steps', [])
+                total_steps = len(steps)
+                
+                # Reload requirements for current step
+                if self.current_step <= total_steps:
+                    # Regular step - reload requirements and lesson file
+                    self._step_progress_bar.load_requirements(self.current_lesson_id, self.current_step)
+                    
+                    # Reload the lesson file with new language
+                    step = steps[self.current_step - 1]
+                    step_file = step.get('file', '')
+                    
+                    # Adjust file path based on language
+                    lang_folder = "vi" if self.current_lang == "vi" else "en"
+                    if step_file.startswith("lessons/"):
+                        step_file = step_file.replace("lessons/", f"lessons/{lang_folder}/", 1)
+                    
+                    # Load file
+                    file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), step_file)
+                    
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            code_content = f.read()
+                        
+                        # Update editor content
+                        self.monacoPlaceholder.setPlainText(code_content)
+                        self.log_to_console(f"✓ Lesson reloaded in {self.current_lang.upper()} mode")
+                    except FileNotFoundError:
+                        self.log_to_console(f"⚠️ Lesson file not found: {step_file}")
+                    except Exception as e:
+                        self.log_to_console(f"⚠️ Error reloading lesson: {e}")
+                        
+                elif self.current_step > total_steps:
+                    # Challenge mode - reload challenge file
+                    challenge = lesson.get('challenge', {})
+                    challenge_file = challenge.get('file', '')
+                    
+                    # Adjust file path based on language
+                    lang_folder = "vi" if self.current_lang == "vi" else "en"
+                    if challenge_file.startswith("lessons/"):
+                        challenge_file = challenge_file.replace("lessons/", f"lessons/{lang_folder}/", 1)
+                    
+                    # Load file
+                    file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), challenge_file)
+                    
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            code_content = f.read()
+                        
+                        # Update editor content
+                        self.monacoPlaceholder.setPlainText(code_content)
+                        self.log_to_console(f"✓ Challenge reloaded in {self.current_lang.upper()} mode")
+                    except FileNotFoundError:
+                        self.log_to_console(f"⚠️ Challenge file not found: {challenge_file}")
+                    except Exception as e:
+                        self.log_to_console(f"⚠️ Error reloading challenge: {e}")
 
         # Update variable count immediate display
         if hasattr(self, 'lblVarCount') and self.lblVarCount:
@@ -2504,6 +3558,18 @@ class AICodingLab(QMainWindow):
     def set_console_expanded(self, expanded: bool):
         self.consoleContainer.setVisible(expanded)
         self.collapsedConsoleBar.setVisible(not expanded)
+        
+        if hasattr(self, 'runningEditorSplitter') and self.runningEditorSplitter:
+            if expanded:
+                if hasattr(self, '_step_progress_bar') and self._step_progress_bar.isVisible():
+                    self.runningEditorSplitter.setSizes([500, 100, 200])
+                else:
+                    self.runningEditorSplitter.setSizes([600, 0, 200])
+            else:
+                if hasattr(self, '_step_progress_bar') and self._step_progress_bar.isVisible():
+                    self.runningEditorSplitter.setSizes([700, 100, 0])
+                else:
+                    self.runningEditorSplitter.setSizes([800, 0, 0])
 
     def clear_console(self):
         self.consoleBody.setPlainText(">>> Console cleared.")
@@ -2535,17 +3601,20 @@ class AICodingLab(QMainWindow):
         for card, count_name, title, icon, color, bg, border in cards_config:
             if not card:
                 continue
-            # Hide and clear ALL existing child widgets from the .ui file first
+            # Hide ALL existing child widgets from the .ui file first
             for child in card.findChildren(QWidget):
                 child.setVisible(False)
                 child.setMaximumHeight(0)
-                child.setObjectName("") # CRITICAL: Clear name so findChild doesn't find the hidden ones
-                child.deleteLater()
-            
+            for child in card.findChildren(QLabel):
+                child.setVisible(False)
+                child.setMaximumHeight(0)
             # Remove old layout
             old = card.layout()
             if old:
-                # Properly detach and delete old layout
+                while old.count():
+                    child = old.takeAt(0)
+                    if child.widget():
+                        child.widget().setVisible(False)
                 QWidget().setLayout(old)
 
             # Card styling
@@ -2601,66 +3670,14 @@ class AICodingLab(QMainWindow):
 
     def update_workspace_counts(self):
         """Sync card numbers with physical folders."""
-        if not hasattr(self, 'file_manager'):
-            return
-
-        # Improved counting logic:
-        # Code: .py files in projects/ AND projects/code/
-        code_files = list(self.file_manager.files_dir.glob("*.py"))
-        code_files += list(self.file_manager.code_dir.glob("*.py"))
-        # Remove duplicates if any (e.g. if code_dir == files_dir)
-        code_count = len(set(str(f) for f in code_files))
-
-        # Data: Count total images (*.jpg, *.png, *.jpeg) recursively
-        data_count = 0
-        for ext in ["*.jpg", "*.jpeg", "*.png", "*.bmp"]:
-            data_count += len(list(self.file_manager.data_dir.rglob(ext)))
-        
-        # If no images found, fallback to counting subfolders (projects)
-        if data_count == 0:
-            data_count = len([d for d in self.file_manager.data_dir.iterdir() if d.is_dir()])
-
-        # Model: files in projects/model/
-        model_count = len(list(self.file_manager.model_dir.glob("*")))
-        
         counts = {
-            "Code": code_count,
-            "Data": data_count,
-            "Model": model_count
+            "Code": len(list(self.file_manager.code_dir.glob("*"))),
+            "Data": len(list(self.file_manager.data_dir.glob("*"))),
+            "Model": len(list(self.file_manager.model_dir.glob("*")))
         }
-        
-        # Update UI labels
-        for key, val in counts.items():
-            lbl = self.running_mode_widget.findChild(QLabel, f"count{key}")
-            if lbl:
-                lbl.setText(str(val))
-
-    def _delete_data_file(self, file_path_str, folder_type, subpath):
-        """Delete a data file or folder, with special paired-deletion logic for images and annotations."""
-        import shutil
-        p = Path(file_path_str)
-        if not p.exists():
-            return
-        
-        try:
-            if p.is_dir():
-                # Delete whole folder (project)
-                shutil.rmtree(p)
-            elif p.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.webp']:
-                # Find matching .txt
-                txt_p = p.with_suffix('.txt')
-                if txt_p.exists():
-                    txt_p.unlink()
-                p.unlink()
-            else:
-                # Just delete the file (.txt or other)
-                p.unlink()
-            
-            # Refresh the view and update global counts
-            self.show_folder_contents(folder_type, subpath)
-            self.update_workspace_counts()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Could not delete item: {e}")
+        self.running_mode_widget.findChild(QLabel, "countCode").setText(str(counts["Code"]))
+        self.running_mode_widget.findChild(QLabel, "countData").setText(str(counts["Data"]))
+        self.running_mode_widget.findChild(QLabel, "countModel").setText(str(counts["Model"]))
 
     def show_folder_contents(self, folder_type, subpath=None):
         """Load Open/Rename/Delete list for specific folder with a vibrant, kid-friendly card design."""
@@ -2704,6 +3721,10 @@ class AICodingLab(QMainWindow):
         
         # ─── DATA FOLDER (Image Gallery / Icon Mode) ───
         if folder_type == "Data":
+            from PyQt5.QtWidgets import QListWidget, QListWidgetItem, QSizePolicy
+            from PyQt5.QtCore import QSize
+            from PyQt5.QtGui import QIcon
+            
             list_widget = QListWidget()
             list_widget.setViewMode(QListWidget.ViewMode.IconMode)
             list_widget.setFlow(QListWidget.Flow.LeftToRight)
@@ -2723,59 +3744,47 @@ class AICodingLab(QMainWindow):
                     padding: 4px;
                 }}
             """)
+            
+            # Ensure the gallery takes up all available vertical space
             list_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             
-            # Deletion callback
-            def on_delete_clicked(f_path_str):
-                fname = os.path.basename(f_path_str)
-                reply = QMessageBox.question(self, 'Delete File', 
-                                            f"Are you sure you want to delete this file?\n{fname}",
-                                            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-                if reply == QMessageBox.Yes:
-                    self._delete_data_file(f_path_str, folder_type, subpath)
-
             for file_path in sorted(path.iterdir()):
-                item = QListWidgetItem(list_widget)
-                item.setSizeHint(QSize(125, 140))
+                item = QListWidgetItem()
                 item.setData(Qt.ItemDataRole.UserRole, str(file_path))
                 
-                icon_pix = QPixmap(90, 90)
-                icon_pix.fill(Qt.GlobalColor.transparent)
-                
                 if file_path.is_file():
-                    is_img = file_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.webp']
-                    if is_img:
-                        pix = QPixmap(str(file_path))
-                        if not pix.isNull():
-                            icon_pix = pix.scaled(90, 90, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                        else:
-                            # Fallback paper icon if image corrupt
-                            std_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
-                            painter = QPainter(icon_pix)
-                            std_icon.paint(painter, 22, 22, 46, 46)
-                            painter.end()
+                    pixmap = QPixmap(str(file_path))
+                    if not pixmap.isNull():
+                        # We use 90x90 as the new bounded size to fit 2 across
+                        item.setIcon(QIcon(pixmap.scaled(90, 90, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)))
                     else:
-                        # Paper icon for txt or non-images
-                        std_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
-                        painter = QPainter(icon_pix)
-                        std_icon.paint(painter, 22, 22, 46, 46)
-                        painter.end()
+                        item.setText("📄") # Fallback for non-images
                 elif file_path.is_dir():
-                    # Directory icon
+                    # Render a standard beautiful directory icon at 1/4 area scale
+                    from PyQt5.QtWidgets import QApplication, QStyle
+                    from PyQt5.QtGui import QPainter
                     std_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-                    painter = QPainter(icon_pix)
+                    
+                    folder_bg = QPixmap(90, 90)
+                    folder_bg.fill(Qt.GlobalColor.transparent)
+                    painter = QPainter(folder_bg)
+                    # Centers a 46x46 folder inside a 90x90 icon box
                     std_icon.paint(painter, 22, 22, 46, 46)
                     painter.end()
+                    
+                    item.setIcon(QIcon(folder_bg))
                 
-                # Create custom widget
-                widget = GalleryItemWidget(file_path, icon_pix, theme, on_delete_clicked, is_dir=file_path.is_dir())
+                # We place the filename at the bottom
+                item.setText(file_path.name)
+                item.setForeground(QColor(theme['text']))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 list_widget.addItem(item)
-                list_widget.setItemWidget(item, widget)
             
             # Handle click recursively
             def on_item_clicked(list_item):
                 clicked_path = list_item.data(Qt.ItemDataRole.UserRole)
-                p = Path(clicked_path)
+                import pathlib
+                p = pathlib.Path(clicked_path)
                 if p.is_dir():
                     try:
                         rel_path = p.relative_to(base_path)
@@ -2999,11 +4008,11 @@ class AICodingLab(QMainWindow):
                 """)
 
     def _setup_level_navigation(self):
-        """Replace flat hubContentLayout with Level_Navigation_Bar + QScrollArea."""
+        """Replace flat hubContentLayout with split view: Lessons (top) + Examples (bottom)."""
         if not self.hubStackedWidget:
             return
         
-        page = self.hubStackedWidget.widget(0)  # pageExamples
+        page = self.hubStackedWidget.widget(0)  # pageExamples (now Lessons tab)
         if not page:
             return
 
@@ -3021,7 +4030,137 @@ class AICodingLab(QMainWindow):
         main_layout.setContentsMargins(4, 4, 4, 0)
         main_layout.setSpacing(6)
 
-        # ── Frosted pill container bar (like the reference designs) ──
+        # ══════════════════════════════════════════════════════════
+        # Create QSplitter to divide into 2 sections
+        # ══════════════════════════════════════════════════════════
+        splitter = QSplitter(Qt.Vertical)
+        splitter.setHandleWidth(4)
+        splitter.setStyleSheet("""
+            QSplitter::handle {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 rgba(139, 92, 246, 0.3),
+                    stop:1 rgba(59, 130, 246, 0.3));
+                border-radius: 2px;
+            }
+            QSplitter::handle:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 rgba(139, 92, 246, 0.6),
+                    stop:1 rgba(59, 130, 246, 0.6));
+            }
+        """)
+
+        # ══════════════════════════════════════════════════════════
+        # TOP SECTION: LESSONS (from lessons folder)
+        # ══════════════════════════════════════════════════════════
+        lessons_widget = QWidget()
+        lessons_layout = QVBoxLayout(lessons_widget)
+        lessons_layout.setContentsMargins(0, 0, 0, 0)
+        lessons_layout.setSpacing(6)
+
+        # Lessons Header
+        s = STRINGS[self.current_lang]
+        self._lessons_header = QLabel(s.get("LESSONS_HEADER", "📚 Lessons" if self.current_lang == "en" else "📚 Bài học"))
+        self._lessons_header.setStyleSheet("""
+            font-size: 16px;
+            font-weight: bold;
+            color: #1e293b;
+            padding: 8px;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 rgba(139, 92, 246, 0.15),
+                stop:1 rgba(59, 130, 246, 0.15));
+            border-radius: 8px;
+        """)
+        lessons_layout.addWidget(self._lessons_header)
+        
+        # Add Lesson Progress Bar (Gamification)
+        self._lesson_progress_bar = LessonProgressBar(lang=self.current_lang)
+        # Note: Hint and Solution buttons will be added to Code Editor toolbar
+        lessons_layout.addWidget(self._lesson_progress_bar)
+
+        # Lessons Scroll Area
+        self._lessons_scroll = QScrollArea()
+        self._lessons_scroll.setWidgetResizable(True)
+        self._lessons_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._lessons_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._lessons_scroll.setFrameShape(QFrame.NoFrame)
+        self._lessons_scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+
+        lessons_scroll_contents = QWidget()
+        lessons_scroll_contents.setStyleSheet("background: transparent;")
+        self._lessons_cards_layout = QVBoxLayout(lessons_scroll_contents)
+        self._lessons_cards_layout.setContentsMargins(4, 0, 4, 0)
+        self._lessons_cards_layout.setSpacing(6)
+        self._lessons_scroll.setWidget(lessons_scroll_contents)
+        lessons_layout.addWidget(self._lessons_scroll)
+
+        splitter.addWidget(lessons_widget)
+
+        # ══════════════════════════════════════════════════════════
+        # BOTTOM SECTION: EXAMPLES (from curriculum folder)
+        # ══════════════════════════════════════════════════════════
+        examples_widget = QWidget()
+        examples_layout = QVBoxLayout(examples_widget)
+        examples_layout.setContentsMargins(0, 0, 0, 0)
+        examples_layout.setSpacing(6)
+
+        # Examples Header (matching Lessons style with collapse button)
+        header_container = QWidget()
+        header_layout = QHBoxLayout(header_container)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(6)
+        
+        self._examples_header = QLabel(s.get("EXAMPLES_HEADER", "🎯 Examples" if self.current_lang == "en" else "🎯 Ví dụ"))
+        self._examples_header.setStyleSheet("""
+            font-size: 16px;
+            font-weight: bold;
+            color: #1e293b;
+            padding: 8px;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 rgba(139, 92, 246, 0.15),
+                stop:1 rgba(59, 130, 246, 0.15));
+            border-radius: 8px;
+        """)
+        header_layout.addWidget(self._examples_header, 1)
+        
+        self._examples_collapse_btn = QPushButton("▼")
+        self._examples_collapse_btn.setFixedSize(30, 30)
+        self._examples_collapse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._examples_collapse_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(139, 92, 246, 0.2);
+                border: 1px solid rgba(139, 92, 246, 0.4);
+                border-radius: 6px;
+                color: #1e293b;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background: rgba(139, 92, 246, 0.4);
+            }
+        """)
+        header_layout.addWidget(self._examples_collapse_btn)
+        examples_layout.addWidget(header_container)
+        
+        self._examples_collapsed = False
+        self._hub_splitter = splitter
+        
+        def toggle_examples_collapse():
+            self._examples_collapsed = not self._examples_collapsed
+            if self._examples_collapsed:
+                self._examples_collapse_btn.setText("▲")
+                self._nav_container.setVisible(False)
+                self._examples_scroll.setVisible(False)
+                self._hub_splitter.setSizes([950, 40])
+            else:
+                self._examples_collapse_btn.setText("▼")
+                self._nav_container.setVisible(True)
+                self._examples_scroll.setVisible(True)
+                self._hub_splitter.setSizes([650, 350])
+                
+        self._examples_collapse_btn.clicked.connect(toggle_examples_collapse)
+
+
+        # Level Navigation Bar
         is_small = self.is_small_screen
         bar_h = 36 if is_small else 50
         bar_br = bar_h // 2
@@ -3051,7 +4190,6 @@ class AICodingLab(QMainWindow):
         self._curriculum_cards = []
         self._nav_container = nav_container
 
-        s = STRINGS[self.current_lang]
         for level_key, cfg in LEVEL_CONFIG.items():
             badge = LevelBadge(level_key, cfg["color"], cfg["icon"], is_small=is_small)
             badge.retranslate(s)
@@ -3059,9 +4197,9 @@ class AICodingLab(QMainWindow):
             self._level_badges[level_key] = badge
             nav_bar.addWidget(badge)
 
-        main_layout.addWidget(nav_container, 0, Qt.AlignCenter)
+        examples_layout.addWidget(nav_container, 0, Qt.AlignCenter)
 
-        # Scroll Area
+        # Examples Scroll Area
         self._examples_scroll = QScrollArea()
         self._examples_scroll.setWidgetResizable(True)
         self._examples_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -3078,7 +4216,14 @@ class AICodingLab(QMainWindow):
         self._cards_layout.setSizeConstraint(QVBoxLayout.SetMinAndMaxSize)
         self._examples_scroll.setWidget(scroll_contents)
 
-        main_layout.addWidget(self._examples_scroll)
+        examples_layout.addWidget(self._examples_scroll)
+
+        splitter.addWidget(examples_widget)
+
+        # Set splitter sizes (65% lessons, 35% examples)
+        splitter.setSizes([650, 350])
+
+        main_layout.addWidget(splitter)
 
         # Set Beginner active
         self._level_badges["Beginner"].set_active(True)
@@ -3102,39 +4247,30 @@ class AICodingLab(QMainWindow):
 
         counts = {"Beginner": 0, "Intermediate": 0, "Advanced": 0}
 
-        # Collect all entries with metadata
-        entries = []
-        for name in os.listdir(curr_dir):
+        for name in sorted(os.listdir(curr_dir)):
             if name.endswith(".py"):
                 file_path = os.path.join(curr_dir, name)
                 metadata = self._parse_lesson_metadata(file_path)
+
+                title = metadata.get(f"TITLE_{self.current_lang.upper()}", metadata.get("TITLE", name))
+                desc = metadata.get(f"DESC_{self.current_lang.upper()}", metadata.get("DESC", "Custom curriculum script."))
                 level = metadata.get("LEVEL", "Beginner")
-                order = metadata.get("ORDER", 999)
-                entries.append((name, metadata, level, order))
 
-        # Sort: primary by LEVEL group, secondary by ORDER ascending, tertiary by filename
-        level_priority = {"Beginner": 0, "Intermediate": 1, "Advanced": 2}
-        entries.sort(key=lambda e: (level_priority.get(e[2], 99), e[3], e[0]))
+                card = CurriculumCard(
+                    filename=name,
+                    title=title,
+                    level=level,
+                    icon=metadata.get("ICON", "📄"),
+                    color=metadata.get("COLOR", "#7c3aed"),
+                    desc=desc,
+                    on_load_click=self.load_curriculum_example,
+                    is_small=self.is_small_screen
+                )
+                self._curriculum_cards.append((level, card))
+                self._cards_layout.addWidget(card)
 
-        for name, metadata, level, order in entries:
-            title = metadata.get(f"TITLE_{self.current_lang.upper()}", metadata.get("TITLE", name))
-            desc = metadata.get(f"DESC_{self.current_lang.upper()}", metadata.get("DESC", "Custom curriculum script."))
-
-            card = CurriculumCard(
-                filename=name,
-                title=title,
-                level=level,
-                icon=metadata.get("ICON", "📄"),
-                color=metadata.get("COLOR", "#7c3aed"),
-                desc=desc,
-                on_load_click=self.load_curriculum_example,
-                is_small=self.is_small_screen
-            )
-            self._curriculum_cards.append((level, card))
-            self._cards_layout.addWidget(card)
-
-            if level in counts:
-                counts[level] += 1
+                if level in counts:
+                    counts[level] += 1
 
         # Add spacer
         self._cards_layout.addStretch()
@@ -3146,6 +4282,94 @@ class AICodingLab(QMainWindow):
 
         # Apply filter
         self._apply_level_filter()
+
+    def populate_lessons(self):
+        """Load lessons from lesson_structure.json and create lesson cards."""
+        if not hasattr(self, '_lessons_cards_layout'):
+            return
+
+        s = STRINGS[self.current_lang]
+
+        # Initialize lesson cards dictionary if not exists
+        if not hasattr(self, '_lesson_cards'):
+            self._lesson_cards = {}
+
+        # 1. Clear existing lesson cards
+        while self._lessons_cards_layout.count():
+            child = self._lessons_cards_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+        
+        # Clear the dictionary
+        self._lesson_cards.clear()
+
+        # 2. Load lesson structure from JSON
+        structure_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lessons", "lesson_structure.json")
+        
+        if not os.path.exists(structure_path):
+            # Fallback to old behavior if JSON doesn't exist
+            no_lessons_label = QLabel("lesson_structure.json not found")
+            no_lessons_label.setStyleSheet("color: #64748b; font-size: 14px; padding: 20px;")
+            no_lessons_label.setAlignment(Qt.AlignCenter)
+            self._lessons_cards_layout.addWidget(no_lessons_label)
+            return
+        
+        try:
+            import json
+            with open(structure_path, 'r', encoding='utf-8') as f:
+                structure = json.load(f)
+            
+            lessons = structure.get('lessons', [])
+            
+            if not lessons:
+                no_lessons_label = QLabel("No lessons found in structure")
+                no_lessons_label.setStyleSheet("color: #64748b; font-size: 14px; padding: 20px;")
+                no_lessons_label.setAlignment(Qt.AlignCenter)
+                self._lessons_cards_layout.addWidget(no_lessons_label)
+                return
+            
+            # 3. Create lesson cards
+            for lesson in lessons:
+                lesson_id = lesson.get('id')
+                title = lesson.get(f'title_{self.current_lang}', lesson.get('title', f'Lesson {lesson_id}'))
+                desc = lesson.get(f'description_{self.current_lang}', lesson.get('description', ''))
+                icon = lesson.get('icon', '📖')
+                color = lesson.get('color', '#3b82f6')
+                steps = lesson.get('steps', [])
+                total_steps = len(steps)
+                
+                # Create description with step count
+                step_text = f"{total_steps} steps" if self.current_lang == "en" else f"{total_steps} bước"
+                full_desc = f"{desc} • {step_text}"
+                
+                card = CurriculumCard(
+                    filename=str(lesson_id),  # Use lesson ID as filename
+                    title=title,
+                    level="Beginner",  # Lessons don't have levels
+                    icon=icon,
+                    color=color,
+                    desc=full_desc,
+                    on_load_click=self.load_lesson_by_id,
+                    is_small=self.is_small_screen,
+                    is_lesson_card=True,
+                    on_stop_click=self.stop_lesson,
+                    start_text=s.get("BTN_START_LESSON", "▶ Start"),
+                    stop_text=s.get("BTN_STOP_LESSON", "⏹ Stop"),
+                )
+                
+                # Store reference to card for later updates
+                self._lesson_cards[lesson_id] = card
+                
+                self._lessons_cards_layout.addWidget(card)
+            
+            # Add spacer
+            self._lessons_cards_layout.addStretch()
+            
+        except Exception as e:
+            error_label = QLabel(f"Error loading lessons: {e}")
+            error_label.setStyleSheet("color: #ef4444; font-size: 14px; padding: 20px;")
+            error_label.setAlignment(Qt.AlignCenter)
+            self._lessons_cards_layout.addWidget(error_label)
 
     def _on_level_selected(self, level):
         """Handle level badge click."""
@@ -3165,7 +4389,7 @@ class AICodingLab(QMainWindow):
             card.setVisible(level == self._active_level)
 
     def _parse_lesson_metadata(self, path):
-        """Extract # TITLE, # LEVEL, # ICON, # COLOR, # DESC, # ORDER from file header."""
+        """Extract # TITLE, # LEVEL, # ICON, # COLOR, # DESC from file header."""
         meta = {}
         try:
             with open(path, "r", encoding="utf-8") as f:
@@ -3174,21 +4398,1179 @@ class AICodingLab(QMainWindow):
                     line = f.readline()
                     if not line: break
                     # Match pattern like: # TITLE: Face Detection or # TITLE_VI: Phát hiện khuôn mặt
-                    match = re.search(r"^#\s*(TITLE|LEVEL|ICON|COLOR|DESC|TITLE_VI|DESC_VI|ORDER)\s*:\s*(.*)$", line, re.I)
+                    match = re.search(r"^#\s*(TITLE|LEVEL|ICON|COLOR|DESC|TITLE_VI|DESC_VI)\s*:\s*(.*)$", line, re.I)
                     if match:
                         key = match.group(1).upper()
                         val = match.group(2).strip()
                         meta[key] = val
         except:
             pass
-        # Parse ORDER as integer, default to 999 if missing or invalid
-        try:
-            meta["ORDER"] = int(meta.get("ORDER", 999))
-        except (ValueError, TypeError):
-            meta["ORDER"] = 999
         return meta
 
     # --- Tab & File Operations ---
+    def load_lesson_by_id(self, lesson_id_str: str):
+        """Load a lesson by its ID and start from step 1 (or stop if already active)."""
+        try:
+            lesson_id = int(lesson_id_str)
+        except:
+            self.log_to_console(f"Invalid lesson ID: {lesson_id_str}")
+            return
+        
+        # If this lesson is already active, stop it instead
+        if hasattr(self, '_active_lesson_id') and self._active_lesson_id == lesson_id:
+            self.stop_lesson(lesson_id_str)
+            return
+        
+        # If a different lesson is active, stop it first
+        if hasattr(self, '_active_lesson_id') and self._active_lesson_id is not None:
+            self.stop_lesson(str(self._active_lesson_id))
+        
+        # Load lesson structure
+        structure_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lessons", "lesson_structure.json")
+        
+        if not os.path.exists(structure_path):
+            self.log_to_console("lesson_structure.json not found")
+            return
+        
+        try:
+            import json
+            with open(structure_path, 'r', encoding='utf-8') as f:
+                structure = json.load(f)
+            
+            # Find the lesson
+            lesson = None
+            for l in structure.get('lessons', []):
+                if l.get('id') == lesson_id:
+                    lesson = l
+                    break
+            
+            if not lesson:
+                self.log_to_console(f"Lesson {lesson_id} not found")
+                return
+            
+            # Store current lesson info
+            self.current_lesson_id = lesson_id
+            self.current_lesson_data = lesson
+            self.current_step = 1
+            self.lesson_hearts = 0
+            self.lesson_hint_used = False
+            self.lesson_solution_used = False
+            self.step_error_count = 0  # Initialize error count
+            self._active_lesson_id = lesson_id  # Track active lesson for Start/Stop toggle
+            
+            # Update card button to "Stop" state
+            if hasattr(self, '_lesson_cards') and lesson_id in self._lesson_cards:
+                self._lesson_cards[lesson_id].set_active(True)
+            
+            # Show hint/solution buttons
+            if hasattr(self, 'btnHint') and self.btnHint:
+                self.btnHint.setVisible(True)
+            if hasattr(self, 'btnSolution') and self.btnSolution:
+                self.btnSolution.setVisible(True)
+            
+            # Get steps
+            steps = lesson.get('steps', [])
+            total_steps = len(steps)
+            
+            # Show step progress bar
+            if hasattr(self, '_step_progress_bar'):
+                self._step_progress_bar.set_lesson(lesson_id, total_steps)
+                self._step_progress_bar.setVisible(True)
+                if hasattr(self, 'runningEditorSplitter') and self.runningEditorSplitter:
+                    self.runningEditorSplitter.setSizes([700, 100, 0])
+                self.set_console_expanded(False)
+            
+            # Close any existing tabs before loading first step
+            self._close_current_tab()
+            QApplication.processEvents()
+            
+            # Load first step
+            self.load_step(1)
+            
+            # Log
+            title = lesson.get(f'title_{self.current_lang}', lesson.get('title', f'Lesson {lesson_id}'))
+            self.log_to_console(f"Started {title} - Step 1/{total_steps}")
+            
+        except Exception as e:
+            self.log_to_console(f"Error loading lesson: {e}")
+    
+    def stop_lesson(self, lesson_id_str: str = None):
+        """Stop the current lesson and return to free coding mode."""
+        s = STRINGS[self.current_lang]
+        
+        # Determine which lesson to stop
+        if lesson_id_str:
+            try:
+                lesson_id = int(lesson_id_str)
+            except:
+                lesson_id = getattr(self, '_active_lesson_id', None)
+        else:
+            lesson_id = getattr(self, '_active_lesson_id', None)
+        
+        if lesson_id is None:
+            return
+        
+        # Hide step progress bar
+        if hasattr(self, '_step_progress_bar'):
+            self._step_progress_bar.hide_bar()
+            if hasattr(self, 'runningEditorSplitter') and self.runningEditorSplitter:
+                self.runningEditorSplitter.setSizes([600, 0, 200])
+            self.set_console_expanded(True)
+        
+        # Hide floating instruction card
+        if hasattr(self, '_instruction_card'):
+            self._instruction_card.hide_card()
+        
+        # Restore normal editor inside StackedWidget
+        if hasattr(self, 'editorStack'):
+            self.editorStack.setCurrentWidget(self.monacoPlaceholder)
+        self.monacoPlaceholder.exit_blank_mode()
+        
+        # Hide hint/solution buttons
+        if hasattr(self, 'btnHint') and self.btnHint:
+            self.btnHint.setVisible(False)
+            self.btnHint.setEnabled(False)
+        if hasattr(self, 'btnSolution') and self.btnSolution:
+            self.btnSolution.setVisible(False)
+            self.btnSolution.setEnabled(False)
+        
+        # Close current tab and clear editor
+        self._close_current_tab()
+        QApplication.processEvents()
+        
+        # Restore default main.py template
+        self.add_tab("main.py", is_code=True)
+        self.load_file_by_tab("main.py")
+        
+        # Reset card button to "Start" state
+        if hasattr(self, '_lesson_cards') and lesson_id in self._lesson_cards:
+            self._lesson_cards[lesson_id].set_active(False)
+        
+        # Clear lesson state
+        self._active_lesson_id = None
+        if hasattr(self, 'current_lesson_data'):
+            delattr(self, 'current_lesson_data')
+        self.current_step = 1
+        self.lesson_hearts = 0
+        self.lesson_hint_used = False
+        self.lesson_solution_used = False
+        self.step_error_count = 0
+        
+        self.log_to_console(s.get("LESSON_STOPPED", "Exited lesson mode. Back to free coding."))
+
+    def load_step(self, step_num):
+        """Load a specific step of the current lesson."""
+        if not hasattr(self, 'current_lesson_data'):
+            return
+        
+        lesson = self.current_lesson_data
+        steps = lesson.get('steps', [])
+        
+        if step_num < 1 or step_num > len(steps):
+            self.log_to_console(f"Invalid step number: {step_num}")
+            return
+        
+        # Get step data
+        step = steps[step_num - 1]
+        step_file = step.get('file', '')
+        step_title = step.get(f'title_{self.current_lang}', step.get('title', f'Step {step_num}'))
+        
+        # Adjust file path based on language (insert language folder)
+        # Original: "lessons/lesson1_camera_basics/step1_my_first_camera.py"
+        # New: "lessons/vi/lesson1_camera_basics/step1_my_first_camera.py" or "lessons/en/..."
+        lang_folder = "vi" if self.current_lang == "vi" else "en"
+        if step_file.startswith("lessons/"):
+            step_file = step_file.replace("lessons/", f"lessons/{lang_folder}/", 1)
+        
+        # Load file
+        file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), step_file)
+        
+        try:
+            # Use lesson_parser to detect blank-mode steps
+            from src.modules.lesson_parser import parse_step_file
+            parsed_step = parse_step_file(file_path)
+            
+            if not parsed_step.is_challenge:
+                # Fill-in-the-blank mode
+                self._current_parsed_step = parsed_step
+                if hasattr(self, 'editorStack') and hasattr(self, 'gameLessonWidget'):
+                    self.editorStack.setCurrentWidget(self.gameLessonWidget)
+                    self.gameLessonWidget.set_blank_mode(parsed_step)
+                else:
+                    self.monacoPlaceholder.set_blank_mode(parsed_step)
+            else:
+                # Challenge / free-form mode
+                self._current_parsed_step = None
+                if hasattr(self, 'editorStack'):
+                    self.editorStack.setCurrentWidget(self.monacoPlaceholder)
+                self.monacoPlaceholder.setPlainText(parsed_step.raw_content)
+            
+            filename = os.path.basename(step_file)
+            self.current_open_file = filename
+            self.current_step = step_num
+            
+            # Update progress bar
+            if hasattr(self, '_step_progress_bar'):
+                self._step_progress_bar.set_step(step_num)
+                # Update navigation buttons
+                self._step_progress_bar.btn_prev.setEnabled(step_num > 1)
+                self._step_progress_bar.btn_next.setEnabled(True)
+                # Reset button text to >>> (in case it was "Finish")
+                self._step_progress_bar.btn_next.setText(">>>")
+                
+                # Hide Submit button if this step was already answered correctly
+                step_status = self._step_progress_bar.step_status.get(step_num, None)
+                if step_status == 'correct':
+                    self._step_progress_bar.btn_submit.setVisible(False)
+                else:
+                    self._step_progress_bar.btn_submit.setVisible(True)
+            
+            # Hide old requirements panel, we use floating card now
+            if hasattr(self, '_step_progress_bar'):
+                self._step_progress_bar.hide_requirements()
+            
+            # Load tutorial into floating instruction card
+            lang_folder = "vi" if self.current_lang == "vi" else "en"
+            tutorial_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tutorials", lang_folder, f"lesson{self.current_lesson_id}_step{step_num}.md")
+            if hasattr(self, '_instruction_card'):
+                self._instruction_card.load_tutorial(tutorial_file)
+                self._instruction_card.show_card()
+            
+            # Reset hint/solution flags for new step
+            self.lesson_hint_used = False
+            self.lesson_solution_used = False
+            self.step_error_count = 0  # Reset error count for new step
+            
+            # Disable Hint and Solution buttons at start
+            self._disable_hint_solution_buttons()
+            
+            # Log
+            self.log_to_console(f"Loaded: {step_title}")
+            
+            # Create new tab for this step
+            self.add_tab(filename, is_code=True)
+            
+        except FileNotFoundError:
+            self.log_to_console(f"Step file not found: {step_file}")
+        except Exception as e:
+            self.log_to_console(f"Error loading step: {e}")
+    
+    def previous_step(self):
+        """Move to the previous step in the current lesson."""
+        if not hasattr(self, 'current_lesson_data'):
+            return
+        
+        if self.current_step > 1:
+            # Reset error count when moving to previous step
+            self.step_error_count = 0
+            # Close all tabs first
+            self._close_current_tab()
+            # Process events to ensure tabs are closed
+            QApplication.processEvents()
+            # Then load previous step
+            self.load_step(self.current_step - 1)
+        else:
+            self.log_to_console("Already at first step!")
+    
+    def _compare_code_with_solution(self, student_code, solution_code):
+        """Compare student code with solution code.
+        
+        Args:
+            student_code: The student's code as string
+            solution_code: The solution code as string
+            
+        Returns:
+            bool: True if codes match (ignoring whitespace and comments), False otherwise
+        """
+        def normalize_code(code):
+            """Normalize code by removing comments, extra whitespace, and blank lines."""
+            lines = []
+            for line in code.split('\n'):
+                # Remove comments
+                line = line.split('#')[0]
+                # Strip whitespace
+                line = line.strip()
+                # Skip empty lines
+                if line:
+                    # Remove all whitespace for comparison (more flexible)
+                    line = ''.join(line.split())
+                    lines.append(line)
+            return '\n'.join(lines)
+        
+        normalized_student = normalize_code(student_code)
+        normalized_solution = normalize_code(solution_code)
+        
+        return normalized_student == normalized_solution
+    
+    def submit_step(self):
+        """Check code and award hearts if correct."""
+        if not hasattr(self, 'current_lesson_data'):
+            return
+        
+        s = STRINGS[self.current_lang]
+        lesson = self.current_lesson_data
+        steps = lesson.get('steps', [])
+        total_steps = len(steps)
+        
+        # Only check for regular steps, not challenge
+        if self.current_step <= total_steps:
+            # Check if we're in blank mode
+            if (hasattr(self, 'editorStack') and self.editorStack.currentWidget() == self.gameLessonWidget) or (self.monacoPlaceholder._blank_mode and hasattr(self, '_current_parsed_step') and self._current_parsed_step):
+                # Fill-in-the-blank validation
+                from src.modules.blank_validator import validate_blanks
+                if hasattr(self, 'editorStack') and self.editorStack.currentWidget() == self.gameLessonWidget:
+                    blank_contents = self.gameLessonWidget.get_blank_contents()
+                else:
+                    blank_contents = self.monacoPlaceholder.get_blank_contents()
+                    
+                results = validate_blanks(blank_contents, self._current_parsed_step.blank_map)
+                
+                if hasattr(self, 'editorStack') and self.editorStack.currentWidget() == self.gameLessonWidget:
+                    self.gameLessonWidget.set_blank_feedback(results)
+                else:
+                    self.monacoPlaceholder.set_blank_feedback(results)
+                is_correct = all(r.is_correct for r in results)
+                
+                # Mark step status
+                if hasattr(self, '_step_progress_bar'):
+                    self._step_progress_bar.mark_step_status(self.current_step, is_correct)
+                
+                if is_correct:
+                    hearts_earned = 0
+                    if hasattr(self, '_step_progress_bar'):
+                        if self.lesson_solution_used:
+                            self.log_to_console(f"✅ Step {self.current_step}: {s.get('CORRECT_NO_HEARTS', 'Correct! (No hearts - solution was used)')}")
+                            hearts_earned = 0
+                        elif self.lesson_hint_used:
+                            self._step_progress_bar.hearts += 0.5
+                            self._step_progress_bar.update_display()
+                            self.log_to_console(f"✅ Step {self.current_step}: {s.get('CORRECT_HALF_HEART', 'Correct! +0.5 ❤️ (hint was used)')}")
+                            hearts_earned = 0.5
+                        else:
+                            self._step_progress_bar.add_heart()
+                            self.log_to_console(f"✅ Step {self.current_step}: {s.get('CORRECT_FULL_HEART', 'Correct! +1 ❤️')}")
+                            hearts_earned = 1.0
+                        
+                        self._step_progress_bar.btn_submit.setVisible(False)
+                        
+                        success_dialog = SuccessDialog(
+                            parent=self,
+                            hearts_earned=hearts_earned,
+                            current_hearts=self._step_progress_bar.hearts,
+                            max_hearts=self._step_progress_bar.max_hearts,
+                            lang=self.current_lang
+                        )
+                        success_dialog.exec_()
+                else:
+                    # Count incorrect blanks
+                    wrong_count = sum(1 for r in results if not r.is_correct)
+                    total_blanks = len(results)
+                    
+                    if not hasattr(self, 'step_error_count'):
+                        self.step_error_count = 0
+                    self.step_error_count += 1
+                    
+                    error_title = s.get("INCORRECT_TITLE", "Incorrect")
+                    error_text = s.get("BLANK_SOME_WRONG", "{} of {} blanks incorrect").format(wrong_count, total_blanks)
+                    error_info = s.get("INCORRECT_INFO", "Please check your code and try again.")
+                    
+                    if self.step_error_count == 1:
+                        self._enable_hint_button()
+                        error_info += s.get("INCORRECT_HINT_TIP", "\n\n💡 <b>Tip:</b> You can click the <b>Hint</b> button for a clue!")
+                    elif self.step_error_count >= 2:
+                        self._enable_solution_button()
+                        error_info += s.get("INCORRECT_HINT_TIP", "\n\n💡 <b>Tip:</b> You can click the <b>Hint</b> button for a clue!")
+                        error_info += s.get("INCORRECT_SOLUTION_TIP", "\n\n📖 Or click <b>Solution</b> to see the answer (but no hearts will be earned).")
+                    
+                    error_info_html = error_info.replace("\n\n", "<br><br>").replace("\n", "<br>")
+                    
+                    from PyQt5.QtWidgets import QMessageBox
+                    msg = QMessageBox(self)
+                    msg.setWindowTitle(error_title)
+                    msg.setIcon(QMessageBox.Warning)
+                    msg.setTextFormat(Qt.RichText)
+                    msg.setText(error_text)
+                    msg.setInformativeText(error_info_html)
+                    msg.setStyleSheet("""
+                        QMessageBox {
+                            background: #1e293b;
+                        }
+                        QMessageBox QLabel {
+                            color: white;
+                            font-size: 14px;
+                        }
+                        QMessageBox QPushButton {
+                            background: #3b82f6;
+                            color: white;
+                            border-radius: 6px;
+                            padding: 8px 16px;
+                            font-weight: bold;
+                            min-width: 80px;
+                        }
+                        QMessageBox QPushButton:hover {
+                            background: #2563eb;
+                        }
+                    """)
+                    msg.exec_()
+                    self.log_to_console(f"❌ Step {self.current_step}: {error_text} (Attempt {self.step_error_count})")
+                return
+            
+            # Challenge / free-form mode: whole-file comparison
+            # Get student's current code
+            student_code = self.monacoPlaceholder.toPlainText()
+            
+            # Load solution file
+            solution_filename = f"lesson{self.current_lesson_id}_step{self.current_step}_solution.py"
+            solution_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "lessons",
+                "solutions",
+                solution_filename
+            )
+            
+            is_correct = False
+            try:
+                with open(solution_path, 'r', encoding='utf-8') as f:
+                    solution_code = f.read()
+                
+                # Compare codes
+                is_correct = self._compare_code_with_solution(student_code, solution_code)
+                
+                # Mark step status
+                if hasattr(self, '_step_progress_bar'):
+                    self._step_progress_bar.mark_step_status(self.current_step, is_correct)
+                
+                # Add heart if correct
+                if is_correct:
+                    hearts_earned = 0
+                    if hasattr(self, '_step_progress_bar'):
+                        # Check if solution was used - no hearts
+                        if self.lesson_solution_used:
+                            self.log_to_console(f"✅ Step {self.current_step}: {s.get('CORRECT_NO_HEARTS', 'Correct! (No hearts - solution was used)')}")
+                            hearts_earned = 0
+                        # Check if hint was used - only 0.5 hearts
+                        elif self.lesson_hint_used:
+                            self._step_progress_bar.hearts += 0.5
+                            self._step_progress_bar.update_display()
+                            self.log_to_console(f"✅ Step {self.current_step}: {s.get('CORRECT_HALF_HEART', 'Correct! +0.5 ❤️ (hint was used)')}")
+                            hearts_earned = 0.5
+                        # No hint or solution - full 1 heart
+                        else:
+                            self._step_progress_bar.add_heart()
+                            self.log_to_console(f"✅ Step {self.current_step}: {s.get('CORRECT_FULL_HEART', 'Correct! +1 ❤️')}")
+                            hearts_earned = 1.0
+                        
+                        # Hide submit button after correct answer
+                        self._step_progress_bar.btn_submit.setVisible(False)
+                        
+                        # Show success dialog
+                        success_dialog = SuccessDialog(
+                            parent=self,
+                            hearts_earned=hearts_earned,
+                            current_hearts=self._step_progress_bar.hearts,
+                            max_hearts=self._step_progress_bar.max_hearts,
+                            lang=self.current_lang
+                        )
+                        # Use exec_ to make it modal and blocking
+                        success_dialog.exec_()
+                else:
+                    # Increment error count
+                    if not hasattr(self, 'step_error_count'):
+                        self.step_error_count = 0
+                    self.step_error_count += 1
+                    
+                    # Build error message based on error count
+                    error_title = s.get("INCORRECT_TITLE", "Incorrect")
+                    error_text = s.get("INCORRECT_TEXT", "❌ Code is not correct!")
+                    error_info = s.get("INCORRECT_INFO", "Please check your code and try again.")
+                    
+                    # Enable Hint button after first error
+                    if self.step_error_count == 1:
+                        self._enable_hint_button()
+                        error_info += s.get("INCORRECT_HINT_TIP", "\n\n💡 <b>Tip:</b> You can click the <b>Hint</b> button for a clue!")
+                    
+                    # Enable Solution button after second error
+                    elif self.step_error_count >= 2:
+                        self._enable_solution_button()
+                        error_info += s.get("INCORRECT_HINT_TIP", "\n\n💡 <b>Tip:</b> You can click the <b>Hint</b> button for a clue!")
+                        error_info += s.get("INCORRECT_SOLUTION_TIP", "\n\n📖 Or click <b>Solution</b> to see the answer (but no hearts will be earned).")
+                    
+                    # Convert newlines to HTML breaks
+                    error_info_html = error_info.replace("\n\n", "<br><br>").replace("\n", "<br>")
+                    
+                    # Show error message
+                    from PyQt5.QtWidgets import QMessageBox
+                    msg = QMessageBox(self)
+                    msg.setWindowTitle(error_title)
+                    msg.setIcon(QMessageBox.Warning)
+                    msg.setTextFormat(Qt.RichText)  # Enable HTML formatting
+                    msg.setText(error_text)
+                    msg.setInformativeText(error_info_html)
+                    msg.setStyleSheet("""
+                        QMessageBox {
+                            background: #1e293b;
+                        }
+                        QMessageBox QLabel {
+                            color: white;
+                            font-size: 14px;
+                        }
+                        QMessageBox QPushButton {
+                            background: #3b82f6;
+                            color: white;
+                            border-radius: 6px;
+                            padding: 8px 16px;
+                            font-weight: bold;
+                            min-width: 80px;
+                        }
+                        QMessageBox QPushButton:hover {
+                            background: #2563eb;
+                        }
+                    """)
+                    msg.exec_()
+                    self.log_to_console(f"❌ Step {self.current_step}: Incorrect (Attempt {self.step_error_count}). Try again!")
+                    
+            except FileNotFoundError:
+                self.log_to_console(f"⚠️ Solution file not found: {solution_filename}")
+            except Exception as e:
+                self.log_to_console(f"⚠️ Error comparing code: {e}")
+    
+    def next_step(self):
+        """Move to the next step in the current lesson."""
+        if not hasattr(self, 'current_lesson_data'):
+            return
+        
+        lesson = self.current_lesson_data
+        steps = lesson.get('steps', [])
+        total_steps = len(steps)
+        
+        # Check if we're in challenge mode and button says "Finish"
+        if hasattr(self, '_step_progress_bar') and self._step_progress_bar.btn_next.text() == "Finish":
+            self._finish_lesson()
+            return
+        
+        if self.current_step < total_steps:
+            # Reset error count when moving to next step
+            self.step_error_count = 0
+            # Close all tabs first
+            self._close_current_tab()
+            # Process events to ensure tabs are closed
+            QApplication.processEvents()
+            # Then move to next step
+            self.load_step(self.current_step + 1)
+        elif self.current_step == total_steps:
+            # Reset error count when moving to challenge
+            self.step_error_count = 0
+            # Close all tabs first
+            self._close_current_tab()
+            # Process events to ensure tabs are closed
+            QApplication.processEvents()
+            # Then load challenge
+            self.load_challenge()
+        else:
+            self.log_to_console("Already at challenge!")
+    
+    def _close_current_tab(self):
+        """Close ALL tabs in the editor."""
+        # Close all tabs using the existing close_tab method
+        tabs_to_close = self.open_tabs.copy()  # Copy to avoid modification during iteration
+        for filename in tabs_to_close:
+            self.close_tab(filename)
+        
+        # Ensure clean state
+        self.open_tabs.clear()
+        self.tab_buttons.clear()
+        self.current_open_file = None
+    
+    def _finish_lesson(self):
+        """Finish the challenge - check answer and handle hearts."""
+        s = STRINGS[self.current_lang]
+        
+        # Get student's current code
+        student_code = self.monacoPlaceholder.toPlainText()
+        
+        # Load challenge solution file
+        lesson = self.current_lesson_data
+        challenge = lesson.get('challenge', {})
+        challenge_file = challenge.get('file', '')
+        
+        # Extract lesson ID and create solution filename
+        # challenge_file format: "lessons/lesson1_camera_basics/challenge_photo_booth.py"
+        solution_filename = f"lesson{self.current_lesson_id}_challenge_solution.py"
+        solution_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "lessons",
+            "solutions",
+            solution_filename
+        )
+        
+        is_correct = False
+        try:
+            with open(solution_path, 'r', encoding='utf-8') as f:
+                solution_code = f.read()
+            
+            # Compare codes
+            is_correct = self._compare_code_with_solution(student_code, solution_code)
+            
+        except FileNotFoundError:
+            self.log_to_console(f"⚠️ Challenge solution file not found: {solution_filename}")
+            # If no solution file, just complete the lesson
+            is_correct = True
+        except Exception as e:
+            self.log_to_console(f"⚠️ Error comparing challenge code: {e}")
+            is_correct = True
+        
+        if is_correct:
+            # Challenge completed successfully!
+            current_hearts = self._step_progress_bar.hearts if hasattr(self, '_step_progress_bar') else 0
+            max_hearts = self._step_progress_bar.max_hearts if hasattr(self, '_step_progress_bar') else 5
+            
+            # Mark lesson as completed
+            self._mark_lesson_completed(self.current_lesson_id)
+            
+            # Close all tabs
+            tabs_to_close = self.open_tabs.copy()
+            for filename in tabs_to_close:
+                self.close_tab(filename)
+            
+            # Hide progress bar
+            if hasattr(self, '_step_progress_bar'):
+                self._step_progress_bar.hide_bar()
+            
+            # Clear editor
+            self.monacoPlaceholder.clear()
+            
+            # Show completion message with hearts
+            QMessageBox.information(self, 
+                "🎉 " + s.get("LESSON_COMPLETE", "Lesson Complete!"),
+                s.get("LESSON_COMPLETE_MSG", "Congratulations! You have completed this lesson!") +
+                f"\n\n🏆 Final Score: {current_hearts}/{max_hearts} ❤️")
+            
+            self.log_to_console(f"✅ Challenge completed! Final score: {current_hearts}/{max_hearts} ❤️")
+            
+            # Reset lesson state
+            if hasattr(self, 'current_lesson_data'):
+                delattr(self, 'current_lesson_data')
+            self.current_step = 1
+            
+            # Reset card button to "Start" state and clear active lesson
+            if hasattr(self, '_active_lesson_id') and self._active_lesson_id is not None:
+                if hasattr(self, '_lesson_cards') and self._active_lesson_id in self._lesson_cards:
+                    self._lesson_cards[self._active_lesson_id].set_active(False)
+                self._active_lesson_id = None
+            
+            # Hide Hint and Solution buttons (back to free coding)
+            if hasattr(self, 'btnHint') and self.btnHint:
+                self.btnHint.setVisible(False)
+            if hasattr(self, 'btnSolution') and self.btnSolution:
+                self.btnSolution.setVisible(False)
+            
+            # Re-enable Hint and Solution buttons
+            self._enable_hint_solution_buttons()
+            
+        else:
+            # Challenge failed - deduct 1 heart
+            if hasattr(self, '_step_progress_bar'):
+                if self._step_progress_bar.hearts >= 1:
+                    self._step_progress_bar.hearts -= 1
+                    self._step_progress_bar.update_display()
+                    
+                    remaining_hearts = self._step_progress_bar.hearts
+                    
+                    if remaining_hearts > 0:
+                        # Still have hearts - can try again
+                        QMessageBox.warning(self,
+                            "❌ " + s.get("CHALLENGE_FAILED", "Challenge Failed"),
+                            s.get("CHALLENGE_FAILED_MSG", "Your solution is incorrect!") +
+                            f"\n\n-1 ❤️\n\nRemaining Hearts: {remaining_hearts}/{self._step_progress_bar.max_hearts}" +
+                            "\n\n" + s.get("TRY_AGAIN", "Try again!"))
+                        
+                        self.log_to_console(f"❌ Challenge failed! -1 ❤️ (Remaining: {remaining_hearts})")
+                    else:
+                        # No hearts left - game over
+                        QMessageBox.critical(self,
+                            "💔 " + s.get("GAME_OVER", "Game Over"),
+                            s.get("GAME_OVER_MSG", "You have no hearts left!") +
+                            "\n\n" + s.get("LESSON_RESTART", "Please restart the lesson."))
+                        
+                        self.log_to_console("💔 Game Over! No hearts left.")
+                        
+                        # Close all tabs and reset
+                        tabs_to_close = self.open_tabs.copy()
+                        for filename in tabs_to_close:
+                            self.close_tab(filename)
+                        
+                        if hasattr(self, '_step_progress_bar'):
+                            self._step_progress_bar.hide_bar()
+                        
+                        self.monacoPlaceholder.clear()
+                        
+                        if hasattr(self, 'current_lesson_data'):
+                            delattr(self, 'current_lesson_data')
+                        self.current_step = 1
+                        
+                        # Reset card button and hide lesson UI
+                        if hasattr(self, '_active_lesson_id') and self._active_lesson_id is not None:
+                            if hasattr(self, '_lesson_cards') and self._active_lesson_id in self._lesson_cards:
+                                self._lesson_cards[self._active_lesson_id].set_active(False)
+                            self._active_lesson_id = None
+                        if hasattr(self, 'btnHint') and self.btnHint:
+                            self.btnHint.setVisible(False)
+                        if hasattr(self, 'btnSolution') and self.btnSolution:
+                            self.btnSolution.setVisible(False)
+                        
+                        # Re-enable Hint and Solution buttons
+                        self._enable_hint_solution_buttons()
+                else:
+                    # Already at 0 hearts
+                    QMessageBox.critical(self,
+                        "💔 " + s.get("GAME_OVER", "Game Over"),
+                        s.get("GAME_OVER_MSG", "You have no hearts left!"))
+                    
+                    # Reset
+                    tabs_to_close = self.open_tabs.copy()
+                    for filename in tabs_to_close:
+                        self.close_tab(filename)
+                    
+                    if hasattr(self, '_step_progress_bar'):
+                        self._step_progress_bar.hide_bar()
+                    
+                    self.monacoPlaceholder.clear()
+                    
+                    if hasattr(self, 'current_lesson_data'):
+                        delattr(self, 'current_lesson_data')
+                    self.current_step = 1
+                    
+                    # Reset card button and hide lesson UI
+                    if hasattr(self, '_active_lesson_id') and self._active_lesson_id is not None:
+                        if hasattr(self, '_lesson_cards') and self._active_lesson_id in self._lesson_cards:
+                            self._lesson_cards[self._active_lesson_id].set_active(False)
+                        self._active_lesson_id = None
+                    if hasattr(self, 'btnHint') and self.btnHint:
+                        self.btnHint.setVisible(False)
+                    if hasattr(self, 'btnSolution') and self.btnSolution:
+                        self.btnSolution.setVisible(False)
+                    
+                    # Re-enable Hint and Solution buttons
+                    self._enable_hint_solution_buttons()
+    
+    def _enable_hint_solution_buttons(self):
+        """Re-enable Hint and Solution buttons after challenge."""
+        if hasattr(self, 'btnHint') and self.btnHint:
+            self.btnHint.setEnabled(True)
+            # Restore original orange style
+            self.btnHint.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #f59e0b, stop:1 #d97706);
+                    color: white;
+                    border-radius: 8px;
+                    font-weight: bold;
+                    font-size: 14px;
+                    padding: 8px 16px;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #d97706, stop:1 #b45309);
+                }
+            """)
+        
+        if hasattr(self, 'btnSolution') and self.btnSolution:
+            self.btnSolution.setEnabled(True)
+            # Restore original red style
+            self.btnSolution.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #ef4444, stop:1 #dc2626);
+                    color: white;
+                    border-radius: 8px;
+                    font-weight: bold;
+                    font-size: 14px;
+                    padding: 8px 16px;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #dc2626, stop:1 #b91c1c);
+                }
+            """)
+    
+    def _disable_hint_solution_buttons(self):
+        """Disable Hint and Solution buttons at the start of a step."""
+        if hasattr(self, 'btnHint') and self.btnHint:
+            self.btnHint.setEnabled(False)
+            self.btnHint.setStyleSheet("""
+                QPushButton {
+                    background: #9ca3af;
+                    color: #6b7280;
+                    border-radius: 8px;
+                    font-weight: bold;
+                    font-size: 14px;
+                    padding: 8px 16px;
+                }
+            """)
+        
+        if hasattr(self, 'btnSolution') and self.btnSolution:
+            self.btnSolution.setEnabled(False)
+            self.btnSolution.setStyleSheet("""
+                QPushButton {
+                    background: #9ca3af;
+                    color: #6b7280;
+                    border-radius: 8px;
+                    font-weight: bold;
+                    font-size: 14px;
+                    padding: 8px 16px;
+                }
+            """)
+    
+    def _enable_hint_button(self):
+        """Enable Hint button after first error."""
+        if hasattr(self, 'btnHint') and self.btnHint:
+            self.btnHint.setEnabled(True)
+            self.btnHint.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #f59e0b, stop:1 #d97706);
+                    color: white;
+                    border-radius: 8px;
+                    font-weight: bold;
+                    font-size: 14px;
+                    padding: 8px 16px;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #d97706, stop:1 #b45309);
+                }
+            """)
+    
+    def _enable_solution_button(self):
+        """Enable Solution button after second error."""
+        if hasattr(self, 'btnSolution') and self.btnSolution:
+            self.btnSolution.setEnabled(True)
+            self.btnSolution.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #ef4444, stop:1 #dc2626);
+                    color: white;
+                    border-radius: 8px;
+                    font-weight: bold;
+                    font-size: 14px;
+                    padding: 8px 16px;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #dc2626, stop:1 #b91c1c);
+                }
+            """)
+    
+    def _mark_lesson_completed(self, lesson_id):
+        """Mark a lesson as completed - update UI with green checkmark."""
+        self.log_to_console(f"✅ Lesson {lesson_id} marked as completed!")
+        
+        # Update lesson card if it exists
+        if hasattr(self, '_lesson_cards') and lesson_id in self._lesson_cards:
+            card = self._lesson_cards[lesson_id]
+            
+            # Change icon to green checkmark
+            if hasattr(card, 'icon_label'):
+                card.icon_label.setText("✅")
+            
+            # Change background to dark green
+            card.setStyleSheet("""
+                QFrame {
+                    border: 2px solid #059669;
+                    border-radius: 12px;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 rgba(16, 185, 129, 0.2),
+                        stop:1 rgba(5, 150, 105, 0.2));
+                }
+                QFrame:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 rgba(16, 185, 129, 0.3),
+                        stop:1 rgba(5, 150, 105, 0.3));
+                    border: 2px solid #10b981;
+                }
+            """)
+            
+            self.log_to_console(f"✅ Lesson {lesson_id} card updated with green checkmark!")
+    
+    def load_challenge(self):
+        """Load the challenge for the current lesson."""
+        if not hasattr(self, 'current_lesson_data'):
+            return
+        
+        lesson = self.current_lesson_data
+        challenge = lesson.get('challenge', {})
+        
+        if not challenge:
+            self.log_to_console("No challenge found for this lesson")
+            return
+        
+        challenge_file = challenge.get('file', '')
+        challenge_title = challenge.get(f'title_{self.current_lang}', challenge.get('title', 'Challenge'))
+        
+        # Adjust file path based on language (insert language folder)
+        lang_folder = "vi" if self.current_lang == "vi" else "en"
+        if challenge_file.startswith("lessons/"):
+            challenge_file = challenge_file.replace("lessons/", f"lessons/{lang_folder}/", 1)
+        
+        # Load file
+        file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), challenge_file)
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                code_content = f.read()
+            
+            self.monacoPlaceholder.setPlainText(code_content)
+            self.current_open_file = os.path.basename(challenge_file)
+            
+            # Update to challenge mode
+            steps = lesson.get('steps', [])
+            self.current_step = len(steps) + 1
+            
+            if hasattr(self, '_step_progress_bar'):
+                self._step_progress_bar.set_step(self.current_step)
+                # Disable prev button in challenge
+                self._step_progress_bar.btn_prev.setEnabled(False)
+                # Change next button to "Finish"
+                self._step_progress_bar.btn_next.setText("Finish")
+                self._step_progress_bar.btn_next.setEnabled(True)
+                # Hide Submit button in challenge mode
+                self._step_progress_bar.btn_submit.setVisible(False)
+            
+            # Disable Hint and Solution buttons in challenge mode
+            if hasattr(self, 'btnHint') and self.btnHint:
+                self.btnHint.setEnabled(False)
+                self.btnHint.setStyleSheet("""
+                    QPushButton {
+                        background: #9ca3af;
+                        color: #6b7280;
+                        border-radius: 8px;
+                        font-weight: bold;
+                        font-size: 14px;
+                        padding: 8px 16px;
+                    }
+                """)
+            
+            if hasattr(self, 'btnSolution') and self.btnSolution:
+                self.btnSolution.setEnabled(False)
+                self.btnSolution.setStyleSheet("""
+                    QPushButton {
+                        background: #9ca3af;
+                        color: #6b7280;
+                        border-radius: 8px;
+                        font-weight: bold;
+                        font-size: 14px;
+                        padding: 8px 16px;
+                    }
+                """)
+            
+            # Hide requirements panel for challenge
+            if hasattr(self, '_step_progress_bar'):
+                self._step_progress_bar.hide_requirements()
+            
+            # Show challenge warning
+            s = STRINGS[self.current_lang]
+            self.log_to_console(s.get("CHALLENGE_MODE", "⚔️ CHALLENGE MODE"))
+            self.log_to_console(s.get("CHALLENGE_WARNING", "Each error costs 1 heart!"))
+            
+            current_hearts = self._step_progress_bar.hearts if hasattr(self, '_step_progress_bar') else 0
+            max_hearts = self._step_progress_bar.max_hearts if hasattr(self, '_step_progress_bar') else 5
+            
+            QMessageBox.information(self, 
+                s.get("CHALLENGE_MODE", "⚔️ CHALLENGE MODE"),
+                s.get("CHALLENGE_WARNING", "Each error costs 1 heart!") + 
+                f"\n\n{challenge_title}\n\nCurrent Hearts: {current_hearts}/{max_hearts}")
+            
+            self.add_tab(os.path.basename(challenge_file), is_code=True)
+            
+        except FileNotFoundError:
+            self.log_to_console(f"Challenge file not found: {challenge_file}")
+        except Exception as e:
+            self.log_to_console(f"Error loading challenge: {e}")
+
+    def load_lesson_file(self, filename: str):
+
+        """Load lesson file from lessons folder."""
+        file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lessons", filename)
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                code_content = f.read()
+            self.monacoPlaceholder.setPlainText(code_content)
+            self.current_open_file = filename
+            
+            # Extract lesson number from filename (e.g., "01_hello_camera.py" -> 1)
+            try:
+                lesson_num = int(filename.split('_')[0])
+                self.current_lesson_number = lesson_num
+                if hasattr(self, '_lesson_progress_bar'):
+                    self._lesson_progress_bar.set_lesson(lesson_num)
+            except:
+                pass
+            
+            # Reset hint/solution flags for new lesson
+            self.lesson_hint_used = False
+            self.lesson_solution_used = False
+            
+            # Clean display name for the console
+            display_name = filename.replace(".py", "").replace("_", " ").title()
+            self.log_to_console(f"Successfully loaded {display_name} lesson.")
+            
+            self.add_tab(filename, is_code=True)
+            
+        except FileNotFoundError:
+            self.log_to_console(f"Error: Lesson file '{filename}' not found.")
+        except Exception as e:
+            self.log_to_console(f"Error loading lesson: {e}")
+    
+    def _on_lesson_hint_clicked(self):
+        """Handle hint button click - Show hint file in requirements panel."""
+        s = STRINGS[self.current_lang]
+        
+        # Check if we're in a lesson
+        if not hasattr(self, 'current_lesson_data') or not hasattr(self, 'current_step'):
+            QMessageBox.warning(self, 
+                s.get("NO_LESSON", "No Lesson"),
+                s.get("NO_LESSON_MSG", "Please load a lesson first!"))
+            return
+        
+        # Mark hint as used for this step
+        self.lesson_hint_used = True
+        
+        # Determine language folder
+        lang_folder = "vi" if self.current_lang == "vi" else "en"
+        
+        # Load hint file
+        hint_filename = f"lesson{self.current_lesson_id}_step{self.current_step}_hint.md"
+        hint_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "lessons",
+            "hints",
+            lang_folder,
+            hint_filename
+        )
+        
+        if os.path.exists(hint_path):
+            try:
+                with open(hint_path, 'r', encoding='utf-8') as f:
+                    hint_content = f.read().strip()
+                
+                # Convert markdown to HTML for display
+                hint_content = hint_content.replace('# ', '<h3 style="color: #f59e0b; margin: 8px 0 4px 0;">')
+                hint_content = hint_content.replace('## ', '<h4 style="color: #fbbf24; margin: 6px 0 3px 0;">')
+                hint_content = hint_content.replace('### ', '<h5 style="color: #fcd34d; margin: 4px 0 2px 0;">')
+                hint_content = hint_content.replace('\n\n', '</p><p style="margin: 4px 0;">')
+                hint_content = hint_content.replace('- ', '<br>• ')
+                hint_content = hint_content.replace('**', '<strong>')
+                hint_content = hint_content.replace('`', '<code style="background: rgba(245,158,11,0.2); padding: 2px 4px; border-radius: 3px; color: #f59e0b;">')
+                hint_content = hint_content.replace('```python', '<pre style="background: rgba(245,158,11,0.1); padding: 8px; border-radius: 4px; border-left: 3px solid #f59e0b; margin: 8px 0; overflow-x: auto;"><code style="color: #fbbf24;">')
+                hint_content = hint_content.replace('```', '</code></pre>')
+                
+                # Wrap in paragraph
+                formatted_content = f'<div style="color: #fef3c7;"><p style="margin: 4px 0;">{hint_content}</p></div>'
+                
+                # Update requirements panel with hint
+                if hasattr(self, '_step_progress_bar'):
+                    self._step_progress_bar.requirements_label.setText(
+                        f'<div style="background: rgba(245,158,11,0.1); padding: 8px; border-radius: 4px; border: 2px solid #f59e0b; margin-bottom: 8px;">'
+                        f'<p style="color: #f59e0b; font-weight: bold; font-size: 14px; margin: 0 0 8px 0;">💡 HINT - Gợi Ý</p>'
+                        f'{formatted_content}'
+                        f'</div>'
+                    )
+                
+                self.log_to_console(f"💡 Hint shown - Hearts will be reduced to +0.5 if correct")
+                
+            except Exception as e:
+                self.log_to_console(f"⚠️ Error loading hint: {e}")
+                QMessageBox.warning(self, "Error", f"Could not load hint file:\n{e}")
+        else:
+            self.log_to_console(f"⚠️ Hint file not found: {hint_filename}")
+            QMessageBox.warning(self, 
+                s.get("HINT_NOT_FOUND", "Hint Not Found"),
+                s.get("HINT_NOT_FOUND_MSG", f"Hint file not found for this step:\n{hint_filename}"))
+    
+    def _on_lesson_solution_clicked(self):
+        """Handle solution button click - Load solution code into editor."""
+        s = STRINGS[self.current_lang]
+        
+        # Check if we're in a lesson
+        if not hasattr(self, 'current_lesson_data') or not hasattr(self, 'current_step'):
+            QMessageBox.warning(self, 
+                s.get("NO_LESSON", "No Lesson"),
+                s.get("NO_LESSON_MSG", "Please load a lesson first!"))
+            return
+        
+        # Confirm with user
+        reply = QMessageBox.question(
+            self, 
+            s.get("SHOW_SOLUTION", "Show Solution?"),
+            s.get("SHOW_SOLUTION_MSG", "Are you sure you want to see the solution?\nYou won't earn hearts for this step."),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply != QMessageBox.Yes:
+            return
+        
+        # Mark solution as used for this step
+        self.lesson_solution_used = True
+
+        # Check if we're in blank mode
+        if hasattr(self, 'editorStack') and self.editorStack.currentWidget() == self.gameLessonWidget:
+            # Fill blanks with answers
+            self.gameLessonWidget.fill_blanks_with_answers(self._current_parsed_step.blank_map)
+            self.log_to_console(f"📖 {s.get('SOLUTION_LOADED', 'Solution loaded - No hearts will be earned for this step')}")
+            
+            # Update requirements panel to show solution warning
+            if hasattr(self, '_step_progress_bar'):
+                self._step_progress_bar.requirements_label.setText(
+                    f'<div style="background: rgba(239,68,68,0.1); padding: 8px; border-radius: 4px; border: 2px solid #ef4444; margin-bottom: 8px;">'
+                    f'<p style="color: #ef4444; font-weight: bold; font-size: 14px; margin: 0 0 8px 0;">📖 SOLUTION LOADED</p>'
+                    f'<p style="color: #fca5a5; margin: 0;">Solution code has been loaded into the editor. You will not earn hearts for this step.</p>'
+                    f'</div>'
+                )
+            return
+        elif self.monacoPlaceholder._blank_mode and hasattr(self, '_current_parsed_step') and self._current_parsed_step:
+            # Fill blanks with answers
+            self.monacoPlaceholder.fill_blanks_with_answers(self._current_parsed_step.blank_map)
+            self.log_to_console(f"📖 {s.get('SOLUTION_LOADED', 'Solution loaded - No hearts will be earned for this step')}")
+            
+            # Update requirements panel to show solution warning
+            if hasattr(self, '_step_progress_bar'):
+                self._step_progress_bar.requirements_label.setText(
+                    f'<div style="background: rgba(239,68,68,0.1); padding: 8px; border-radius: 4px; border: 2px solid #ef4444; margin-bottom: 8px;">'
+                    f'<p style="color: #ef4444; font-weight: bold; font-size: 14px; margin: 0 0 8px 0;">📖 SOLUTION LOADED</p>'
+                    f'<p style="color: #fca5a5; margin: 0;">Solution code has been loaded into the editor. You will not earn hearts for this step.</p>'
+                    f'</div>'
+                )
+            return
+        
+        # Challenge / free-form mode: Load solution file
+        solution_filename = f"lesson{self.current_lesson_id}_step{self.current_step}_solution.py"
+        solution_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 
+            "lessons", "solutions", 
+            solution_filename
+        )
+        
+        if os.path.exists(solution_path):
+            try:
+                with open(solution_path, "r", encoding="utf-8") as f:
+                    solution_code = f.read()
+                
+                # Load solution into editor
+                self.monacoPlaceholder.setPlainText(solution_code)
+                self.log_to_console(f"📖 {s.get('SOLUTION_LOADED', 'Solution loaded - No hearts will be earned for this step')}")
+                
+                # Update requirements panel to show solution warning
+                if hasattr(self, '_step_progress_bar'):
+                    self._step_progress_bar.requirements_label.setText(
+                        f'<div style="background: rgba(239,68,68,0.1); padding: 8px; border-radius: 4px; border: 2px solid #ef4444; margin-bottom: 8px;">'
+                        f'<p style="color: #ef4444; font-weight: bold; font-size: 14px; margin: 0 0 8px 0;">📖 SOLUTION LOADED</p>'
+                        f'<p style="color: #fca5a5; margin: 0;">Solution code has been loaded into the editor. You will not earn hearts for this step.</p>'
+                        f'</div>'
+                    )
+                
+            except Exception as e:
+                self.log_to_console(f"⚠️ Error loading solution: {e}")
+                QMessageBox.warning(self, "Error", f"Could not load solution file:\n{e}")
+        else:
+            self.log_to_console(f"⚠️ Solution file not found: {solution_filename}")
+            QMessageBox.warning(self, 
+                s.get("SOLUTION_NOT_FOUND", "Solution Not Found"),
+                s.get("SOLUTION_NOT_FOUND_MSG", f"Solution file not found for this step:\n{solution_filename}"))
+
+
     def load_curriculum_example(self, filename: str):
         """Generic loader for curriculum example files."""
         file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "curriculum", filename)
@@ -3202,8 +5584,8 @@ class AICodingLab(QMainWindow):
             display_name = filename.replace(".py", "").replace("_", " ").title()
             self.log_to_console(f"Successfully loaded {display_name} example.")
             
-            # Persist to projects/code/ so the tab system can re-read it
-            self.file_manager.save_file(filename, code_content, folder='Code')
+            # Switch to 'main.py' logic for easy tab management if we want it as a new tab?
+            # Actually, let's just let it be for now since it works as a direct editor load.
             self.add_tab(filename, is_code=True)
             
         except FileNotFoundError:
@@ -3338,7 +5720,7 @@ class AICodingLab(QMainWindow):
             self.set_active_tab(filename)
             self.load_file_by_tab(filename)
             return
-            
+        
         self.open_tabs.append(filename)
         
         # Composite tab widget
@@ -3371,9 +5753,26 @@ class AICodingLab(QMainWindow):
         layout.addWidget(btn_title)
         layout.addWidget(btn_close)
         
-        # Insert before the spacer
-        self.tabContainer.layout().insertWidget(self.tabContainer.layout().count() - 1, tab_widget)
+        # Insert tab widget into tabContainer
+        # Find the position of the [+] button (tabPlus) and insert before it
+        tab_layout = self.tabContainer.layout()
+        insert_pos = tab_layout.count()  # Default: add at end
+        
+        # Find the [+] button position
+        if hasattr(self, 'tabPlus') and self.tabPlus:
+            for i in range(tab_layout.count()):
+                item = tab_layout.itemAt(i)
+                if item and item.widget() == self.tabPlus:
+                    insert_pos = i
+                    break
+        
+        tab_layout.insertWidget(insert_pos, tab_widget)
         self.tab_buttons.append((filename, tab_widget))
+        
+        # Make tab visible
+        tab_widget.setVisible(True)
+        tab_widget.show()
+        
         self.set_active_tab(filename)
 
     def close_tab(self, filename: str):
@@ -3582,6 +5981,36 @@ class AICodingLab(QMainWindow):
             line = line.rstrip()
             if line and not any(s in line for s in self._SUPPRESSED_STDERR):
                 self.log_to_console(line, is_error=True)
+                
+                # Check if in challenge mode and this is an error
+                is_challenge = False
+                if hasattr(self, 'current_lesson_data') and hasattr(self, 'current_step'):
+                    lesson = self.current_lesson_data
+                    steps = lesson.get('steps', [])
+                    is_challenge = self.current_step > len(steps)
+                elif self.current_lesson_number == 10:
+                    is_challenge = True
+                
+                if is_challenge and any(err in line.lower() for err in ['error', 'exception', 'traceback']):
+                    # Deduct heart for error in challenge mode
+                    if self.lesson_hearts > 0:
+                        # Use step progress bar if available, otherwise lesson progress bar
+                        if hasattr(self, '_step_progress_bar') and self._step_progress_bar.isVisible():
+                            self._step_progress_bar.remove_heart(1)
+                        elif hasattr(self, '_lesson_progress_bar'):
+                            self._lesson_progress_bar.remove_heart(1)
+                        
+                        self.lesson_hearts -= 1
+                        s = STRINGS[self.current_lang]
+                        self.log_to_console(s.get("HEART_LOST", "-1 Heart! Be careful! 💔"), is_error=True)
+                        
+                        # Check if game over
+                        if self.lesson_hearts <= 0:
+                            QMessageBox.critical(self, "Game Over", 
+                                s.get("GAME_OVER", "💀 Game Over - No hearts left"))
+                            # Stop execution
+                            if self._run_process:
+                                self._run_process.kill()
 
     def _on_process_finished(self, exit_code, exit_status):
         """Called when the QProcess ends (naturally or was killed)."""
@@ -3592,6 +6021,128 @@ class AICodingLab(QMainWindow):
         self._run_process = None
         self._reset_run_button()
         self._flush_vars_to_panel()
+        
+        # Check if this was a lesson and handle heart rewards
+        if exit_code == 0 and self.current_open_file and self.current_open_file.startswith(('01_', '02_', '03_', '04_', '05_', '06_', '07_', '08_', '09_', '10_')):
+            self._handle_lesson_completion()
+    
+    def _handle_lesson_completion(self):
+        """Handle heart rewards and step progression when code runs successfully."""
+        s = STRINGS[self.current_lang]
+        
+        # Check if we're in the new lesson system
+        if hasattr(self, 'current_lesson_data') and hasattr(self, 'current_step'):
+            lesson = self.current_lesson_data
+            steps = lesson.get('steps', [])
+            total_steps = len(steps)
+            
+            # Check if this is a challenge
+            is_challenge = self.current_step > total_steps
+            
+            if is_challenge:
+                # Challenge complete!
+                if not self.lesson_solution_used:
+                    QMessageBox.information(self, "🏆 Victory!", 
+                        s.get("CHALLENGE_COMPLETE", "🏆 Challenge Complete! You're a champion!") + 
+                        f"\n\nFinal Hearts: {self.lesson_hearts}/{self._step_progress_bar.max_hearts}")
+                    self.log_to_console(s.get("CHALLENGE_COMPLETE", "🏆 Challenge Complete! You're a champion!"))
+                else:
+                    QMessageBox.information(self, s.get("LESSON_COMPLETE", "✅ Lesson Complete!"),
+                        s.get("SOLUTION_USED", "Solution shown - No heart reward"))
+                
+                # Hide progress bar after challenge
+                if hasattr(self, '_step_progress_bar'):
+                    self._step_progress_bar.hide_bar()
+                
+                # Reset card button and hide lesson UI
+                if hasattr(self, '_active_lesson_id') and self._active_lesson_id is not None:
+                    if hasattr(self, '_lesson_cards') and self._active_lesson_id in self._lesson_cards:
+                        self._lesson_cards[self._active_lesson_id].set_active(False)
+                    self._active_lesson_id = None
+                if hasattr(self, 'btnHint') and self.btnHint:
+                    self.btnHint.setVisible(False)
+                if hasattr(self, 'btnSolution') and self.btnSolution:
+                    self.btnSolution.setVisible(False)
+                
+            else:
+                # Regular step completion
+                if not self.lesson_solution_used:
+                    # Award heart
+                    if hasattr(self, '_step_progress_bar'):
+                        self._step_progress_bar.add_heart()
+                        self.lesson_hearts += 1
+                    
+                    if not self.lesson_hint_used:
+                        self.log_to_console(s.get("HEART_EARNED", "+1 Heart! Keep going! 🎉"))
+                    else:
+                        self.log_to_console(s.get("HINT_USED", "Hint used") + " +1 Heart")
+                    
+                    # Auto-advance to next step
+                    if self.current_step < total_steps:
+                        reply = QMessageBox.question(self, 
+                            s.get("LESSON_COMPLETE", "✅ Step Complete!"),
+                            f"Step {self.current_step} complete! +1 Heart\n\nContinue to next step?",
+                            QMessageBox.Yes | QMessageBox.No,
+                            QMessageBox.Yes)
+                        
+                        if reply == QMessageBox.Yes:
+                            self.next_step()
+                    else:
+                        # All steps done, offer challenge
+                        reply = QMessageBox.question(self, 
+                            "🎉 All Steps Complete!",
+                            f"You've completed all {total_steps} steps!\nHearts: {self.lesson_hearts}/{total_steps}\n\nReady for the Challenge?",
+                            QMessageBox.Yes | QMessageBox.No,
+                            QMessageBox.Yes)
+                        
+                        if reply == QMessageBox.Yes:
+                            self.load_challenge()
+                else:
+                    # Solution was shown - no heart, but can still advance
+                    self.log_to_console(s.get("SOLUTION_USED", "Solution shown - No heart reward"))
+                    
+                    if self.current_step < total_steps:
+                        reply = QMessageBox.question(self, 
+                            s.get("LESSON_COMPLETE", "✅ Step Complete!"),
+                            "Step complete (no heart - solution used)\n\nContinue to next step?",
+                            QMessageBox.Yes | QMessageBox.No,
+                            QMessageBox.Yes)
+                        
+                        if reply == QMessageBox.Yes:
+                            self.next_step()
+        
+        else:
+            # Fallback to old system (for compatibility)
+            if self.current_lesson_number < 10:
+                if not self.lesson_solution_used:
+                    if not self.lesson_hint_used:
+                        if hasattr(self, '_lesson_progress_bar'):
+                            self._lesson_progress_bar.add_heart()
+                            self.lesson_hearts += 1
+                        self.log_to_console(s.get("HEART_EARNED", "+1 Heart! Keep going! 🎉"))
+                        QMessageBox.information(self, s.get("LESSON_COMPLETE", "✅ Lesson Complete!"),
+                            s.get("HEART_EARNED", "+1 Heart! Keep going! 🎉"))
+                    else:
+                        if hasattr(self, '_lesson_progress_bar'):
+                            self._lesson_progress_bar.add_heart()
+                            self.lesson_hearts += 1
+                        self.log_to_console(s.get("HINT_USED", "Hint used - Full heart reward disabled"))
+                        QMessageBox.information(self, s.get("LESSON_COMPLETE", "✅ Lesson Complete!"),
+                            s.get("HINT_USED", "Hint used - Full heart reward disabled") + "\n+1 Heart")
+                else:
+                    self.log_to_console(s.get("SOLUTION_USED", "Solution shown - No heart reward"))
+                    QMessageBox.information(self, s.get("LESSON_COMPLETE", "✅ Lesson Complete!"),
+                        s.get("SOLUTION_USED", "Solution shown - No heart reward"))
+            
+            elif self.current_lesson_number == 10:
+                if not self.lesson_solution_used:
+                    QMessageBox.information(self, "🏆 Victory!", 
+                        s.get("CHALLENGE_COMPLETE", "🏆 Challenge Complete! You're a champion!") + 
+                        f"\n\nFinal Hearts: {self.lesson_hearts}/{self._lesson_progress_bar.max_hearts}")
+                    self.log_to_console(s.get("CHALLENGE_COMPLETE", "🏆 Challenge Complete! You're a champion!"))
+                else:
+                    QMessageBox.information(self, s.get("LESSON_COMPLETE", "✅ Lesson Complete!"),
+                        s.get("SOLUTION_USED", "Solution shown - No heart reward"))
 
     def _flush_vars_to_panel(self):
         """Convert accumulated VAR: dict into results-panel cards."""
@@ -5990,9 +8541,10 @@ if __name__ == '__main__':
     import os
     os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false"
 
-    # Disable aggressive auto-scaling on Linux/Jetson which explodes layout sizes
-    os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
-    os.environ["QT_SCALE_FACTOR"] = "1"
+    # Enable High DPI scaling for high-resolution displays (3840x2400, 4K, etc.)
+    os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+    os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
     
     app = QApplication(sys.argv)

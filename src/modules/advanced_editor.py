@@ -175,6 +175,29 @@ class AdvancedPythonEditor(QsciScintilla):
         # We don't want visual clutter, so we make it invisible but logically active
         self.setIndicatorForegroundColor(QColor(0,0,0,0), self.PROTECTED_INDICATOR)
         
+        # ── FILL-IN-THE-BLANK LESSON MODE ──
+        self.BLANK_SLOT_INDICATOR = 14
+        self.indicatorDefine(QsciScintilla.FullBoxIndicator, self.BLANK_SLOT_INDICATOR)
+        self.setIndicatorForegroundColor(QColor(99, 102, 241, 40), self.BLANK_SLOT_INDICATOR)  # Indigo fill
+        self.setIndicatorOutlineColor(QColor(99, 102, 241, 180), self.BLANK_SLOT_INDICATOR)  # Indigo border
+        self.SendScintilla(2510, self.BLANK_SLOT_INDICATOR, True)  # Draw under text
+
+        self.FEEDBACK_CORRECT_INDICATOR = 15
+        self.indicatorDefine(QsciScintilla.FullBoxIndicator, self.FEEDBACK_CORRECT_INDICATOR)
+        self.setIndicatorForegroundColor(QColor(34, 197, 94, 50), self.FEEDBACK_CORRECT_INDICATOR)  # Green
+        self.setIndicatorOutlineColor(QColor(22, 163, 74, 200), self.FEEDBACK_CORRECT_INDICATOR)
+
+        self.FEEDBACK_INCORRECT_INDICATOR = 16
+        self.indicatorDefine(QsciScintilla.FullBoxIndicator, self.FEEDBACK_INCORRECT_INDICATOR)
+        self.setIndicatorForegroundColor(QColor(239, 68, 68, 50), self.FEEDBACK_INCORRECT_INDICATOR)  # Red
+        self.setIndicatorOutlineColor(QColor(220, 38, 38, 200), self.FEEDBACK_INCORRECT_INDICATOR)
+
+        # Blank mode state
+        self._blank_mode = False
+        self._blank_lines = set()   # Line numbers that are editable blank slots
+        self._fixed_lines = set()   # Line numbers that are read-only
+        self._parsed_step = None    # Current ParsedStep object
+
         # Scanner Timer for performance (only scan 300ms after last keypress)
         self._blank_timer = QTimer(self)
         self._blank_timer.setSingleShot(True)
@@ -754,6 +777,16 @@ class AdvancedPythonEditor(QsciScintilla):
             super().keyPressEvent(event)
             return
 
+        # ── BLANK MODE: Fixed line protection ──
+        if self._blank_mode:
+            line, col = self.getCursorPosition()
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                return  # Block Enter in blank mode entirely
+            if line in self._fixed_lines:
+                # Allow only navigation keys (already handled above)
+                if event.text() or event.key() in (Qt.Key_Backspace, Qt.Key_Delete, Qt.Key_Tab):
+                    return  # Block all editing on fixed lines
+
         # ── 🐍 2. SMART PYTHON AUTO-INDENTATION on Enter/Return ──────────
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
             # Block Enter inside protected tags
@@ -896,6 +929,13 @@ class AdvancedPythonEditor(QsciScintilla):
             char_pos = self.SendScintilla(self.SCI_POSITIONFROMPOINT, pos.x(), pos.y())
             line, _ = self.lineIndexFromPosition(char_pos)
             
+            # Blank mode: only allow drops on blank lines
+            if self._blank_mode and line not in self._blank_lines:
+                self._target_line = -1
+                event.ignore()
+                self.update()
+                return
+
             if line != -1:
                 self._target_line = line
                 # Calculate what the indentation SHOULD be for this line
@@ -916,6 +956,13 @@ class AdvancedPythonEditor(QsciScintilla):
         
         if line == -1:
             line = self.lines() - 1
+
+        # Blank mode: reject drops on fixed lines
+        if self._blank_mode and line not in self._blank_lines:
+            event.ignore()
+            self._drag_active = False
+            self.update()
+            return
             
         function_id = event.mimeData().text()
         # Use calculated scope indentation for the final drop
@@ -1003,3 +1050,89 @@ class AdvancedPythonEditor(QsciScintilla):
         
     def setPlainText(self, text):
         self.setText(text)
+
+    def set_blank_mode(self, parsed_step):
+        """Configure editor for fill-in-blank mode."""
+        from src.modules.lesson_parser import ParsedStep
+        self._parsed_step = parsed_step
+        self._blank_mode = True
+        self._blank_lines = set(parsed_step.blank_map.keys())
+        self._fixed_lines = set(range(len(parsed_step.display_lines))) - self._blank_lines
+        
+        # Set the display text
+        self.setText("\n".join(parsed_step.display_lines))
+        
+        # Apply blank slot indicators on blank lines
+        for line_num in self._blank_lines:
+            line_length = len(self.text(line_num))
+            # If blank line is empty, fill with placeholder width
+            if line_length == 0:
+                # Insert placeholder spaces so the indicator is visible
+                indent = parsed_step.blank_map[line_num].indentation
+                placeholder = indent + "                                        "  # 40 chars wide
+                self.insertAt(placeholder, line_num, 0)
+                line_length = len(placeholder)
+            self.fillIndicatorRange(line_num, 0, line_num, max(line_length, 40), self.BLANK_SLOT_INDICATOR)
+        
+        # Disable the normal blank scanner timer in lesson mode
+        self._blank_timer.stop()
+
+    def exit_blank_mode(self):
+        """Return editor to normal free-form editing mode."""
+        self._blank_mode = False
+        self._blank_lines = set()
+        self._fixed_lines = set()
+        self._parsed_step = None
+        
+        # Clear all blank-mode indicators
+        total_lines = self.lines()
+        if total_lines > 0:
+            self.clearIndicatorRange(0, 0, total_lines - 1, 500, self.BLANK_SLOT_INDICATOR)
+            self.clearIndicatorRange(0, 0, total_lines - 1, 500, self.FEEDBACK_CORRECT_INDICATOR)
+            self.clearIndicatorRange(0, 0, total_lines - 1, 500, self.FEEDBACK_INCORRECT_INDICATOR)
+        
+        # Re-enable normal blank scanner
+        self._blank_timer.start(300)
+
+    def get_blank_contents(self):
+        """Extract current text from each blank slot line."""
+        contents = {}
+        for line_num in self._blank_lines:
+            if line_num < self.lines():
+                text = self.text(line_num).strip()
+                contents[line_num] = text
+        return contents
+
+    def set_blank_feedback(self, results):
+        """Apply green/red background indicators based on validation results."""
+        from src.modules.blank_validator import BlankResult
+        for result in results:
+            line_num = result.line_number
+            if line_num >= self.lines():
+                continue
+            line_length = max(len(self.text(line_num)), 40)
+            # Clear existing feedback on this line
+            self.clearIndicatorRange(line_num, 0, line_num, line_length, self.FEEDBACK_CORRECT_INDICATOR)
+            self.clearIndicatorRange(line_num, 0, line_num, line_length, self.FEEDBACK_INCORRECT_INDICATOR)
+            # Apply new feedback
+            if result.is_correct:
+                self.fillIndicatorRange(line_num, 0, line_num, line_length, self.FEEDBACK_CORRECT_INDICATOR)
+            else:
+                self.fillIndicatorRange(line_num, 0, line_num, line_length, self.FEEDBACK_INCORRECT_INDICATOR)
+
+    def clear_blank_feedback(self, line_num):
+        """Clear feedback highlight on a specific line."""
+        if line_num < self.lines():
+            line_length = max(len(self.text(line_num)), 40)
+            self.clearIndicatorRange(line_num, 0, line_num, line_length, self.FEEDBACK_CORRECT_INDICATOR)
+            self.clearIndicatorRange(line_num, 0, line_num, line_length, self.FEEDBACK_INCORRECT_INDICATOR)
+
+    def fill_blanks_with_answers(self, blank_map):
+        """Populate all blank slots with their first expected answer (for Solution button)."""
+        for line_num, blank_info in blank_map.items():
+            if line_num < self.lines() and blank_info.expected_answers:
+                answer = blank_info.indentation + blank_info.expected_answers[0]
+                # Select the entire line content and replace
+                current_text = self.text(line_num)
+                self.setSelection(line_num, 0, line_num, len(current_text))
+                self.replaceSelectedText(answer + "\n" if current_text.endswith("\n") else answer)

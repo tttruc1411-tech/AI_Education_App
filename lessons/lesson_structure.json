@@ -1,0 +1,136 @@
+{
+  "lessons": [
+    {
+      "id": 1,
+      "title": "Camera Basics",
+      "title_vi": "Cơ bản về Camera",
+      "icon": "📷",
+      "color": "#3b82f6",
+      "description": "Learn to work with camera and display images",
+      "description_vi": "Học cách làm việc với camera và hiển thị hình ảnh",
+      "steps": [
+        {
+          "id": 1,
+          "file": "lessons/lesson1_camera_basics/step1_my_first_camera.py",
+          "title": "My First Camera",
+          "title_vi": "Camera đầu tiên"
+        },
+        {
+          "id": 2,
+          "file": "lessons/lesson1_camera_basics/step2_save_load_pictures.py",
+          "title": "Save & Load Pictures",
+          "title_vi": "Lưu & Tải ảnh"
+        },
+        {
+          "id": 3,
+          "file": "lessons/lesson1_camera_basics/step3_mirror_selfie_mode.py",
+          "title": "Mirror Selfie Mode",
+          "title_vi": "Chế độ Selfie"
+        },
+        {
+          "id": 4,
+          "file": "lessons/lesson1_camera_basics/step4_brightness_control.py",
+          "title": "Brightness Control",
+          "title_vi": "Điều chỉnh độ sáng"
+        },
+        {
+          "id": 5,
+          "file": "lessons/lesson1_camera_basics/step5_rotate_image.py",
+          "title": "Rotate Image",
+          "title_vi": "Xoay ảnh"
+        }
+      ],
+      "challenge": {
+        "file": "lessons/lesson1_camera_basics/challenge_photo_booth.py",
+        "title": "Smart Photo Booth Challenge",
+        "title_vi": "Thách thức: Gian hàng chụp ảnh thông minh"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Image Processing",
+      "title_vi": "Xử lý Hình ảnh",
+      "icon": "🎨",
+      "color": "#8b5cf6",
+      "description": "Master image filters and transformations",
+      "description_vi": "Làm chủ bộ lọc và biến đổi hình ảnh",
+      "steps": [
+        {
+          "id": 1,
+          "file": "lessons/lesson2_image_processing/step1_image_filters_lab.py",
+          "title": "Image Filters Lab",
+          "title_vi": "Phòng thí nghiệm bộ lọc"
+        },
+        {
+          "id": 2,
+          "file": "lessons/lesson2_image_processing/step2_blur_effect.py",
+          "title": "Blur Effect",
+          "title_vi": "Hiệu ứng làm mờ"
+        },
+        {
+          "id": 3,
+          "file": "lessons/lesson2_image_processing/step3_edge_detection.py",
+          "title": "Edge Detection",
+          "title_vi": "Phát hiện cạnh"
+        },
+        {
+          "id": 4,
+          "file": "lessons/lesson2_image_processing/step4_resize_image.py",
+          "title": "Resize Image",
+          "title_vi": "Thay đổi kích thước"
+        },
+        {
+          "id": 5,
+          "file": "lessons/lesson2_image_processing/step5_filter_chain.py",
+          "title": "Filter Chain",
+          "title_vi": "Chuỗi bộ lọc"
+        }
+      ],
+      "challenge": {
+        "file": "lessons/lesson2_image_processing/challenge_artistic_filter.py",
+        "title": "Artistic Filter Challenge",
+        "title_vi": "Thách thức: Chuỗi bộ lọc nghệ thuật"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Drawing & Shapes",
+      "title_vi": "Vẽ & Hình dạng",
+      "icon": "✏️",
+      "color": "#10b981",
+      "description": "Learn to draw shapes and text on images",
+      "description_vi": "Học cách vẽ hình và chữ lên ảnh",
+      "steps": [
+        {
+          "id": 1,
+          "file": "lessons/lesson3_drawing_shapes/step1_draw_rectangle.py",
+          "title": "Draw Rectangle",
+          "title_vi": "Vẽ hình chữ nhật"
+        },
+        {
+          "id": 2,
+          "file": "lessons/lesson3_drawing_shapes/step2_draw_circle.py",
+          "title": "Draw Circle",
+          "title_vi": "Vẽ hình tròn"
+        },
+        {
+          "id": 3,
+          "file": "lessons/lesson3_drawing_shapes/step3_multiple_shapes.py",
+          "title": "Multiple Shapes",
+          "title_vi": "Nhiều hình dạng"
+        },
+        {
+          "id": 4,
+          "file": "lessons/lesson3_drawing_shapes/step4_color_variations.py",
+          "title": "Color Variations",
+          "title_vi": "Biến thể màu sắc"
+        }
+      ],
+      "challenge": {
+        "file": "lessons/lesson3_drawing_shapes/challenge_creative_art.py",
+        "title": "Creative Art Challenge",
+        "title_vi": "Thách thức: Vẽ tranh sáng tạo"
+      }
+    }
+  ]
+}

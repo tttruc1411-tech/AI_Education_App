@@ -479,3 +479,47 @@ A professional, education-focused Python development environment built with **Py
 * [x] **Clean Module Import System (V3)**: Split `ai_blocks.py` into `camera`, `ai_vision`, `drawing`. Renamed `display_blocks` → `display`, `image_processing` → `image`, `logic_blocks` → `logic`. All 38 curriculum examples and `definitions.py` updated. Hint system regex patterns updated with `(?:\w+\.)?` optional module prefix.
 * [x] **Editor Selection Color Fix**: Changed selection foreground from white to navy `#1e293b` for better readability against purple selection background.
 * [x] **KDI App Mascot (Hatchling)**: Created high-quality SVG assets for the KDI Mascot in 5 distinct emotional states (Neutral, Happy, Questioning, Sad, Error) for interactive app feedback, saved to `src/modules/courses/`.
+
+### 🎮 Gamified Fill-in-the-Blank Lesson System
+* **Status**: ✅ **COMPLETED**
+* **Scope**: Complete overhaul of the lesson grading and interaction system — from free-form whole-file comparison to structured fill-in-the-blank with per-slot validation.
+* **Lesson Start/Stop Toggle**: Lesson cards in the Learning Hub use a Start/Stop button. Starting a lesson enters "lesson mode" (shows progress bar, hint/solution buttons, instruction card). Stopping exits back to free coding with `main.py` loaded.
+* **Fill-in-the-Blank Editor** (`src/modules/game_lesson_widget.py`):
+    * Lesson step files use `# __BLANK__ expected_answer` markers to define editable slots.
+    * Non-blank lines are read-only (locked). Students can only type/drop on blank slots.
+    * Blank slots render with orange dashed borders and "Drop function here or type..." placeholder text.
+    * Drag-and-drop from the Function Library is restricted to blank lines only.
+    * Per-blank validation: each slot is checked independently against its expected answer(s).
+    * Green/red feedback highlighting per blank after Submit.
+    * Pipe-separated alternatives supported: `# __BLANK__ answer1 | answer2`.
+* **Lesson Parser** (`src/modules/lesson_parser.py`):
+    * `parse_step_file(path)` → `ParsedStep` with `display_lines`, `blank_map`, `is_challenge`, `raw_content`.
+    * `BlankInfo` dataclass: `line_number`, `indentation`, `expected_answers`.
+    * Challenge steps (no `# __BLANK__` markers) fall back to free-form mode.
+* **Blank Validator** (`src/modules/blank_validator.py`):
+    * `normalize_code(code)` — strips whitespace, collapses spaces, normalizes `=`, `()`, `,` spacing.
+    * `validate_blank(student_input, expected_answers)` — matches any alternative after normalization.
+    * `validate_blanks(blank_contents, blank_map)` → `list[BlankResult]` with per-blank pass/fail.
+* **Floating Instruction Card** (`src/modules/instruction_card.py`):
+    * `FloatingInstructionCard(QFrame)` — paginated tutorial overlay on the editor.
+    * Parses tutorial markdown (`tutorials/en/` and `tutorials/vi/`) by `## ` headers into pages.
+    * Each page has: gradient header (green/cyan/purple/amber rotation), icon (⚡📋🧩💡), title, body text.
+    * Page indicator dots + ← → navigation + ✕ close button.
+    * Auto-shows when a lesson step loads, hides on lesson stop.
+    * Positioned top-right of the game lesson widget, repositions on resize.
+    * Dual resolution support (350×220px normal, 280×160px small).
+* **Hearts System**: Unchanged — +1❤️ (no help), +0.5❤️ (hint used), 0❤️ (solution used). Hearts only deducted during Challenge (final step).
+* **Solution Button in Blank Mode**: Fills all blank slots with expected answers (first alternative). Awards 0 hearts.
+* **Bilingual**: All popup messages, instruction card, and lesson files support EN ⇆ VI. Tutorial files in `tutorials/en/` and `tutorials/vi/`.
+* **Lesson Files**: All 14 regular steps (3 lessons × 5/5/4 steps) in both EN and VI converted to `# __BLANK__` format. Challenge files remain free-form. Solution files in `lessons/solutions/` still used for challenge validation.
+* **Module Import Format**: All lesson files and solutions use the new clean module format (`import camera`, `camera.Init_Camera()`).
+* **Key Files**:
+    * `src/modules/lesson_parser.py` — Blank marker parsing.
+    * `src/modules/blank_validator.py` — Per-blank validation with normalization.
+    * `src/modules/game_lesson_widget.py` — Visual game lesson editor widget.
+    * `src/modules/instruction_card.py` — Floating paginated instruction card.
+    * `src/modules/advanced_editor.py` — Extended with blank-mode indicators, read-only protection, drag-drop restriction.
+    * `lessons/en/`, `lessons/vi/` — Step files with `# __BLANK__` markers.
+    * `lessons/solutions/` — Solution files (used for challenges only).
+    * `tutorials/en/`, `tutorials/vi/` — Tutorial markdown files (paginated by `## ` headers).
+    * `main.py` — Controller: `load_step()`, `submit_step()`, `stop_lesson()`, `load_lesson_by_id()`.

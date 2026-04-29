@@ -35,7 +35,7 @@ class FileManager:
         self.data_dir.mkdir(exist_ok=True)
         self.model_dir.mkdir(exist_ok=True)
         
-        print(f"✓ Projects directory: {self.files_dir}")
+        print(f"[OK] Projects directory: {self.files_dir}")
         print(f"  - Code: {self.code_dir}")
         print(f"  - Data: {self.data_dir}")
         print(f"  - Model: {self.model_dir}")
