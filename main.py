@@ -948,11 +948,20 @@ class StepProgressBar(QWidget):
         
     def set_small_mode(self, is_small):
         """Update sizing and scaling for smaller screen constraints."""
+        self._is_small = is_small
+        
+        # Shrink layout spacing dynamically
+        if hasattr(self, 'steps_container'):
+            self.steps_container.layout().setSpacing(4 if is_small else 6)
+            parent_layout = self.steps_container.parentWidget().layout()
+            if parent_layout:
+                parent_layout.setSpacing(6 if is_small else 12)
+                
         _req_fs = 6 if is_small else 10
-        _btn_fs = 11 if is_small else 16
+        _btn_fs = 10 if is_small else 16
         _sub_fs = 10 if is_small else 15
-        _btn_w = 40 if is_small else 60
-        _sub_w = 55 if is_small else 85
+        _btn_w = 28 if is_small else 60
+        _sub_w = 50 if is_small else 85
         _btn_h = 24 if is_small else 36
         _inst_sz = 24 if is_small else 36
         
@@ -1058,17 +1067,19 @@ class StepProgressBar(QWidget):
         """)
         
         _hearts_fs = 13 if is_small else 18
+        _hearts_pad = 6 if is_small else 10
         self.hearts_label.setFixedHeight(_btn_h)
         self.hearts_label.setStyleSheet(f"""
             font-size: {_hearts_fs}px;
             font-weight: bold;
             color: #dc2626;
-            padding: 0px 10px;
+            padding: 0px {_hearts_pad}px;
             background: rgba(220, 38, 38, 0.1);
             border-radius: 6px;
             border: 1.5px solid rgba(220, 38, 38, 0.3);
         """)
         self.update_height_constraints()
+        self.update_display()
 
     def update_height_constraints(self):
         """Dynamically adjust height limit based on panel visibility and screen mode."""
@@ -1144,15 +1155,21 @@ class StepProgressBar(QWidget):
         
         # Create new indicators
         steps_layout = self.steps_container.layout()
+        is_small = getattr(self, '_is_small', False)
+        ind_sz = 24 if is_small else 32
+        ind_rad = ind_sz // 2
+        ind_fs = 10 if is_small else 14
+        ch_w = 34 if is_small else 40
+        
         for i in range(total_steps):
             indicator = QLabel(str(i + 1))
             indicator.setAlignment(Qt.AlignCenter)
-            indicator.setFixedSize(32, 32)
-            indicator.setStyleSheet("""
+            indicator.setFixedSize(ind_sz, ind_sz)
+            indicator.setStyleSheet(f"""
                 background: #e2e8f0;
                 color: #94a3b8;
-                border-radius: 16px;
-                font-size: 14px;
+                border-radius: {ind_rad}px;
+                font-size: {ind_fs}px;
                 font-weight: bold;
             """)
             self.step_indicators.append(indicator)
@@ -1161,12 +1178,12 @@ class StepProgressBar(QWidget):
         # Add challenge indicator (!!!)
         challenge_indicator = QLabel("!!!")
         challenge_indicator.setAlignment(Qt.AlignCenter)
-        challenge_indicator.setFixedSize(40, 32)
-        challenge_indicator.setStyleSheet("""
+        challenge_indicator.setFixedSize(ch_w, ind_sz)
+        challenge_indicator.setStyleSheet(f"""
             background: #fef3c7;
             color: #d97706;
-            border-radius: 16px;
-            font-size: 14px;
+            border-radius: {ind_rad}px;
+            font-size: {ind_fs}px;
             font-weight: bold;
         """)
         self.step_indicators.append(challenge_indicator)
@@ -1186,83 +1203,92 @@ class StepProgressBar(QWidget):
     
     def update_display(self):
         """Update visual state of all indicators."""
+        is_small = getattr(self, '_is_small', False)
+        ind_sz = 24 if is_small else 32
+        ind_rad = ind_sz // 2
+        ind_fs = 10 if is_small else 14
+        ch_w = 34 if is_small else 40
+        
         # Update step indicators
         for i, indicator in enumerate(self.step_indicators[:-1]):  # Exclude challenge
             step_num = i + 1
             status = self.step_status.get(step_num, None)
+            indicator.setFixedSize(ind_sz, ind_sz)
             
             if status == 'correct':
                 # Correct answer - Green
-                indicator.setStyleSheet("""
+                indicator.setStyleSheet(f"""
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                         stop:0 #10b981, stop:1 #059669);
                     color: white;
-                    border-radius: 16px;
-                    font-size: 14px;
+                    border-radius: {ind_rad}px;
+                    font-size: {ind_fs}px;
                     font-weight: bold;
                 """)
             elif status == 'incorrect':
                 # Incorrect answer - Red
-                indicator.setStyleSheet("""
+                indicator.setStyleSheet(f"""
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                         stop:0 #ef4444, stop:1 #dc2626);
                     color: white;
-                    border-radius: 16px;
-                    font-size: 14px;
+                    border-radius: {ind_rad}px;
+                    font-size: {ind_fs}px;
                     font-weight: bold;
                 """)
             elif i == self.current_step - 1:
                 # Current step - Blue
-                indicator.setStyleSheet("""
+                indicator.setStyleSheet(f"""
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                         stop:0 #3b82f6, stop:1 #2563eb);
                     color: white;
-                    border-radius: 16px;
-                    font-size: 14px;
+                    border-radius: {ind_rad}px;
+                    font-size: {ind_fs}px;
                     font-weight: bold;
-                    border: 3px solid #60a5fa;
+                    border: 2px solid #60a5fa;
                 """)
             else:
                 # Locked/Not attempted - Gray
-                indicator.setStyleSheet("""
+                indicator.setStyleSheet(f"""
                     background: #e2e8f0;
                     color: #94a3b8;
-                    border-radius: 16px;
-                    font-size: 14px;
+                    border-radius: {ind_rad}px;
+                    font-size: {ind_fs}px;
                     font-weight: bold;
                 """)
         
         # Update challenge indicator
         if len(self.step_indicators) > 0:
             challenge = self.step_indicators[-1]
+            challenge.setFixedSize(ch_w, ind_sz)
+            
             if self.current_step > self.total_steps:
                 # Challenge active
-                challenge.setStyleSheet("""
+                challenge.setStyleSheet(f"""
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                         stop:0 #dc2626, stop:1 #991b1b);
                     color: white;
-                    border-radius: 16px;
-                    font-size: 14px;
+                    border-radius: {ind_rad}px;
+                    font-size: {ind_fs}px;
                     font-weight: bold;
-                    border: 3px solid #f87171;
+                    border: 2px solid #f87171;
                 """)
             elif self.current_step == self.total_steps:
                 # Challenge unlocked
-                challenge.setStyleSheet("""
+                challenge.setStyleSheet(f"""
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                         stop:0 #f59e0b, stop:1 #d97706);
                     color: white;
-                    border-radius: 16px;
-                    font-size: 14px;
+                    border-radius: {ind_rad}px;
+                    font-size: {ind_fs}px;
                     font-weight: bold;
                 """)
             else:
                 # Challenge locked
-                challenge.setStyleSheet("""
+                challenge.setStyleSheet(f"""
                     background: #fef3c7;
                     color: #d97706;
-                    border-radius: 16px;
-                    font-size: 14px;
+                    border-radius: {ind_rad}px;
+                    font-size: {ind_fs}px;
                     font-weight: bold;
                 """)
         
@@ -3562,14 +3588,16 @@ class AICodingLab(QMainWindow):
         if hasattr(self, 'runningEditorSplitter') and self.runningEditorSplitter:
             if expanded:
                 if hasattr(self, '_step_progress_bar') and self._step_progress_bar.isVisible():
-                    self.runningEditorSplitter.setSizes([500, 100, 200])
+                    prog_h = 40 if getattr(self, 'is_small_screen', False) else 52
+                    self.runningEditorSplitter.setSizes([1000, prog_h, 200])
                 else:
-                    self.runningEditorSplitter.setSizes([600, 0, 200])
+                    self.runningEditorSplitter.setSizes([1000, 0, 200])
             else:
                 if hasattr(self, '_step_progress_bar') and self._step_progress_bar.isVisible():
-                    self.runningEditorSplitter.setSizes([700, 100, 0])
+                    prog_h = 40 if getattr(self, 'is_small_screen', False) else 52
+                    self.runningEditorSplitter.setSizes([1000, prog_h, 0])
                 else:
-                    self.runningEditorSplitter.setSizes([800, 0, 0])
+                    self.runningEditorSplitter.setSizes([1000, 0, 0])
 
     def clear_console(self):
         self.consoleBody.setPlainText(">>> Console cleared.")
@@ -4477,7 +4505,8 @@ class AICodingLab(QMainWindow):
                 self._step_progress_bar.set_lesson(lesson_id, total_steps)
                 self._step_progress_bar.setVisible(True)
                 if hasattr(self, 'runningEditorSplitter') and self.runningEditorSplitter:
-                    self.runningEditorSplitter.setSizes([700, 100, 0])
+                    prog_h = 40 if getattr(self, 'is_small_screen', False) else 52
+                    self.runningEditorSplitter.setSizes([1000, prog_h, 0])
                 self.set_console_expanded(False)
             
             # Close any existing tabs before loading first step
